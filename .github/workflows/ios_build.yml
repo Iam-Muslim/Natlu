@@ -1,0 +1,48 @@
+name: iOS Build
+
+on:
+  workflow_dispatch: # Triggers manually from the Actions tab
+
+jobs:
+  build_ios:
+    name: Build iOS (Unsigned)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Create assets directory
+        run: mkdir -p assets/model
+
+      - name: Download ONNX Model from Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip3 install -U "huggingface_hub[cli]" --break-system-packages
+          hf download Muno459/zipformer_p-quran quran_phoneme_zipformer.int8.onnx --local-dir assets/model --token $HF_TOKEN
+
+      - name: Build iOS Archive (No Codesign)
+        run: flutter build ipa --release --no-codesign
+
+      - name: Create unsigned IPA payload
+        run: |
+          mkdir -p Payload
+          mv build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app Payload/
+          zip -r ReciteQuran_unsigned.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recite-quran-ios-unsigned
+          path: ReciteQuran_unsigned.ipa
+          retention-days: 7
