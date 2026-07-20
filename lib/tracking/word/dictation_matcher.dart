@@ -220,9 +220,21 @@ class ForwardDictationMatcher {
         prevStartI[j] = 0;
         prevStartJ[j] = j;
       } else {
-        prevCost[j] = double.infinity;
-        prevStartI[j] = -1;
-        prevStartJ[j] = -1;
+        // [BUG FIX] Allow horizontal moves (Insertions) along Row 0. 
+        // This is critical. If the user misses the first letter of a word, the path 
+        // MUST be able to step horizontally from the word boundary to the second letter 
+        // before consuming any ASR audio.
+        if (j > 0 && prevCost[j - 1] < double.infinity) {
+          prevCost[j] = prevCost[j - 1] + costIns;
+          prevStartI[j] = prevStartI[j - 1];
+          prevStartJ[j] = prevStartJ[j - 1];
+          // Record '2' (Insertion) in the 1-byte traceback grid for Row 0
+          op[j] = 2;
+        } else {
+          prevCost[j] = double.infinity;
+          prevStartI[j] = -1;
+          prevStartJ[j] = -1;
+        }
       }
     }
 
@@ -490,6 +502,8 @@ class ForwardDictationMatcher {
           {}; // How many Reference phonemes belong to each word
       Map<int, double> penalties =
           {}; // Total penalty score (insertions, deletions, replacements) for each word
+      Map<int, double> wordTailCost =
+          {}; // [Tail Anchor] Tracks the cost of the final reference phoneme for each word
 
       // Determine the Word ID where the winning path started.
       int matchedWordStart = targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
@@ -503,6 +517,18 @@ class ForwardDictationMatcher {
           int absRefIdx = bestStartJ + align.refIdx;
           if (absRefIdx < targetWordIds.length) {
             currentWId = targetWordIds[absRefIdx];
+          }
+          
+          // [Tail Anchor] Constantly overwrite the tail cost for the current word.
+          // Since the trace is sequential, this will ultimately hold the cost of the FINAL reference phoneme.
+          // We ignore 'insert' because insertions don't consume reference phonemes.
+          if (align.opType == 'delete') {
+            wordTailCost[currentWId] = costDel;
+          } else if (align.predIdx >= 0 && align.opType != 'insert') {
+            wordTailCost[currentWId] = PhonemeMatrix.getCost(
+              pIds[bestStartI + align.predIdx],
+              rIds[bestStartJ + align.refIdx],
+            );
           }
         }
 
@@ -539,9 +565,14 @@ class ForwardDictationMatcher {
         if (denom < 4) denom = 4;
 
         double wordScore = penalty / denom;
+        double tailCost = wordTailCost[wId] ?? 1.0;
+
+        // [Tail Anchor] If Tajweed mode is on, enforce that the word's final phoneme
+        // must be a perfect match (0.0 cost) to prevent fabricated matches on short words.
+        bool passesTailAnchor = !requireStableTail || tailCost == 0.0;
 
         // If the word passes the strictness threshold on its own, it is verified!
-        if (wordScore <= threshold) {
+        if (wordScore <= threshold && passesTailAnchor) {
           verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
         } else {
           // If the word score is too high, it was a "mumbled" word that the DP
@@ -550,8 +581,11 @@ class ForwardDictationMatcher {
           for (int k = 0; k < targetWindow.length; k++) {
             if (targetWordIds[k] == wId) dropWordStr += targetWindow[k];
           }
+          String reason = wordScore > threshold
+              ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
+              : '(Failed Tail Anchor: TailCost=$tailCost)';
           debugLog?.call(
-            '⚠️ [DP STRICTNESS] Dropping Word "$dropWordStr" ($wId) (Score: ${wordScore.toStringAsFixed(3)} > $threshold)',
+            '⚠️ [DP STRICTNESS] Dropping Word "$dropWordStr" ($wId) $reason',
           );
         }
       }

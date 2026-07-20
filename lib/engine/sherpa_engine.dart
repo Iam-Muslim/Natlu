@@ -263,7 +263,9 @@ class SherpaEngine {
                     debug: kDebugMode,
                   ),
                   enableEndpoint: true,
-                  rule1MinTrailingSilence: 10.0,
+                  rule1MinTrailingSilence: 50.0, // Silence after speech (changed to 50s)
+                  rule2MinTrailingSilence: 50.0, // Silence before speech / breathing (changed to 50s)
+                  rule3MinUtteranceLength: 99999.0, // Effectively INFINITE (never cut off active speech)
                 ),
               );
             }

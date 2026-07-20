@@ -5,6 +5,7 @@ import 'dart:math';
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'quran_normalizer.dart';
+import 'phoneme_matrix.dart';
 
 ///
 /// FILE ROLE: Orchestrator / Thread Manager / App State
@@ -79,6 +80,14 @@ class PhonemeAlignmentIsolate {
     });
 
     return completer.future;
+  }
+
+  /// Sends the dynamic tokens list to preheat the phoneme matrix.
+  void setup(List<String> tokens) {
+    _sendPort?.send({
+      'cmd': IsolateCommands.setup,
+      'tokens': tokens,
+    });
   }
 
   /// Tells the background thread to load a new Ayah.
@@ -646,6 +655,10 @@ void _alignmentWorker(SendPort mainSendPort) {
     int cmd = message['cmd'];
 
     switch (cmd) {
+      case IsolateCommands.setup:
+        List<String> tokens = (message['tokens'] as List).cast<String>();
+        PhonemeMatrix.preheat(tokens);
+        break;
       case IsolateCommands.feed:
         sequencer.feed(
           message['asr'],

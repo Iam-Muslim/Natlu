@@ -24,6 +24,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../../state/app_state.dart';
 import '../../engine/sherpa_engine.dart';
 import '../../data/quran_data.dart';
@@ -161,6 +162,21 @@ class HighlightingController extends ChangeNotifier {
   Future<void> _initIsolate() async {
     await _alignmentIsolate.start();
     _isolateStarted = true;
+    
+    try {
+      String tokensStr = await rootBundle.loadString('assets/model/tokens.txt');
+      List<String> tokens = [];
+      for (String line in tokensStr.split('\n')) {
+        var parts = line.split(' ');
+        if (parts.isNotEmpty && parts[0].trim().isNotEmpty && parts[0] != '<blank>') {
+          tokens.add(parts[0].trim());
+        }
+      }
+      _alignmentIsolate.setup(tokens);
+    } catch (e) {
+      debugPrint('Failed to load tokens for matrix preheat: $e');
+    }
+    
     _wordSub = _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
 
     if (_currentMatch != null) {

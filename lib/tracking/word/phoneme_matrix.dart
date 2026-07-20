@@ -200,6 +200,25 @@ class PhonemeMatrix {
     return _phonemeToId[p]!;
   }
 
+  /// Preheats the matrix with all known phonemes from tokens.txt.
+  /// Calling this once before audio streaming begins ensures the matrix
+  /// is fully built (O(1) lookups) and prevents micro-stutters.
+  static void preheat(List<String> tokens) {
+    if (_numPhonemes >= tokens.length) return; // Already preheated
+
+    bool needsRebuild = false;
+    for (String p in tokens) {
+      if (!_phonemeToId.containsKey(p)) {
+        _phonemeToId[p] = _numPhonemes++;
+        needsRebuild = true;
+      }
+    }
+    
+    if (needsRebuild) {
+      _rebuildMatrix();
+    }
+  }
+
   /// Rebuilds the NxN matrix from scratch.
   ///
   /// Let N be the total number of unique phonemes (`_numPhonemes`).
