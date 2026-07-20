@@ -165,8 +165,13 @@ class _OrchestratorState extends State<_Orchestrator> {
     super.initState();
     _voiceSearchCtrl = VoiceSearchController(engine: _engine);
 
-    // Global subscription for Voice Search text
+    // Global subscription for Voice Search text and Endpoint auto-stopping
     _engine.transcriptionStream.listen((res) {
+      if (_isRecording && res.isFinal && mounted) {
+        debugPrint('[Orchestrator] Auto-stopping recording due to Sherpa Endpoint (10s silence)');
+        _toggleRecord();
+      }
+
       if (_isVoiceSearching && mounted) {
         setState(() {
           _voiceSearchAsrText = res.text;

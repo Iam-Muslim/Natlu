@@ -262,8 +262,8 @@ class SherpaEngine {
                     provider: provider,
                     debug: kDebugMode,
                   ),
-                  enableEndpoint: false,
-                  rule1MinTrailingSilence: 2.4,
+                  enableEndpoint: true,
+                  rule1MinTrailingSilence: 10.0,
                 ),
               );
             }
@@ -307,9 +307,22 @@ class SherpaEngine {
               reusableBuffer = Float32List(math.max(int16.length + 8000, 32000));
             }
 
-            // The audio is already normalized and AGC'd by AudioProcessor
+            // Apply a gentle FIXED software gain since hardware autoGain is disabled.
+            // 2.5x to 3.0x is usually safe to boost quiet speech without clipping.
+            const double fixedGainMultiplier = 2.5; 
+
             for (int i = 0; i < int16.length; i++) {
-              reusableBuffer[i] = int16[i] / 32768.0;
+              // Convert to -1.0 to 1.0 range
+              double floatVal = int16[i] / 32768.0;
+              
+              // Apply fixed digital gain
+              floatVal *= fixedGainMultiplier;
+              
+              // Hard limiter (Clamping) to prevent digital distortion/wrap-around if the user yells
+              if (floatVal > 1.0) floatVal = 1.0;
+              if (floatVal < -1.0) floatVal = -1.0;
+
+              reusableBuffer[i] = floatVal;
             }
 
             stream!.acceptWaveform(
