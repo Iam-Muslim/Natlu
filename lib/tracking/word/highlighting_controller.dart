@@ -387,7 +387,7 @@ class HighlightingController extends ChangeNotifier {
 
   // ── Audio pipeline ────────────────────────────────────────────────────────
 
-  void feed(Uint8List audioChunk, {bool isFinal = false}) {
+  void feed(Float32List audioChunk, {bool isFinal = false}) {
     if (_state == TrackerState.discovery) return;
     _engine.transcribe(audioChunk, isFinal: isFinal);
   }

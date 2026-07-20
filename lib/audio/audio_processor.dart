@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 
@@ -27,7 +28,7 @@ class AudioProcessor {
   StreamSubscription<Uint8List>? _subscription;
 
   Future<void> start({
-    required void Function(Uint8List chunk, bool isFinal) onChunk,
+    required void Function(Float32List chunk, bool isFinal) onChunk,
   }) async {
     await stopAndGetAudio();
 
@@ -44,7 +45,7 @@ class AudioProcessor {
         encoder: AudioEncoder.pcm16bits,
         sampleRate: recordSampleRate, // 16000
         numChannels: numChannels,
-        autoGain: false,
+        autoGain: true,
         echoCancel: false,
         noiseSuppress: false,
       ),
@@ -66,17 +67,47 @@ class AudioProcessor {
       }
 
       int offset = 0;
-      // Process in recordChunkBytes (320ms at 48 kHz = 30720 bytes) blocks
+      // Process in exact 320ms blocks
       while (allBytes.length - offset >= recordChunkBytes) {
-        final chunk16k = Uint8List.view(
+        final byteView = Uint8List.view(
           allBytes.buffer,
           allBytes.offsetInBytes + offset,
           recordChunkBytes,
         );
         offset += recordChunkBytes;
 
+        final int16samples = Int16List.view(
+          byteView.buffer,
+          byteView.offsetInBytes,
+          recordChunkBytes ~/ bytesPerSample,
+        );
+
+        final float32Samples = Float32List(int16samples.length);
+        double peakAmplitude = 0.0;
+        const double volumeBoost = 3.0; // Boost quiet mics
+
+        for (int i = 0; i < int16samples.length; i++) {
+          // Convert to float and apply volume boost
+          double rawFloat = (int16samples[i] / 32768.0) * volumeBoost;
+
+          // Apply Soft-Knee compression to prevent clipping distortion
+          double compressedFloat = rawFloat / (1.0 + rawFloat.abs());
+
+          float32Samples[i] = compressedFloat;
+
+          if (compressedFloat.abs() > peakAmplitude) {
+            peakAmplitude = compressedFloat.abs();
+          }
+        }
+
+        if (kDebugMode) {
+          debugPrint(
+            '[AudioProcessor] Peak Amplitude: ${peakAmplitude.toStringAsFixed(4)}',
+          );
+        }
+
         // Stream all audio directly to Sherpa ASR!
-        onChunk(chunk16k, false);
+        onChunk(float32Samples, false);
       }
 
       // Keep the remainder for the next stream event

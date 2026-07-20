@@ -354,7 +354,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         if (_isVoiceSearching && _voiceSearchAsrText.trim().isNotEmpty) {
           if (DateTime.now().millisecondsSinceEpoch - _lastVoiceActivityTime >= 800) {
             debugPrint('[VoiceSearch] 800ms silence detected. Forcing search stop.');
-            _engine.transcribe(Uint8List(0), isFinal: true);
+            _engine.transcribe(Float32List(0), isFinal: true);
             _voiceSearchSilenceTimer?.cancel();
           }
         }

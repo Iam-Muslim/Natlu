@@ -140,7 +140,7 @@ class SherpaEngine {
         completer.complete();
         for (final pending in _pendingChunks) {
           final transferable = TransferableTypedData.fromList([
-            pending['chunk'] as Uint8List,
+            pending['chunk'] as Float32List,
           ]);
           _sendPort?.send(
             _IsolateMessage(_EngineCommand.recognize, {
@@ -178,9 +178,9 @@ class SherpaEngine {
     await completer.future;
   }
 
-  /// Feed a raw PCM chunk (Int16, 16 kHz mono) into the recognizer.
+  /// Feed a normalized float chunk [-1.0, 1.0] (16 kHz mono) into the recognizer.
   /// [isFinal] = true flushes the current utterance.
-  bool transcribe(Uint8List audioChunk, {bool isFinal = false}) {
+  bool transcribe(Float32List audioChunk, {bool isFinal = false}) {
     if (!_isInitialized) {
       if (_initFuture != null) {
         _pendingChunks.add({
@@ -233,7 +233,6 @@ class SherpaEngine {
 
     OnlineRecognizer? recognizer;
     OnlineStream? stream;
-    Float32List reusableBuffer = Float32List(32000);
     final Float32List primingBuffer = Float32List(4800); // 300ms pre-roll silence initialized once
 
     port.listen((message) {
@@ -293,43 +292,21 @@ class SherpaEngine {
           final payload = message.payload as Map<String, dynamic>;
           final transferable = payload['chunk'] as TransferableTypedData;
           final rawBytesTemp = transferable.materialize().asUint8List();
-          final rawBytes = rawBytesTemp.offsetInBytes % 2 != 0
+          final rawBytes = rawBytesTemp.offsetInBytes % 4 != 0
               ? Uint8List.fromList(rawBytesTemp)
               : rawBytesTemp;
           final isFinal = payload['isFinal'] as bool;
           final startTime = payload['startTime'] as int;
 
           if (rawBytes.isNotEmpty) {
-            final int16 = rawBytes.buffer.asInt16List(
+            final floats = rawBytes.buffer.asFloat32List(
               rawBytes.offsetInBytes,
-              rawBytes.lengthInBytes ~/ 2,
+              rawBytes.lengthInBytes ~/ 4,
             );
-            // Dynamic buffer resize protection: ensure reusableBuffer fits int16
-            if (reusableBuffer.length < int16.length) {
-              reusableBuffer = Float32List(math.max(int16.length + 8000, 32000));
-            }
-
-            // Apply a gentle FIXED software gain since hardware autoGain is disabled.
-            // 2.5x to 3.0x is usually safe to boost quiet speech without clipping.
-            const double fixedGainMultiplier = 2.5; 
-
-            for (int i = 0; i < int16.length; i++) {
-              // Convert to -1.0 to 1.0 range
-              double floatVal = int16[i] / 32768.0;
-              
-              // Apply fixed digital gain
-              floatVal *= fixedGainMultiplier;
-              
-              // Hard limiter (Clamping) to prevent digital distortion/wrap-around if the user yells
-              if (floatVal > 1.0) floatVal = 1.0;
-              if (floatVal < -1.0) floatVal = -1.0;
-
-              reusableBuffer[i] = floatVal;
-            }
 
             stream!.acceptWaveform(
               sampleRate: 16000,
-              samples: Float32List.sublistView(reusableBuffer, 0, int16.length),
+              samples: floats,
             );
           }
 
