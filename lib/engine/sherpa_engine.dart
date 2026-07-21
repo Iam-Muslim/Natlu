@@ -17,11 +17,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
+import '../utils/debug_logger.dart';
 
 class TranscriptionResult {
   final String text;
@@ -158,9 +158,11 @@ class SherpaEngine {
         final int startTime = message['startTime'] as int;
         final int latency = DateTime.now().millisecondsSinceEpoch - startTime;
         if (kDebugMode) {
-          debugPrint(
-            '[ASR] ⚡ ${latency}ms | "${message['text']}" | final=${message['isFinal']}',
-          );
+          DebugLogger.updateAsrBuffer(message['text'] as String);
+          DebugLogger.printStateIfChanged();
+          if (message['isFinal'] == true) {
+            DebugLogger.log('ASR', '⚡ Endpoint detected (${latency}ms)');
+          }
         }
         _outputController.add(
           TranscriptionResult(
@@ -222,8 +224,6 @@ class SherpaEngine {
     });
   }
 
-
-
   // ─── Isolate ──────────────────────────────────────────────────────────────
   static void _isolateEntry(SendPort mainSendPort) {
     initBindings();
@@ -233,7 +233,9 @@ class SherpaEngine {
 
     OnlineRecognizer? recognizer;
     OnlineStream? stream;
-    final Float32List primingBuffer = Float32List(4800); // 300ms pre-roll silence initialized once
+    final Float32List primingBuffer = Float32List(
+      4800,
+    ); // 300ms pre-roll silence initialized once
 
     port.listen((message) {
       if (message is! _IsolateMessage) return;
@@ -256,21 +258,24 @@ class SherpaEngine {
                       model: paths['modelPath']!,
                     ),
                     tokens: paths['tokensPath']!,
-                    numThreads: 2, // 2 threads gives ~40% latency reduction on mobile multi-core ARM chips
+                    numThreads:
+                        2, // 2 threads gives ~40% latency reduction on mobile multi-core ARM chips
                     modelType: 'zipformer2_ctc',
                     provider: provider,
                     debug: kDebugMode,
                   ),
-                  enableEndpoint: true,
-                  rule1MinTrailingSilence: 50.0, // Silence after speech (changed to 50s)
-                  rule2MinTrailingSilence: 50.0, // Silence before speech / breathing (changed to 50s)
-                  rule3MinUtteranceLength: 99999.0, // Effectively INFINITE (never cut off active speech)
+                  enableEndpoint: false,
+                  rule1MinTrailingSilence: 2.4, 
+                  rule2MinTrailingSilence: 1.2, 
+                  rule3MinUtteranceLength: 99999.0, 
                 ),
               );
             }
 
             try {
-              recognizer = tryCreateRecognizer(Platform.isAndroid ? 'xnnpack' : 'cpu');
+              recognizer = tryCreateRecognizer(
+                Platform.isAndroid ? 'xnnpack' : 'cpu',
+              );
             } catch (providerError) {
               if (Platform.isAndroid) {
                 // Fallback gracefully to 'cpu' if xnnpack/NEON is unsupported on this chipset
@@ -281,6 +286,14 @@ class SherpaEngine {
             }
 
             stream = recognizer!.createStream();
+            
+            // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
+            // so the zeros prime the Zipformer attention cache (left_context) for the VERY FIRST utterance!
+            stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
+            while (recognizer!.isReady(stream!)) {
+              recognizer!.decode(stream!);
+            }
+            
             mainSendPort.send('INIT_DONE');
           } catch (e) {
             mainSendPort.send('INIT_ERROR:$e');
@@ -304,10 +317,7 @@ class SherpaEngine {
               rawBytes.lengthInBytes ~/ 4,
             );
 
-            stream!.acceptWaveform(
-              sampleRate: 16000,
-              samples: floats,
-            );
+            stream!.acceptWaveform(sampleRate: 16000, samples: floats);
           }
 
           while (recognizer!.isReady(stream!)) {
@@ -346,10 +356,7 @@ class SherpaEngine {
             recognizer!.reset(stream!);
             // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
             // so the zeros prime the Zipformer attention cache (left_context) without delaying incoming speech!
-            stream!.acceptWaveform(
-              sampleRate: 16000,
-              samples: primingBuffer,
-            );
+            stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
@@ -360,10 +367,7 @@ class SherpaEngine {
             recognizer!.reset(stream!);
             // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
             // so the zeros prime the Zipformer attention cache (left_context) without delaying incoming speech!
-            stream!.acceptWaveform(
-              sampleRate: 16000,
-              samples: primingBuffer,
-            );
+            stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }

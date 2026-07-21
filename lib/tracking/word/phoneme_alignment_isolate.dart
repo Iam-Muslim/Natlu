@@ -6,6 +6,7 @@ import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'quran_normalizer.dart';
 import 'phoneme_matrix.dart';
+import '../../utils/debug_logger.dart';
 
 ///
 /// FILE ROLE: Orchestrator / Thread Manager / App State
@@ -74,7 +75,8 @@ class PhonemeAlignmentIsolate {
           // A word was successfully matched in the background! Send it to the UI.
           _wordStreamController.add(message as Map<String, dynamic>);
         } else if (message['event'] == 'debug') {
-          print('🧵 [ISOLATE] ${message['message']}');
+          DebugLogger.updateAsrBuffer(message['asr_buffer'] as String? ?? '');
+          DebugLogger.log('DP', message['message'] as String);
         }
       }
     });
@@ -213,7 +215,11 @@ class DictationSequencer {
   DictationSequencer(this.mainSendPort);
 
   void debugLog(String message) {
-    mainSendPort.send({'event': 'debug', 'message': message});
+    mainSendPort.send({
+      'event': 'debug', 
+      'message': message,
+      'asr_buffer': asrWindow
+    });
   }
 
   /// --------------------------------------------------------------------------
@@ -384,9 +390,12 @@ class DictationSequencer {
       // the user could have possibly spoken based on the size of the audio buffer.
       // We assume ~5 phonemes per word on average.
       int estWords = max(1, (m / 5.0).round());
-      int lookaheadWords = 2; // Extra buffer just to be safe
+      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
 
       int endWordLimit = targetWordCursor + estWords + lookaheadWords;
+      if (trackingStrictness == 'easy') {
+        endWordLimit = targetWordCursor; // Current word only
+      }
       if (endWordLimit > wordBoundaries.length - 1) {
         endWordLimit = wordBoundaries.length - 1;
       }
@@ -404,6 +413,8 @@ class DictationSequencer {
       }
 
       if (winStartChunk == -1) break;
+
+      debugLog('🔍 [WINDOW] Analyzing reference chunks [$winStartChunk..${winEndChunk - 1}] (Words $targetWordCursor..$endWordLimit). ASR buffer size: $m chunks.');
 
       List<String> targetWindow = refChunks.sublist(winStartChunk, winEndChunk);
       List<int> targetWordIds = chunkToWordMap.sublist(
@@ -424,6 +435,8 @@ class DictationSequencer {
       // -----------------------------------------------------------------------
       // The Engine Call
       // -----------------------------------------------------------------------
+      final stopwatch = Stopwatch()..start();
+      
       // We ask the purely mathematical ForwardDictationMatcher to find a path.
       AlignmentResult? result = _matcher.align(
         currentAsrChunks: asrChunks,
@@ -441,6 +454,11 @@ class DictationSequencer {
         requireStableTail: isTajweed,
         debugLog: debugLog,
       );
+
+      stopwatch.stop();
+      if (result != null || stopwatch.elapsedMilliseconds > 2) {
+         debugLog('⏱️ [ISOLATE] DP Matrix calculated in ${stopwatch.elapsedMilliseconds}ms');
+      }
 
       // If a path was successfully found below the penalty threshold...
       if (result != null) {

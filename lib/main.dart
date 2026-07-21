@@ -36,6 +36,7 @@ import 'audio/audio_processor.dart';
 import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
 import 'tracking/ayah_search/voice_search_controller.dart';
+import 'utils/debug_logger.dart';
 
 // //logs
 List<String> globalSessionLogs = [];
@@ -56,7 +57,7 @@ void main() async {
             avAudioSessionMode: AVAudioSessionMode.measurement,
           ));
         } catch (e) {
-          debugPrint('Failed to configure AudioSession: $e');
+          DebugLogger.logSimple('AudioSession', 'Failed to configure AudioSession: $e');
         }
       }
 
@@ -81,7 +82,7 @@ void main() async {
         try {
           await FlutterDisplayMode.setHighRefreshRate();
         } catch (e) {
-          debugPrint('Failed to set high refresh rate: $e');
+          DebugLogger.logSimple('DisplayMode', 'Failed to set high refresh rate: $e');
         }
       }
 
@@ -89,7 +90,7 @@ void main() async {
       runApp(const QuranApp());
     },
     (error, stack) {
-      debugPrint('Uncaught Error: $error');
+      DebugLogger.logSimple('Error', 'Uncaught Error: $error');
     },
     zoneSpecification: ZoneSpecification(
       print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
@@ -168,7 +169,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     // Global subscription for Voice Search text and Endpoint auto-stopping
     _engine.transcriptionStream.listen((res) {
       if (_isRecording && res.isFinal && mounted) {
-        debugPrint('[Orchestrator] Auto-stopping recording due to Sherpa Endpoint (10s silence)');
+        DebugLogger.log('Orchestrator', 'Auto-stopping recording due to Sherpa Endpoint (10s silence)');
         _toggleRecord();
       }
 
@@ -183,8 +184,9 @@ class _OrchestratorState extends State<_Orchestrator> {
             // Unique match found! Bypass VAD and jump immediately.
             _stopVoiceSearch(precalculatedResult: rtResult);
           } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
-            debugPrint(
-              '[VoiceSearch] Auto-stopping search due to Sherpa Endpoint (silence detected)',
+            DebugLogger.log(
+              'VoiceSearch',
+              'Auto-stopping search due to Sherpa Endpoint (silence detected)',
             );
             _stopVoiceSearch();
           }
@@ -204,7 +206,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         await InAppUpdate.performImmediateUpdate();
       }
     } catch (e) {
-      debugPrint("Update check failed: $e");
+      DebugLogger.logSimple('Update', "Update check failed: $e");
     }
   }
 
@@ -249,7 +251,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       if (mounted) setState(() => _isInit = false);
     } catch (e) {
-      debugPrint('❌ INIT: $e');
+      DebugLogger.logSimple('INIT', '❌ Error: $e');
       if (mounted) setState(() => _initStatus = 'Error: $e');
     }
   }
@@ -262,7 +264,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     try {
       if (_isRecording) {
         // Get any remaining audio in the pipeline
-        await _audio.stopAndGetAudio();
+        await _audio.stop();
         // if (tail.isNotEmpty) {
         //   _ctrl?.feed(tail, isFinal: true);
         //   // Allow the background Isolate time to finish inference
@@ -297,13 +299,13 @@ class _OrchestratorState extends State<_Orchestrator> {
                     _ctrl?.feed(chunk, isFinal: isFinal),
               )
               .catchError((e) {
-                debugPrint('❌ AUDIO ERROR: $e');
+                DebugLogger.logSimple('AUDIO', '❌ ERROR: $e');
                 if (mounted) setState(() => _isRecording = false);
               });
         }
       }
     } catch (e) {
-      debugPrint('❌ RECORD ERROR: $e');
+      DebugLogger.logSimple('RECORD', '❌ ERROR: $e');
       if (mounted)
         setState(() {
           _isRecording = false;
@@ -353,7 +355,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       _voiceSearchSilenceTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
         if (_isVoiceSearching && _voiceSearchAsrText.trim().isNotEmpty) {
           if (DateTime.now().millisecondsSinceEpoch - _lastVoiceActivityTime >= 800) {
-            debugPrint('[VoiceSearch] 800ms silence detected. Forcing search stop.');
+            DebugLogger.log('VoiceSearch', '800ms silence detected. Forcing search stop.');
             _engine.transcribe(Float32List(0), isFinal: true);
             _voiceSearchSilenceTimer?.cancel();
           }
@@ -371,13 +373,13 @@ class _OrchestratorState extends State<_Orchestrator> {
             },
           )
           .catchError((e) {
-            debugPrint('❌ AUDIO ERROR in Voice Search: $e');
+            DebugLogger.logSimple('AUDIO', '❌ ERROR in Voice Search: $e');
             if (mounted) setState(() => _isVoiceSearching = false);
           });
 
       // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
     } catch (e) {
-      debugPrint('❌ VOICE SEARCH START ERROR: $e');
+      DebugLogger.logSimple('VOICE_SEARCH', '❌ START ERROR: $e');
       if (mounted) setState(() => _isVoiceSearching = false);
     } finally {
       _isToggling = false;
@@ -390,7 +392,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     try {
       _voiceSearchSilenceTimer?.cancel();
-      await _audio.stopAndGetAudio();
+      await _audio.stop();
       _engine.resetBuffer();
       await WakelockPlus.disable();
 
@@ -436,7 +438,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         }
       }
     } catch (e) {
-      debugPrint('❌ VOICE SEARCH STOP ERROR: $e');
+      DebugLogger.logSimple('VOICE_SEARCH', '❌ STOP ERROR: $e');
     } finally {
       _isToggling = false;
     }

@@ -30,6 +30,7 @@ import '../../engine/sherpa_engine.dart';
 import '../../data/quran_data.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
+import '../../utils/debug_logger.dart';
 
 // ── State machine ────────────────────────────────────────────────────────────
 
@@ -174,7 +175,7 @@ class HighlightingController extends ChangeNotifier {
       }
       _alignmentIsolate.setup(tokens);
     } catch (e) {
-      debugPrint('Failed to load tokens for matrix preheat: $e');
+      DebugLogger.logSimple('HighlightingController', 'Failed to load tokens for matrix preheat: $e');
     }
     
     _wordSub = _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
@@ -190,8 +191,8 @@ class HighlightingController extends ChangeNotifier {
 
     String strictness = AppState.instance.trackingStrictness.name;
     int lookaheadWords = strictness == 'strict'
-        ? 1
-        : (strictness == 'easy' ? 3 : 2);
+        ? 3
+        : (strictness == 'easy' ? 0 : 2); // default
 
     final nextVerse = repository.getNextVerse(verse.surah, verse.ayah);
     if (nextVerse != null) {

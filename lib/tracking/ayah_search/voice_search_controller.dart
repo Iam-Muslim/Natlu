@@ -18,6 +18,7 @@
 import 'package:the_great_quran/tracking/word/quran_normalizer.dart';
 import '../../engine/sherpa_engine.dart';
 import 'phonetic_search.dart';
+import '../../utils/debug_logger.dart';
 
 class AnchorResult {
   final int surah;
@@ -45,12 +46,12 @@ class VoiceSearchController {
     if (_search != null || _isIndexLoading) return;
     _isIndexLoading = true;
     try {
-      print('[VoiceSearch] Loading PhoneticSearch index...');
+      DebugLogger.logSimple('VoiceSearch', 'Loading PhoneticSearch index...');
       _search = PhoneticSearch();
       await _search!.load();
-      print('[VoiceSearch] Index loaded. Ready for search.');
+      DebugLogger.logSimple('VoiceSearch', 'Index loaded. Ready for search.');
     } catch (e) {
-      print('[VoiceSearch] ERROR: Failed to load phonetic search assets: $e');
+      DebugLogger.logSimple('VoiceSearch', 'ERROR: Failed to load phonetic search assets: $e');
       _search = null;
     } finally {
       _isIndexLoading = false;
@@ -107,7 +108,7 @@ class VoiceSearchController {
             results.sort((a, b) => a.distance.compareTo(b.distance));
             final bestMatch = results.first;
             
-            print('[VoiceSearch] ⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
+            DebugLogger.log('VoiceSearch', '⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
             
             finalResult = AnchorResult(
               surah: bestMatch.start.surahIdx,
@@ -143,17 +144,17 @@ class VoiceSearchController {
   ///   - No Ayah got enough votes
   Future<AnchorResult?> stopSearch(String finalAsrText) async {
     if (_search == null) {
-      print('[VoiceSearch] Search failed: index not loaded.');
+      DebugLogger.logSimple('VoiceSearch', 'Search failed: index not loaded.');
       return null;
     }
 
     // Normalize input text.
     String normText = QuranNormalizer.normalizeWithTashkeel(finalAsrText);
-    print('[VoiceSearch] Normalized input: "$normText"');
+    DebugLogger.log('VoiceSearch', 'Normalized input: "$normText"');
     
     // If we're forcing a stop (VAD/button), we still want to guard against completely empty/garbage searches
     if (normText.length < 4) {
-      print('[VoiceSearch] Search aborted: input too short after normalization.');
+      DebugLogger.log('VoiceSearch', 'Search aborted: input too short after normalization.');
       return null;
     }
 
@@ -161,7 +162,7 @@ class VoiceSearchController {
     final results = await _search!.searchIsolated(normText, errorRatio: 0.18);
 
     if (results.isEmpty) {
-      print('[VoiceSearch] No match found.');
+      DebugLogger.log('VoiceSearch', 'No match found.');
       return null;
     }
 
@@ -175,7 +176,7 @@ class VoiceSearchController {
       ayah: bestMatch.start.ayahIdx,
     );
 
-    print('[VoiceSearch] Result: Surah ${result.surah}, Ayah ${result.ayah}');
+    DebugLogger.log('VoiceSearch', 'Result: Surah ${result.surah}, Ayah ${result.ayah}');
     return result;
   }
 }

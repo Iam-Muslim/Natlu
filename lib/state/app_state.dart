@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/debug_logger.dart';
 
 // Supported UI languages.
 enum AppLanguage { ar, en }
@@ -186,7 +187,7 @@ class AppState extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      debugPrint('Failed to load settings: $e');
+      DebugLogger.logSimple('AppState', 'Failed to load settings: $e');
     }
   }
 }

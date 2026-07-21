@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
+import '../utils/debug_logger.dart';
 
 import '../state/app_state.dart';
 import '../tracking/word/highlighting_controller.dart';
@@ -476,142 +477,162 @@ class _TrackingScreenState extends State<TrackingScreen>
           mainAxisSize: MainAxisSize.max,
           children: [
             // ── Surah Selector ──
-            SizedBox(
-              width: 160,
-              child: GestureDetector(
-                onTap: _showSurahPicker,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: c.gold.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Builder(
-                          builder: (context) {
-                            final displayVerses = widget.controller.repository
-                                .getSurah(widget.controller.targetSurah);
-                            return FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: app.isArabic
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Text(
-                                app.isArabic
-                                    ? displayVerses.first.surahName
-                                    : displayVerses.first.surahNameEn,
-                                style: TextStyle(
-                                  fontFamily: app.isArabic ? 'HafsSmart' : null,
-                                  color: c.gold,
-                                  fontSize: app.isArabic ? 18 : 15,
-                                  fontWeight: FontWeight.w700,
+            Flexible(
+              flex: 4,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: GestureDetector(
+                  onTap: _showSurahPicker,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.gold.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Builder(
+                            builder: (context) {
+                              final displayVerses = widget.controller.repository
+                                  .getSurah(widget.controller.targetSurah);
+                              return FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: app.isArabic
+                                    ? Alignment.centerRight
+                                    : Alignment.centerLeft,
+                                child: Text(
+                                  app.isArabic
+                                      ? displayVerses.first.surahName
+                                      : displayVerses.first.surahNameEn,
+                                  style: TextStyle(
+                                    fontFamily: app.isArabic
+                                        ? 'HafsSmart'
+                                        : null,
+                                    color: c.gold,
+                                    fontSize: app.isArabic ? 18 : 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: c.gold,
-                        size: 20,
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: c.gold,
+                          size: 20,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
 
             const SizedBox(width: 8),
-            
+
             // ── Action Buttons ──
             Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildActionBtn(
-                    icon: Icons.auto_stories_rounded,
-                    label: app.isArabic ? 'قراءة' : 'Read',
-                    color: c.text,
-                    onTap: _toggleAutoScroll,
-                  ),
-                  _buildActionBtn(
-                    icon: app.isBlurMode
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    label: app.isArabic ? 'إخفاء' : 'Hide',
-                    color: app.isBlurMode ? c.green : c.text,
-                    onTap: app.toggleBlurMode,
-                  ),
-                  _buildActionBtn(
-                    icon: Icons.format_color_text_rounded,
-                    label: app.isArabic ? 'تجويد' : 'Tajweed',
-                    color: app.currentMode == AppMode.tajweed ? c.green : c.text,
-                    onTap: () {
-                      final newMode = app.currentMode == AppMode.tajweed
-                          ? AppMode.wordChecker
-                          : AppMode.tajweed;
-                      app.setMode(newMode);
-                      widget.controller.setTajweedMode(newMode == AppMode.tajweed);
+              flex: 6,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionBtn(
+                      icon: Icons.auto_stories_rounded,
+                      label: app.isArabic ? 'قراءة' : 'Read',
+                      color: c.text,
+                      onTap: _toggleAutoScroll,
+                    ),
+                    _buildActionBtn(
+                      icon: app.isBlurMode
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      label: app.isArabic ? 'إخفاء' : 'Hide',
+                      color: app.isBlurMode ? c.green : c.text,
+                      onTap: app.toggleBlurMode,
+                    ),
+                    _buildActionBtn(
+                      icon: Icons.format_color_text_rounded,
+                      label: app.isArabic ? 'تجويد' : 'Tajweed',
+                      color: app.currentMode == AppMode.tajweed
+                          ? c.green
+                          : c.text,
+                      onTap: () {
+                        final newMode = app.currentMode == AppMode.tajweed
+                            ? AppMode.wordChecker
+                            : AppMode.tajweed;
+                        app.setMode(newMode);
+                        widget.controller.setTajweedMode(
+                          newMode == AppMode.tajweed,
+                        );
 
-                      ScaffoldMessenger.of(context).clearSnackBars();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            app.currentMode == AppMode.tajweed
-                                ? (app.isArabic
-                                      ? 'تم تفعيل وضع التجويد'
-                                      : 'Tajweed Mode Enabled')
-                                : (app.isArabic
-                                      ? 'تم إيقاف وضع التجويد'
-                                      : 'Tajweed Mode Disabled'),
-                            style: TextStyle(color: c.text),
-                          ),
-                          duration: const Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          backgroundColor: c.surfaceHigh,
-                        ),
-                      );
-                    },
-                  ),
-                  _buildActionBtn(
-                    icon: Icons.settings_rounded,
-                    label: app.isArabic ? 'إعدادات' : 'Settings',
-                    color: c.text,
-                    onTap: _showSettingsDialog,
-                    // //logs
-                    onLongPress: () async {
-                      try {
+                        ScaffoldMessenger.of(context).clearSnackBars();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Preparing logs...'),
-                          ), // //logs
+                          SnackBar(
+                            content: Text(
+                              app.currentMode == AppMode.tajweed
+                                  ? (app.isArabic
+                                        ? 'تم تفعيل وضع التجويد'
+                                        : 'Tajweed Mode Enabled')
+                                  : (app.isArabic
+                                        ? 'تم إيقاف وضع التجويد'
+                                        : 'Tajweed Mode Disabled'),
+                              style: TextStyle(color: c.text),
+                            ),
+                            duration: const Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            backgroundColor: c.surfaceHigh,
+                          ),
                         );
-                        String allLogs = globalSessionLogs.join('\n');
-                        final directory = await getTemporaryDirectory();
-                        final logFile = File(
-                          '${directory.path}/recite_quran_logs.txt',
-                        );
-                        await logFile.writeAsString(allLogs);
-                        // ignore: deprecated_member_use
-                        await Share.shareXFiles([XFile(logFile.path)], text: 'Logs');
-                      } catch (e) {
-                        debugPrint("Error: $e");
-                      }
-                    },
-                  ),
-                ],
+                      },
+                    ),
+                    _buildActionBtn(
+                      icon: Icons.settings_rounded,
+                      label: app.isArabic ? 'إعدادات' : 'Settings',
+                      color: c.text,
+                      onTap: _showSettingsDialog,
+                      // //logs
+                      onLongPress: () async {
+                        try {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Preparing logs...'),
+                            ), // //logs
+                          );
+                          String allLogs = globalSessionLogs.join('\n');
+                          final directory = await getTemporaryDirectory();
+                          final logFile = File(
+                            '${directory.path}/recite_quran_logs.txt',
+                          );
+                          await logFile.writeAsString(allLogs);
+                          // ignore: deprecated_member_use
+                          await Share.shareXFiles([
+                            XFile(logFile.path),
+                          ], text: 'Logs');
+                        } catch (e) {
+                          DebugLogger.logSimple(
+                            'TrackingScreen',
+                            "Error preparing logs: $e",
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

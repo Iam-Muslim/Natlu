@@ -354,8 +354,11 @@ class ForwardDictationMatcher {
 
           // If the final score beats the strictness threshold...
           if (score <= threshold) {
+            int startWord = targetWordIds[stJ < n ? stJ : j - 1];
+            int endWord = targetWordIds[j - 1];
+            String candidateStr = targetWindow.sublist(stJ, j).join('');
             debugLog?.call(
-              'Math: score=$score (normDist=$normDist [cost=${currCost[j]}/denom=$denom], prior=$prior)',
+              '🧮 [CANDIDATE] Words $startWord..$endWord ("$candidateStr") | Score: ${score.toStringAsFixed(3)} (Acst: ${normDist.toStringAsFixed(3)}, Prior: ${prior.toStringAsFixed(3)})',
             );
 
             // [EDGE-BOUND TAIL STABILITY RULE]
@@ -483,6 +486,16 @@ class ForwardDictationMatcher {
       // We built the list by walking backwards, so we must reverse it before returning!
       List<PhonemeGroupAlignment> finalTrace = trace.reversed.toList();
 
+      // Log the exact Levenshtein path
+      String pathStr = finalTrace.map((a) {
+        if (a.opType == 'equal') return 'M';
+        if (a.opType == 'replace') return 'S';
+        if (a.opType == 'insert') return 'I';
+        if (a.opType == 'delete') return 'D';
+        return '?';
+      }).join('-');
+      debugLog?.call('🗺️ [DP PATH] $pathStr');
+
       // ═════════════════════════════════════════════════════════════════════════
       // [POST-PROCESSING] NATIVE WORD PARSING & STRICTNESS CHECK
       // ═════════════════════════════════════════════════════════════════════════
@@ -504,6 +517,7 @@ class ForwardDictationMatcher {
           {}; // Total penalty score (insertions, deletions, replacements) for each word
       Map<int, double> wordTailCost =
           {}; // [Tail Anchor] Tracks the cost of the final reference phoneme for each word
+      Map<int, String> heardWordStr = {};
 
       // Determine the Word ID where the winning path started.
       int matchedWordStart = targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
@@ -532,10 +546,13 @@ class ForwardDictationMatcher {
           }
         }
 
-        if (align.predIdx >= 0)
+        if (align.predIdx >= 0) {
           asrLens[currentWId] = (asrLens[currentWId] ?? 0) + 1;
-        if (align.refIdx >= 0)
+          heardWordStr[currentWId] = (heardWordStr[currentWId] ?? '') + currentAsrChunks[bestStartI + align.predIdx];
+        }
+        if (align.refIdx >= 0) {
           refLens[currentWId] = (refLens[currentWId] ?? 0) + 1;
+        }
 
         if (align.opType == 'insert') {
           penalties[currentWId] = (penalties[currentWId] ?? 0.0) + costIns;
@@ -572,20 +589,25 @@ class ForwardDictationMatcher {
         bool passesTailAnchor = !requireStableTail || tailCost == 0.0;
 
         // If the word passes the strictness threshold on its own, it is verified!
+        String refWordStr = '';
+        for (int k = 0; k < targetWindow.length; k++) {
+          if (targetWordIds[k] == wId) refWordStr += targetWindow[k];
+        }
+        String heardStr = heardWordStr[wId] ?? '';
+
         if (wordScore <= threshold && passesTailAnchor) {
           verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
+          debugLog?.call(
+            '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Threshold)',
+          );
         } else {
           // If the word score is too high, it was a "mumbled" word that the DP
           // tried to drag across the finish line. We drop it here!
-          String dropWordStr = '';
-          for (int k = 0; k < targetWindow.length; k++) {
-            if (targetWordIds[k] == wId) dropWordStr += targetWindow[k];
-          }
           String reason = wordScore > threshold
               ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
               : '(Failed Tail Anchor: TailCost=$tailCost)';
           debugLog?.call(
-            '⚠️ [DP STRICTNESS] Dropping Word "$dropWordStr" ($wId) $reason',
+            '❌ REFUSE: ref word is "$refWordStr", heard word is "$heardStr" | $reason',
           );
         }
       }
