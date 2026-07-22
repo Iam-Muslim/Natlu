@@ -1,0 +1,34 @@
+# --- Large / license-gated assets (fetch these locally, see SETUP.md) ---
+
+# Zipformer2-CTC phoneme ASR model, 69 MB.
+# Gated Hugging Face download (Muno459/zipformer_p-quran) under a custom license,
+# and over GitHub's 50 MB file warning. The parent repo already excludes its own
+# copy of this file — keep it out of the PR.
+ReciteQuran-iOS-Native/Resources/Models/quran_phoneme_zipformer.int8.onnx
+
+# Prebuilt sherpa-onnx / onnxruntime static libraries, ~178 MB total
+# (one .a is 80 MB). Vendored binaries do not belong in git — SETUP.md
+# explains how to fetch them.
+LocalSherpaOnnx/XCFrameworks/
+
+# --- Xcode user state ---
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+.swiftpm/xcode/xcuserdata/
+
+# --- Build output ---
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# --- SwiftPM ---
+# Package.resolved is intentionally NOT ignored: it pins dependency versions
+# for reproducible builds. (There are no remote packages today — only the
+# local LocalSherpaOnnx path package — so no file exists yet.)
+.build/
+
+# --- macOS ---
+.DS_Store
