@@ -1,11 +1,7 @@
 /// swift-api-examples/SherpaOnnx.swift
 /// Copyright (c)  2023  Xiaomi Corporation
-/// Modified for Swift Package Manager distribution
 
-import Foundation
-
-@_exported import sherpa_onnx
-
+import Foundation  // For NSString
 
 /// Convert a String from swift to a `const char*` so that we can pass it to
 /// the C language.
@@ -232,6 +228,11 @@ class SherpaOnnxOnlineRecongitionResult {
     return (0..<count).map { index in timestampsPointer[index] }
   }()
 
+  private lazy var _ys_probs: [Float] = {
+    guard let probsPointer = result.pointee.ys_probs else { return [] }
+    return (0..<count).map { index in probsPointer[index] }
+  }()
+
   init(result: UnsafePointer<SherpaOnnxOnlineRecognizerResult>) {
     self.result = result
   }
@@ -250,6 +251,8 @@ class SherpaOnnxOnlineRecongitionResult {
   var tokens: [String] { _tokens }
 
   var timestamps: [Float] { _timestamps }
+
+  var ysProbs: [Float] { _ys_probs }
 }
 
 class SherpaOnnxRecognizer {
@@ -1378,10 +1381,25 @@ class SherpaOnnxOfflineTtsWrapper {
   /// A pointer to the underlying counterpart in C
   let tts: OpaquePointer!
 
+  /// Whether the model is a Supertonic TTS model
+  let isSupertonic: Bool
+
+  /// The sample rate of the generated audio
+  var sampleRate: Int32 {
+    return SherpaOnnxOfflineTtsSampleRate(tts)
+  }
+
+  /// The number of speakers supported by the model
+  var numSpeakers: Int32 {
+    return SherpaOnnxOfflineTtsNumSpeakers(tts)
+  }
+
   /// Constructor taking a model config
   init(
     config: UnsafePointer<SherpaOnnxOfflineTtsConfig>!
   ) {
+    isSupertonic = config.pointee.model.supertonic.duration_predictor != nil
+      && config.pointee.model.supertonic.duration_predictor.pointee != 0
     tts = SherpaOnnxCreateOfflineTts(config)
   }
 
@@ -1861,6 +1879,10 @@ class SherpaOnnxOnlineStreamWrapper {
     if let impl {
       SherpaOnnxDestroyOnlineStream(impl)
     }
+  }
+
+  func setOption(key: String, value: String) {
+    SherpaOnnxOnlineStreamSetOption(impl, toCPointer(key), toCPointer(value))
   }
 
   func acceptWaveform(samples: [Float], sampleRate: Int = 16000) {

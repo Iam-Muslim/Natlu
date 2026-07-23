@@ -541,20 +541,18 @@ class _TrackingScreenState extends State<TrackingScreen>
             // ── Action Buttons ──
             Expanded(
               flex: 6,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildActionBtn(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildActionBtn(
                       icon: Icons.auto_stories_rounded,
                       label: app.isArabic ? 'قراءة' : 'Read',
                       color: c.text,
                       onTap: _toggleAutoScroll,
                     ),
-                    _buildActionBtn(
+                  ),
+                  Expanded(
+                    child: _buildActionBtn(
                       icon: app.isBlurMode
                           ? Icons.visibility_off_rounded
                           : Icons.visibility_rounded,
@@ -562,7 +560,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                       color: app.isBlurMode ? c.green : c.text,
                       onTap: app.toggleBlurMode,
                     ),
-                    _buildActionBtn(
+                  ),
+                  Expanded(
+                    child: _buildActionBtn(
                       icon: Icons.format_color_text_rounded,
                       label: app.isArabic ? 'تجويد' : 'Tajweed',
                       color: app.currentMode == AppMode.tajweed
@@ -600,7 +600,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                         );
                       },
                     ),
-                    _buildActionBtn(
+                  ),
+                  Expanded(
+                    child: _buildActionBtn(
                       icon: Icons.settings_rounded,
                       label: app.isArabic ? 'إعدادات' : 'Settings',
                       color: c.text,
@@ -631,8 +633,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                         }
                       },
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

@@ -41,7 +41,7 @@ class DebugLogger {
   static String _padRight(String text, int width) {
     int vLen = _getVisualLength(text);
     if (vLen > width) {
-      return text.substring(0, width - 3) + '...';
+      return '${text.substring(0, width - 3)}...';
     }
     return text + (' ' * (width - vLen));
   }
@@ -49,7 +49,7 @@ class DebugLogger {
   static String _getRecentAsr(String text, int maxLen) {
     if (text.length <= maxLen) return text;
     // Keep the most recent characters (the end of the string)
-    return '...' + text.substring(text.length - maxLen + 3);
+    return '...${text.substring(text.length - maxLen + 3)}';
   }
 
   static void printStateIfChanged() {

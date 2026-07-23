@@ -16,6 +16,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -30,12 +31,16 @@ class TranscriptionResult {
   final List<String> tokens;
   final List<double> timestamps;
 
+  // Newly merged SherpaONNX deep metrics
+  final List<double> ysProbs;
+
   TranscriptionResult({
     required this.text,
     this.isFinal = false,
     this.startTime = 0,
     this.tokens = const [],
     this.timestamps = const [],
+    this.ysProbs = const [],
   });
 }
 
@@ -157,20 +162,50 @@ class SherpaEngine {
       } else if (message is Map) {
         final int startTime = message['startTime'] as int;
         final int latency = DateTime.now().millisecondsSinceEpoch - startTime;
+
+        final ysProbs = List<double>.from(message['ysProbs'] ?? []);
+        final text = message['text'] as String;
+        final bool isFinal = message['isFinal'] as bool;
+
         if (kDebugMode) {
-          DebugLogger.updateAsrBuffer(message['text'] as String);
+          DebugLogger.updateAsrBuffer(text);
           DebugLogger.printStateIfChanged();
-          if (message['isFinal'] == true) {
+
+          if (isFinal) {
             DebugLogger.log('ASR', '⚡ Endpoint detected (${latency}ms)');
           }
+
+          DebugLogger.log('ASR-METRICS', '--- VERIFYING SHERPA METRICS ---');
+          DebugLogger.log('ASR-METRICS', 'RAW Tokens:  ${message['tokens']}');
+          DebugLogger.log('ASR-METRICS', 'RAW ysProbs: $ysProbs');
+          DebugLogger.log('ASR-METRICS', '---------------------------------');
+
+          // Debug Print: Check if any token had unusually low acoustic confidence
+          if (ysProbs.isNotEmpty) {
+            final minLogProb = ysProbs.reduce(
+              (curr, next) => curr < next ? curr : next,
+            );
+            // Convert log-probability to a percentage (e.g., -0.001818 -> 0.998 -> 99.8%)
+            final double minConfidencePercentage = exp(minLogProb) * 100;
+
+            // Now we can use normal percentages. If confidence drops below 80%:
+            if (minConfidencePercentage < 80.0) {
+              DebugLogger.log(
+                'ASR-CONFIDENCE',
+                '⚠️ Low confidence detected: ${minConfidencePercentage.toStringAsFixed(1)}%',
+              );
+            }
+          }
         }
+
         _outputController.add(
           TranscriptionResult(
-            text: message['text'] as String,
-            isFinal: message['isFinal'] as bool,
-            startTime: message['startTime'] as int,
+            text: text,
+            isFinal: isFinal,
+            startTime: startTime,
             tokens: List<String>.from(message['tokens'] ?? []),
             timestamps: List<double>.from(message['timestamps'] ?? []),
+            ysProbs: ysProbs,
           ),
         );
       }
@@ -265,9 +300,9 @@ class SherpaEngine {
                     debug: kDebugMode,
                   ),
                   enableEndpoint: false,
-                  rule1MinTrailingSilence: 2.4, 
-                  rule2MinTrailingSilence: 1.2, 
-                  rule3MinUtteranceLength: 99999.0, 
+                  rule1MinTrailingSilence: 2.4,
+                  rule2MinTrailingSilence: 1.2,
+                  rule3MinUtteranceLength: 99999.0,
                 ),
               );
             }
@@ -286,14 +321,14 @@ class SherpaEngine {
             }
 
             stream = recognizer!.createStream();
-            
+
             // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
             // so the zeros prime the Zipformer attention cache (left_context) for the VERY FIRST utterance!
             stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
-            
+
             mainSendPort.send('INIT_DONE');
           } catch (e) {
             mainSendPort.send('INIT_ERROR:$e');
@@ -323,6 +358,22 @@ class SherpaEngine {
           while (recognizer!.isReady(stream!)) {
             recognizer!.decode(stream!);
           }
+          // ════════════════════════════════════════════════════════════════════════════
+          // [CROSS-PLATFORM COMPATIBILITY]
+          // If the iOS/Web version uses the OFFICIAL unmodified sherpa_onnx package,
+          // the `OnlineRecognizerResult` class will NOT have the `ysProbs` property.
+          // To prevent Dart from throwing a compiler error or crashing the app, we
+          // cast the result to `dynamic` and try to extract it at runtime. If it fails,
+          // we gracefully return an empty array `[]`.
+          // ════════════════════════════════════════════════════════════════════════════
+          List<double> extractYsProbs(dynamic result) {
+            try {
+              return List<double>.from(result.ysProbs);
+            } catch (_) {
+              return [];
+            }
+          }
+
           final partial = recognizer!.getResult(stream!);
           bool endpointDetected = recognizer!.isEndpoint(stream!);
 
@@ -332,6 +383,7 @@ class SherpaEngine {
               'text': partial.text,
               'tokens': partial.tokens,
               'timestamps': partial.timestamps,
+              'ysProbs': extractYsProbs(partial),
               'isFinal': false,
               'startTime': startTime,
             });
@@ -350,6 +402,7 @@ class SherpaEngine {
               'text': final_.text,
               'tokens': final_.tokens,
               'timestamps': final_.timestamps,
+              'ysProbs': extractYsProbs(final_),
               'isFinal': true,
               'startTime': startTime,
             });

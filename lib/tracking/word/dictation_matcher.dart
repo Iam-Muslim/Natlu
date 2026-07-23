@@ -69,6 +69,10 @@ class AlignmentResult {
   /// The words that were successfully matched and passed the strictness threshold.
   final List<WordMatch> words;
 
+  /// The words that failed the strictness threshold, but were shielded from
+  /// turning Red because the ASR confidence was suspiciously low (Case 2 Fault).
+  final List<int> shieldedWords;
+
   AlignmentResult({
     required this.bestI,
     required this.bestJ,
@@ -78,6 +82,7 @@ class AlignmentResult {
     required this.pureAcousticScore,
     required this.trace,
     required this.words,
+    required this.shieldedWords,
   });
 }
 
@@ -97,14 +102,6 @@ class AlignmentResult {
 /// across Ayahs, this engine strictly forces the user to move forward in time.
 /// This prevents the highlight from jumping wildly around the screen.
 class ForwardDictationMatcher {
-  /// The static penalty for completely dropping/skipping a required sound.
-  /// E.g. The reference says 'ب', but the user never said anything.
-  final double costDel = 1.0;
-
-  /// The static penalty for the ASR hallucinating an extra sound.
-  /// E.g. The reference says 'ب', but the ASR heard 'ب س'. The 'س' is an insertion.
-  final double costIns = 1.0;
-
   /// The core mathematical function.
   /// Returns an [AlignmentResult] if a match was found below the threshold.
   /// Returns `null` if the user's speech was too different from the target text.
@@ -131,7 +128,18 @@ class ForwardDictationMatcher {
     /// than this threshold, we reject the match.
     required double threshold,
 
+    /// The penalty for completely dropping/skipping a required sound.
+    /// Can be lowered (e.g., 0.65) to forgive stuttering in Easy Mode.
+    double costDel = 1.0,
+
+    /// The penalty for the ASR hallucinating an extra sound.
+    /// Can be lowered (e.g., 0.65) to forgive insertions in Easy Mode.
+    double costIns = 1.0,
+
     bool requireStableTail = false,
+
+    /// Optional array of log probabilities for ASR forgiveness.
+    List<double>? asrYsProbs,
 
     /// A callback function to print debug information to the Isolate console.
     void Function(String)? debugLog,
@@ -518,6 +526,7 @@ class ForwardDictationMatcher {
       Map<int, double> wordTailCost =
           {}; // [Tail Anchor] Tracks the cost of the final reference phoneme for each word
       Map<int, String> heardWordStr = {};
+      Map<int, List<double>> wordConfs = {}; // <--- Holds exact ysProbs for each word
 
       // Determine the Word ID where the winning path started.
       int matchedWordStart = targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
@@ -525,25 +534,44 @@ class ForwardDictationMatcher {
       // `currentWId` tracks which word the current traceback operation belongs to.
       int currentWId = matchedWordStart;
 
-      // ── Step 1: Iterate the traceback and distribute penalties ──
+      // ── Step 1: Map trace to actual phonetic strings and penalties ──
       for (var align in finalTrace) {
+        
         if (align.refIdx >= 0) {
           int absRefIdx = bestStartJ + align.refIdx;
           if (absRefIdx < targetWordIds.length) {
             currentWId = targetWordIds[absRefIdx];
           }
-          
-          // [Tail Anchor] Constantly overwrite the tail cost for the current word.
-          // Since the trace is sequential, this will ultimately hold the cost of the FINAL reference phoneme.
-          // We ignore 'insert' because insertions don't consume reference phonemes.
-          if (align.opType == 'delete') {
-            wordTailCost[currentWId] = costDel;
-          } else if (align.predIdx >= 0 && align.opType != 'insert') {
-            wordTailCost[currentWId] = PhonemeMatrix.getCost(
-              pIds[bestStartI + align.predIdx],
-              rIds[bestStartJ + align.refIdx],
-            );
-          }
+        }
+
+        // ---------------------------------------------------------------------
+        // [CASE 2 SHIELD] Acoustic Confidence Extraction
+        // ---------------------------------------------------------------------
+        // We only extract confidence if this step mapped to actual ASR audio (predIdx >= 0)
+        // AND if the Sherpa engine actually provided probability metrics (asrYsProbs != null).
+        // Finally, we check that `bestStartI + align.predIdx` (the global audio index)
+        // is safely within the array bounds to prevent an IndexOutOfRangeException crash.
+        if (align.predIdx >= 0 && asrYsProbs != null && (bestStartI + align.predIdx) < asrYsProbs.length) {
+          // Calculate the global index where this exact phoneme lives in the audio array.
+          int globalIndex = bestStartI + align.predIdx;
+          // The engine outputs log-probabilities (e.g. -0.0018). We use `exp()` to convert it to a percentage.
+          double confidencePercentage = exp(asrYsProbs[globalIndex]);
+          // Create an array for this specific Word ID if it doesn't exist yet.
+          wordConfs.putIfAbsent(currentWId, () => []);
+          // Push the exact percentage of this specific letter into the word's array.
+          wordConfs[currentWId]!.add(confidencePercentage);
+        }
+
+        // [Tail Anchor] Constantly overwrite the tail cost for the current word.
+        // Since the trace is sequential, this will ultimately hold the cost of the FINAL reference phoneme.
+        // We ignore 'insert' because insertions don't consume reference phonemes.
+        if (align.opType == 'delete') {
+          wordTailCost[currentWId] = costDel;
+        } else if (align.predIdx >= 0 && align.opType != 'insert') {
+          wordTailCost[currentWId] = PhonemeMatrix.getCost(
+            pIds[bestStartI + align.predIdx],
+            rIds[bestStartJ + align.refIdx],
+          );
         }
 
         if (align.predIdx >= 0) {
@@ -569,6 +597,8 @@ class ForwardDictationMatcher {
 
       // ── Step 2: Evaluate individual word strictness ──
       List<WordMatch> verifiedWords = [];
+      List<int> shieldedWords = [];
+
       for (int wId in asrLens.keys) {
         int asrLen = asrLens[wId] ?? 0;
         int refLen = refLens[wId] ?? 0;
@@ -601,6 +631,37 @@ class ForwardDictationMatcher {
             '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Threshold)',
           );
         } else {
+          // ══════════════════════════════════════════════════════════════════════
+          // [ANDROID ASR FAULT SHIELD - CASE 2 ONLY]
+          // The word failed the strictness threshold (so it's destined to be Red).
+          // However, we must check if the microphone glitched and gave us garbage.
+          // ══════════════════════════════════════════════════════════════════════
+          
+          // Rule 1: Only shield words that are relatively close matches (Score <= 0.65). 
+          // If the score is huge (e.g. >0.80), the user said a completely wrong word.
+          if (wordScore <= 0.65) {
+            // Assume perfect confidence initially, in case no audio was mapped.
+            double minConf = 1.0;
+            
+            // Verify that this word actually had audio letters mapped to it.
+            if (wordConfs[wId] != null && wordConfs[wId]!.isNotEmpty) {
+              // Iterate through all the letters in this word and find the LOWEST confidence.
+              // A single microphone glitch on ONE letter is enough to ruin the entire word.
+              minConf = wordConfs[wId]!.reduce((a, b) => a < b ? a : b);
+            }
+            
+            // Rule 2: If the weakest letter in this word dropped below 80% confidence,
+            // we have absolute proof that the microphone/ASR model failed the user.
+            if (minConf < 0.80) {
+              // Add the Word ID to the `shieldedWords` array. This is a secret message
+              // sent back to the Sequencer explicitly commanding it: "Do not turn me Red!"
+              shieldedWords.add(wId);
+              // Print a clear debug log so developers can trace the interception.
+              debugLog?.call('🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf*100).toStringAsFixed(1)}%)');
+            }
+          }
+          // ══════════════════════════════════════════════════════════════════════
+
           // If the word score is too high, it was a "mumbled" word that the DP
           // tried to drag across the finish line. We drop it here!
           String reason = wordScore > threshold
@@ -632,6 +693,7 @@ class ForwardDictationMatcher {
         pureAcousticScore: bestNormDist,
         trace: finalTrace,
         words: verifiedWords,
+        shieldedWords: shieldedWords,
       );
     }
 
