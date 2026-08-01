@@ -116,6 +116,10 @@ class QuranNormalizer {
   static final String _residualsStr =
       r'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652\u06EB\u0686\u065E\u06E3\u0619\u06DC\u06EA\u0640';
 
+  static bool isResidual(String char) {
+    return RegExp('^[$_residualsStr]\$').hasMatch(char);
+  }
+
   // ── Regex: identical non-residual chars + optional trailing residuals ─────────────
   // This matches Python's: `(?:core_chars+)[residuals]?`
   // We use backreference `\2` to group identical consecutive base characters.

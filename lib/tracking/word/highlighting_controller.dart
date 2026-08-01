@@ -30,6 +30,7 @@ import '../../engine/sherpa_engine.dart';
 import '../../data/quran_data.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
+import 'quran_normalizer.dart';
 import '../../utils/debug_logger.dart';
 
 // ── State machine ────────────────────────────────────────────────────────────
@@ -469,15 +470,13 @@ class HighlightingController extends ChangeNotifier {
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
 
-    _lastProcessedText = '';
-
     if (_isolateStarted) {
-      _setIsolateAyah(verse, forceClear: true);
+      _setIsolateAyah(verse, forceClear: false);
     }
 
-    // We intentionally DO NOT reset the ASR engine here.
-    // This allows seamless continuous recitation across ayahs without boundary clipping.
-    // The VAD will handle the reset gracefully when the user takes a physical breath.
+    // We intentionally DO NOT reset the ASR engine or transcript tracking here.
+    // This allows seamless continuous recitation across ayahs without boundary clipping,
+    // preserving the Zipformer left_context neural network memory cache.
     notifyListeners();
   }
 
@@ -496,6 +495,7 @@ class HighlightingController extends ChangeNotifier {
 
     const double lookaheadDelay = 0.320;
     List<Map<String, dynamic>> rawStarts = [];
+    double lastBlankTs = -1.0;
 
     for (
       int i = 0;
@@ -503,25 +503,37 @@ class HighlightingController extends ChangeNotifier {
       i++
     ) {
       String tok = result.tokens[i].replaceAll(' ', '');
+      double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
+
       if (tok.isEmpty ||
           tok == '<blank>' ||
           tok == '<blk>' ||
           tok == '<eps>' ||
           tok == 'eps') {
+        lastBlankTs = realTs; // Track the most recent silence marker
         continue;
       }
-      double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
-      rawStarts.add({'tok': tok, 'ts': realTs});
+      
+      rawStarts.add({'tok': tok, 'ts': realTs, 'lastBlankBefore': lastBlankTs});
     }
 
     for (int i = 0; i < rawStarts.length; i++) {
       String token = rawStarts[i]['tok'] as String;
       double spikeTime = rawStarts[i]['ts'] as double;
+      double lastBlankBefore = rawStarts[i]['lastBlankBefore'] as double;
 
-      // 1. Calculate raw gap from previous token's spike time (excluding <blank> transition gaps)
+      // 1. Calculate raw gap from previous token's spike time
       double prevSpikeTime = (i == 0)
           ? max(0.0, spikeTime - 0.15)
           : rawStarts[i - 1]['ts'] as double;
+          
+      // If a <blank> (silence) occurred AFTER the previous token but BEFORE this token,
+      // then the speech paused. The true gap for this token should be measured from the
+      // end of the silence (the last blank), NOT from the previous word 2 seconds ago!
+      if (lastBlankBefore > prevSpikeTime) {
+        prevSpikeTime = lastBlankBefore;
+      }
+
       double rawGap = max(0.04, spikeTime - prevSpikeTime);
 
       // 2. Classify token type based on tokens.txt structure to set acoustic ceiling
@@ -538,50 +550,42 @@ class HighlightingController extends ChangeNotifier {
           token.contains('ں') ||
           token.contains('۾');
 
-      // 3. Clamp maximum allowed duration to prevent <blank> transition silence from bloating tokens
+      // 3. Clamp maximum allowed duration to prevent <blank> transition silence from bloating tokens.
+      // We must set these ceilings high enough so that Tajweed rules (like Ghunnah=0.50s or 
+      // Shaddah=0.375s) are reachable, AND so that surplus (ziyada) errors can be detected.
       double maxAllowedDur;
       if (isMaddCarrier) {
-        maxAllowedDur = max(
-          0.35,
-          token.length * 1.50,
-        ); // Elongated vowels expand up to rawGap
+        maxAllowedDur = max(0.35, token.length * 1.50); // Elongated vowels expand up to rawGap
       } else if (isDoubledOrNasal) {
-        maxAllowedDur = max(
-          0.20,
-          min(0.38, token.length * 0.15),
-        ); // Shaddah / Ghunnah ceiling
+        maxAllowedDur = max(0.40, token.length * 0.40); // Shaddah / Ghunnah can reach ~1.2s before clipping
       } else {
-        maxAllowedDur = max(
-          0.06,
-          min(0.14, token.length * 0.07),
-        ); // Short consonants max out at ~140ms
+        // Short consonants should ideally be < 0.15s, but we allow up to 0.40s so that
+        // ErrorExplainer can catch if the user erroneously elongated them (e.g. Qalqalah held too long).
+        maxAllowedDur = 0.40; 
       }
 
       double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
 
-      // 4. Distribute token duration across characters using Phonetic Weighting
+      // 4. Distribute token duration across characters
       // Because the ASR model outputs tokens (e.g. "للَا") rather than individual character
       // timestamps, we must mathematically distribute the token's total duration across its characters.
       //
-      // If we divided it equally, an Alif ('ا') would get the same duration as a Fatha ('َ'),
-      // which ruins Tajweed duration tracking. Therefore, we assign a "weight" to each character type:
-      // - Madd letters (ا, و, ي, ۥ, ۦ) get a heavy weight (4.0) because they hold vowel sounds.
-      // - Nasal letters (ن, م, ں, ۾) get a medium weight (2.5) because they hold resonance (Ghunnah).
-      // - Standard consonants and diacritics get a light weight (1.0) because they are quick bursts.
+      // The model's token vocabulary relies on character repetition for duration (e.g. "بب" for Shaddah),
+      // meaning base characters represent acoustic beats, while diacritics/residuals do not have independent duration.
+      // Therefore, we divide the duration EQUALLY among all BASE characters, assigning 0.0 to diacritics.
       double totalWeight = 0.0;
       List<double> charWeights = [];
       for (int j = 0; j < token.length; j++) {
         String ch = token[j];
-        double w = 1.0;
-        if (ch == 'ا' || ch == 'و' || ch == 'ي' || ch == 'ۥ' || ch == 'ۦ') {
-          w = 4.0; // Madd letters hold sound much longer
-        } else if (ch == 'ن' || ch == 'م' || ch == 'ں' || ch == '۾') {
-          w = 2.5; // Nasals hold resonance longer
-        } else {
-          w = 1.0; // Consonants and diacritics are quick bursts
-        }
+        double w = QuranNormalizer.isResidual(ch) ? 0.0 : 1.0;
         charWeights.add(w);
         totalWeight += w;
+      }
+      
+      // Fallback if token somehow only contained diacritics
+      if (totalWeight == 0.0) {
+        for (int j = 0; j < token.length; j++) charWeights[j] = 1.0;
+        totalWeight = token.length.toDouble();
       }
 
       for (int j = 0; j < token.length; j++) {
