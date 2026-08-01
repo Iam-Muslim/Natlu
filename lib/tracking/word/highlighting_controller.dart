@@ -469,8 +469,10 @@ class HighlightingController extends ChangeNotifier {
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
 
+    _lastProcessedText = '';
+
     if (_isolateStarted) {
-      _setIsolateAyah(verse);
+      _setIsolateAyah(verse, forceClear: true);
     }
 
     // We intentionally DO NOT reset the ASR engine here.

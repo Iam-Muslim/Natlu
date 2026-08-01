@@ -337,29 +337,44 @@ class DictationSequencer {
     // The new confidences corresponding to the new text.
     List<double> newTailYsProbs = List<double>.from(message['ysProbs'] ?? []);
 
-    // Safety check: Ensure we aren't trying to delete more characters than we actually have.
-    if (backtrack <= asrWindow.length) {
-      // Calculate the index exactly where the backtrack cut should happen.
-      int newLength = asrWindow.length - backtrack;
-      // Slice off the old tail and append the new corrected text from Sherpa.
-      asrWindow = asrWindow.substring(0, newLength) + newTail;
+    // Safety check: Ensure backtrack never exceeds the local unmatched asrWindow length.
+    // If backtrack > asrWindow.length, it means Sherpa is attempting to rewrite text
+    // that was already matched/committed. We clamp backtrack to asrWindow.length and
+    // slice off the overlap from newTail so we never corrupt the active unmatched buffer.
+    int actualBacktrack = min(backtrack, asrWindow.length);
+    int overlap = backtrack - actualBacktrack;
+    int keepLength = asrWindow.length - actualBacktrack;
 
-      // Slice the timestamps array to match the text length, then append the new timings.
-      if (newLength <= asrTimestamps.length) {
-        asrTimestamps = asrTimestamps.sublist(0, newLength)..addAll(newTailTimestamps);
-      }
-      // Slice the confidences array to match the text length, then append the new confidences.
-      if (newLength <= asrYsProbs.length) {
-        asrYsProbs = asrYsProbs.sublist(0, newLength)..addAll(newTailYsProbs);
-      }
+    String effectiveTail = (overlap < newTail.length)
+        ? newTail.substring(overlap)
+        : '';
+
+    asrWindow = asrWindow.substring(0, keepLength) + effectiveTail;
+
+    int tsOverlap = min(overlap, newTailTimestamps.length);
+    List<double> effectiveTimestamps = tsOverlap < newTailTimestamps.length
+        ? newTailTimestamps.sublist(tsOverlap)
+        : [];
+
+    if (keepLength <= asrTimestamps.length) {
+      asrTimestamps = asrTimestamps.sublist(0, keepLength)..addAll(effectiveTimestamps);
     } else {
-      // If the backtrack was larger than the buffer (rare error), completely overwrite it.
-      asrWindow = newTail;
-      asrTimestamps = newTailTimestamps;
-      asrYsProbs = newTailYsProbs;
+      asrTimestamps = effectiveTimestamps;
     }
+
+    int ysOverlap = min(overlap, newTailYsProbs.length);
+    List<double> effectiveYsProbs = ysOverlap < newTailYsProbs.length
+        ? newTailYsProbs.sublist(ysOverlap)
+        : [];
+
+    if (keepLength <= asrYsProbs.length) {
+      asrYsProbs = asrYsProbs.sublist(0, keepLength)..addAll(effectiveYsProbs);
+    } else {
+      asrYsProbs = effectiveYsProbs;
+    }
+
     debugLog(
-      '⏪ [ASR REWRITE] Backtrack $backtrack chars | New Tail: "$newTail" | Buffer: "$asrWindow"',
+      '⏪ [ASR REWRITE] Backtrack $actualBacktrack chars (requested $backtrack) | New Tail: "$effectiveTail" | Buffer: "$asrWindow"',
     );
     _processSequence();
   }
