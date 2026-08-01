@@ -29,7 +29,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           pip3 install -U "huggingface_hub[cli]" --break-system-packages
-          hf download Muno459/zipformer_p-quran quran_phoneme_zipformer.int8.onnx --local-dir assets/model --token $HF_TOKEN
+          hf download Muno459/zipformer_p-arabic-v2 zipformer_p_arabic_v2.int8.onnx --local-dir assets/model --token $HF_TOKEN
 
       - name: Build iOS Archive (No Codesign)
         run: flutter build ipa --release --no-codesign

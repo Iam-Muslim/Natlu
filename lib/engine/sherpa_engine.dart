@@ -97,7 +97,7 @@ class SherpaEngine {
 
   /// Pre-extract model assets from bundle to app documents directory.
   Future<void> preExtractAssets() async {
-    await _extractAsset('assets/model/quran_phoneme_zipformer.int8.onnx');
+    await _extractAsset('assets/model/zipformer_p_arabic_v2.int8.onnx');
     await _extractAsset('assets/model/tokens.txt');
   }
 
@@ -123,7 +123,7 @@ class SherpaEngine {
     _sendPort = null;
 
     final String modelPath = await _extractAsset(
-      'assets/model/quran_phoneme_zipformer.int8.onnx',
+      'assets/model/zipformer_p_arabic_v2.int8.onnx',
     );
     final String tokensPath = await _extractAsset('assets/model/tokens.txt');
 

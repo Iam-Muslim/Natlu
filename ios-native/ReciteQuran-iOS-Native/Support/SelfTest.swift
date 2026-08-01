@@ -15,7 +15,7 @@ final class SelfTestRunner {
         guard !running else { return }; running = true; results = []
         await check("T0", "Bundle resources + Hafs font") {
             try FontRegistrar.register()
-            let names = ["ordered_quran_phonemes.json", "ph_index.npy", "quran_phoneme_zipformer.int8.onnx", "ref_norm_ph.txt", "silero_vad.onnx", "tokens.txt"]
+            let names = ["ordered_quran_phonemes.json", "ph_index.npy", "zipformer_p_arabic_v2.int8.onnx", "ref_norm_ph.txt", "silero_vad.onnx", "tokens.txt"]
             return names.allSatisfy { BundleResources.url($0) != nil } && FontRegistrar.fontName == "KFGQPCHafsSmart-Regular"
         }
         await check("T1", "NPY index shape") {

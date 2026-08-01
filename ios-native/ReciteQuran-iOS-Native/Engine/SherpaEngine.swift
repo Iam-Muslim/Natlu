@@ -10,7 +10,7 @@ actor SherpaEngine {
     func initialize() throws {
         guard recognizer == nil else { RQLog.write("ASR", "recognizer already initialized"); return }
         RQLog.write("ASR", "initializing Zipformer2-CTC recognizer")
-        let model = try BundleResources.requiredURL("quran_phoneme_zipformer.int8", extension: "onnx").path
+        let model = try BundleResources.requiredURL("zipformer_p_arabic_v2.int8", extension: "onnx").path
         let tokens = try BundleResources.requiredURL("tokens", extension: "txt").path
         let zipformer = sherpaOnnxOnlineZipformer2CtcModelConfig(model: model)
         let modelConfig = sherpaOnnxOnlineModelConfig(

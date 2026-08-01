@@ -115,7 +115,7 @@ group flattens them into the bundle, so the subfolder path doesn't matter for lo
 
 | File | Size | Purpose | Committed? |
 |---|---|---|---|
-| `Models/quran_phoneme_zipformer.int8.onnx` | 69 MB | **Streaming phoneme ASR model** (Zipformer2-CTC, int8). Emits a space-less phoneme stream. | ❌ fetched |
+| `Models/zipformer_p_arabic_v2.int8.onnx` | 69 MB | **Streaming phoneme ASR model** (Zipformer2-CTC, int8). Emits a space-less phoneme stream. | ❌ fetched |
 | `Models/tokens.txt` | 2.3 KB | ASR token vocabulary for the model above | ✅ |
 | `Models/silero_vad.onnx` | 2.2 MB | Silero voice-activity detection — endpointing + madd protection | ✅ |
 | `Models/ordered_quran_phonemes.json` | 8.1 MB | Per-verse Uthmani text (`aya_ui`), phoneme string (`aya_phoneme`), per-word phonemes | ✅ |
@@ -128,7 +128,7 @@ byte-identical to the Flutter app's `../assets/model/`. `silero_vad.onnx` is bun
 the Flutter app no longer tracks it in `assets/model/`.
 
 > [!IMPORTANT]
-> The ASR model is a **gated** Hugging Face download (`Muno459/zipformer_p-quran`) under a
+> The ASR model is a **gated** Hugging Face download (`Muno459/zipformer_p-arabic-v2`) under a
 > **custom license restricting commercial use**. Check its LICENSE before shipping or
 > monetizing. Expected: 72,705,392 bytes, valid ONNX protobuf, producer `onnx.quantize`.
 

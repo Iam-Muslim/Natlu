@@ -18,7 +18,7 @@ BASE_URL="https://github.com/willwade/sherpa-onnx-spm/releases/download/${SHERPA
 
 XCF_DIR="$ROOT/LocalSherpaOnnx/XCFrameworks"
 MODELS_DIR="$ROOT/ReciteQuran-iOS-Native/Resources/Models"
-MODEL_FILE="$MODELS_DIR/quran_phoneme_zipformer.int8.onnx"
+MODEL_FILE="$MODELS_DIR/zipformer_p_arabic_v2.int8.onnx"
 
 # Known-good SHA-256 of the static libraries, after the header fix below.
 SUM_ORT_SIM="6f8f3a9ee0cd259afa8cd5bd40384a09cbc6b8f536bdaa68637ea830a15971bf"
@@ -136,20 +136,20 @@ else
 --------------------------------------------------------------------------
   MANUAL STEP: the ASR model is a license-gated download.
 --------------------------------------------------------------------------
-  quran_phoneme_zipformer.int8.onnx is NOT in this repo. It is a gated
+  zipformer_p_arabic_v2.int8.onnx is NOT in this repo. It is a gated
   Hugging Face download under a custom license that restricts commercial
   use — read the LICENSE on the model repo before shipping.
 
     1. Sign in and accept the license at:
-         https://huggingface.co/Muno459/zipformer_p-quran
+         https://huggingface.co/Muno459/zipformer_p-arabic-v2
 
-    2. Download 'quran_phoneme_zipformer.int8.onnx' and place it at:
+    2. Download 'zipformer_p_arabic_v2.int8.onnx' and place it at:
          ReciteQuran-iOS-Native/Resources/Models/
 
        Or, with the Hugging Face CLI authenticated (\`hf auth login\`):
 
-         hf download Muno459/zipformer_p-quran \\
-           quran_phoneme_zipformer.int8.onnx \\
+         hf download Muno459/zipformer_p-arabic-v2 \\
+           zipformer_p_arabic_v2.int8.onnx \\
            --local-dir "$MODELS_DIR"
 
     3. Re-run this script to verify it.

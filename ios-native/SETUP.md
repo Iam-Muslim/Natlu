@@ -30,22 +30,22 @@ The script applies two fixes to the stock archives:
 
 ### 2. Zipformer2-CTC phoneme ASR model (69 MB) — manual, license-gated
 
-`ReciteQuran-iOS-Native/Resources/Models/quran_phoneme_zipformer.int8.onnx`
+`ReciteQuran-iOS-Native/Resources/Models/zipformer_p_arabic_v2.int8.onnx`
 
 > [!IMPORTANT]
 > This is a **gated** Hugging Face download under a **custom license that restricts
 > commercial use**. Read the LICENSE on the model repo before shipping or monetizing.
 
 1. Sign in and accept the license at
-   [`Muno459/zipformer_p-quran`](https://huggingface.co/Muno459/zipformer_p-quran).
-2. Download `quran_phoneme_zipformer.int8.onnx` into
+   [`Muno459/zipformer_p-arabic-v2`](https://huggingface.co/Muno459/zipformer_p-arabic-v2).
+2. Download `zipformer_p_arabic_v2.int8.onnx` into
    `ReciteQuran-iOS-Native/Resources/Models/`.
 
    With the Hugging Face CLI (`hf auth login`):
 
    ```sh
-   hf download Muno459/zipformer_p-quran \
-     quran_phoneme_zipformer.int8.onnx \
+   hf download Muno459/zipformer_p-arabic-v2 \
+     zipformer_p_arabic_v2.int8.onnx \
      --local-dir ios-native/ReciteQuran-iOS-Native/Resources/Models
    ```
 
