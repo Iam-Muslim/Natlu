@@ -34,10 +34,9 @@ import '../../utils/debug_logger.dart';
 /// thread what to do.
 class IsolateCommands {
   static const int setup = 0;
-  static const int feed = 1; // Feed new ASR phonetic stream chunks
+  static const int syncStream = 1; // Sync full ASR stream for current segment
   static const int setAyah = 2; // Initialize a new Ayah with expected phonemes
   static const int shutdown = 3; // Terminate the isolate
-  static const int replaceTail = 4; // Backtrack and replace unstable ASR tail
   static const int setTajweedMode = 5; // Toggle tajweed mode
   static const int setTrackingStrictness = 6; // Set strictness mode
 }
@@ -107,32 +106,19 @@ class PhonemeAlignmentIsolate {
     });
   }
 
-  /// Sends raw, messy audio chunks from the microphone to the background thread.
-  void feed(
-    String asrChunk,
-    List<double> timestampsChunk, [
-    List<double>? ysProbsChunk,
+  /// Sends the full unconsumed segment string and its timestamps to the background thread.
+  void syncStream(
+    String fullSegmentAsr,
+    List<double> segmentTimestamps, [
+    List<double>? segmentYsProbs,
+    bool isNewSegment = false,
   ]) {
     _sendPort?.send({
-      'cmd': IsolateCommands.feed,
-      'asr': asrChunk,
-      'timestamps': timestampsChunk,
-      'ysProbs': ysProbsChunk ?? [],
-    });
-  }
-
-  void replaceTail(
-    int backtrack,
-    String newTail,
-    List<double> newTailTimestamps, [
-    List<double>? newTailYsProbs,
-  ]) {
-    _sendPort?.send({
-      'cmd': IsolateCommands.replaceTail,
-      'backtrack': backtrack,
-      'tail': newTail,
-      'timestamps': newTailTimestamps,
-      'ysProbs': newTailYsProbs ?? [],
+      'cmd': IsolateCommands.syncStream,
+      'asr': fullSegmentAsr,
+      'timestamps': segmentTimestamps,
+      'ysProbs': segmentYsProbs ?? [],
+      'isNewSegment': isNewSegment,
     });
   }
 
@@ -192,14 +178,18 @@ class DictationSequencer {
   // ---------------------------------------------------------------------------
   // ASR State (The messy audio)
   // ---------------------------------------------------------------------------
-  /// The accumulated string of phonetic sounds the microphone has heard.
-  String asrWindow = '';
+  /// The full string of phonetic sounds the microphone has heard in the current segment.
+  String currentSegmentAsr = '';
 
-  /// The timestamps corresponding to every character in the `asrWindow`.
-  List<double> asrTimestamps = [];
+  /// The timestamps corresponding to every character in the `currentSegmentAsr`.
+  List<double> currentSegmentTimestamps = [];
 
   /// The acoustic confidence (log probability) corresponding to every character.
-  List<double> asrYsProbs = [];
+  List<double> currentSegmentYsProbs = [];
+
+  /// The number of valid phoneme tokens the DP engine has successfully consumed
+  /// from the `currentSegmentAsr` stream.
+  int asrConsumedTokenCount = 0;
 
   // ---------------------------------------------------------------------------
   // Output State
@@ -225,7 +215,7 @@ class DictationSequencer {
     mainSendPort.send({
       'event': 'debug',
       'message': message,
-      'asr_buffer': asrWindow,
+      'asr_buffer': currentSegmentAsr,
     });
   }
 
@@ -279,9 +269,10 @@ class DictationSequencer {
     }
 
     if (forceClear) {
-      asrWindow = '';
-      asrTimestamps = [];
-      asrYsProbs = [];
+      currentSegmentAsr = '';
+      currentSegmentTimestamps = [];
+      currentSegmentYsProbs = [];
+      asrConsumedTokenCount = 0;
     }
 
     int wordCount = wordBoundaries.length - 1;
@@ -303,57 +294,27 @@ class DictationSequencer {
   }
 
   /// --------------------------------------------------------------------------
-  /// ASR Data Ingestion
+  // ASR Data Ingestion
   /// --------------------------------------------------------------------------
-  /// Whenever the microphone hears a new sound, it is appended to the buffer here.
+  /// Whenever the microphone hears new sounds, the UI sends the full segment text here.
   /// Then, we instantly kick off a processing loop to see if those new sounds
   /// are enough to complete the word we are waiting for.
-  void feed(Map message) {
-    // Extract the raw text letters from the Isolate message.
+  void syncStream(Map message) {
     String newAsr = message['asr'];
-    // Extract the list of timing float values.
     List<double> newTimestamps = List<double>.from(message['timestamps']);
-    // Extract the acoustic confidence probabilities safely (fallback to empty list if missing).
     List<double> newYsProbs = List<double>.from(message['ysProbs'] ?? []);
+    bool isNewSegment = message['isNewSegment'] ?? false;
 
-    // Append the new audio strings to the end of our active listening window.
-    asrWindow += newAsr;
-    // Append the new timing values so they perfectly align with the new letters.
-    asrTimestamps.addAll(newTimestamps);
-    // Append the confidence metrics so they perfectly align with the new letters.
-    asrYsProbs.addAll(newYsProbs);
-
-    // Now that we have new audio, trigger the DP algorithm to search for the word.
-    _processSequence();
-  }
-
-  void replaceTail(Map message) {
-    int backtrack = message['backtrack'];
-    String newTail = message['tail'];
-    List<double> newTailTimestamps = List<double>.from(message['timestamps']);
-    List<double> newTailYsProbs = List<double>.from(message['ysProbs'] ?? []);
-
-    // Clamp backtrack to active unmatched buffer length
-    int actualBacktrack = min(backtrack, asrWindow.length);
-    int keepLength = asrWindow.length - actualBacktrack;
-
-    asrWindow = asrWindow.substring(0, keepLength) + newTail;
-
-    if (keepLength <= asrTimestamps.length) {
-      asrTimestamps = asrTimestamps.sublist(0, keepLength)..addAll(newTailTimestamps);
-    } else {
-      asrTimestamps = List<double>.from(newTailTimestamps);
+    if (isNewSegment) {
+      asrConsumedTokenCount = 0;
+      debugLog('🔄 [SYNC] New ASR segment started. Resetting consumed tokens to 0.');
     }
 
-    if (keepLength <= asrYsProbs.length) {
-      asrYsProbs = asrYsProbs.sublist(0, keepLength)..addAll(newTailYsProbs);
-    } else {
-      asrYsProbs = List<double>.from(newTailYsProbs);
-    }
+    currentSegmentAsr = newAsr;
+    currentSegmentTimestamps = newTimestamps;
+    currentSegmentYsProbs = newYsProbs;
 
-    debugLog(
-      '⏪ [ASR REWRITE] Backtrack $actualBacktrack chars (requested $backtrack) | New Tail: "$newTail" | Buffer: "$asrWindow"',
-    );
+    // Now that we have updated audio, trigger the DP algorithm to search for the word.
     _processSequence();
   }
 
@@ -375,42 +336,39 @@ class DictationSequencer {
       // If we finished the Ayah, do nothing.
       if (targetWordCursor >= wordBoundaries.length - 1) break;
 
-      List<String> asrChunks = QuranNormalizer.chunkPhonemes(asrWindow);
-      if (asrChunks.isEmpty) break;
+      List<String> rawTokens = QuranNormalizer.chunkPhonemes(currentSegmentAsr);
+      List<String> cleanTokens = rawTokens
+          .where((t) => t.trim().isNotEmpty && t != '<blank>' && t != 'ؙ')
+          .toList();
 
-      int m = asrChunks.length;
+      // [CRITICAL LOOKAHEAD JUMP HANDLING]
+      // If the model rewrote past history such that the new token count is LESS than
+      // what we already successfully matched, it means the model heavily rolled back.
+      // We clamp our consumed token count so we don't throw an OutOfBounds exception.
+      if (cleanTokens.length < asrConsumedTokenCount) {
+        asrConsumedTokenCount = cleanTokens.length;
+      }
+
+      // We only feed the newly unconsumed tokens to the Math Engine!
+      List<String> unconsumedTokens = cleanTokens.sublist(asrConsumedTokenCount);
+
+      if (unconsumedTokens.isEmpty) break;
+
+      int m = unconsumedTokens.length;
 
       // -----------------------------------------------------------------------
       // Buffer Management (Garbage Collection)
       // -----------------------------------------------------------------------
-      // If the user sat there coughing or talking to their friend for 10 seconds,
-      // the audio buffer will fill up with garbage. If it gets too large, the
-      // DP Engine will lag. We aggressively truncate the buffer to a max size.
+      // We limit how many tokens we analyze to prevent CPU lag.
       int maxAsrChunks = 50;
       if (m > maxAsrChunks) {
-        int chunksToDrop = m - maxAsrChunks;
-        int charsToDrop = 0;
-        for (int k = 0; k < chunksToDrop; k++) {
-          charsToDrop += asrChunks[k].length;
-        }
-
-        asrWindow = asrWindow.substring(charsToDrop);
-        if (charsToDrop <= asrTimestamps.length) {
-          asrTimestamps = asrTimestamps.sublist(charsToDrop);
-        } else {
-          asrTimestamps = [];
-        }
-
-        if (charsToDrop <= asrYsProbs.length) {
-          asrYsProbs = asrYsProbs.sublist(charsToDrop);
-        } else {
-          asrYsProbs = [];
-        }
-
-        asrChunks = asrChunks.sublist(chunksToDrop);
-        m = asrChunks.length;
-        debugLog(
-          '🗑️ [BUFFER GC] Dropped $chunksToDrop oldest chunks to prevent lag (Max $maxAsrChunks reached)',
+         // Simply pretend we consumed the oldest tokens and dropped them!
+         int chunksToDrop = m - maxAsrChunks;
+         asrConsumedTokenCount += chunksToDrop;
+         unconsumedTokens = unconsumedTokens.sublist(chunksToDrop);
+         m = unconsumedTokens.length;
+         debugLog(
+          '🗑️ [BUFFER GC] Dropped $chunksToDrop oldest tokens to prevent lag (Max $maxAsrChunks reached)',
         );
       }
 
@@ -483,13 +441,15 @@ class DictationSequencer {
 
       // We ask the purely mathematical ForwardDictationMatcher to find a path.
       AlignmentResult? result = _matcher.align(
-        currentAsrChunks: asrChunks,
+        currentAsrChunks: unconsumedTokens,
         targetWindow: targetWindow,
         targetStartBd: targetStartBd,
         targetEndBd: targetEndBd,
         targetWordIds: targetWordIds,
         expectedWord: targetWordCursor,
-        asrYsProbs: asrYsProbs,
+        // YsProbs must be mapped from the characters, but for now we simply pass
+        // the unconsumed segment probabilities. We calculate the unconsumed character index.
+        asrYsProbs: _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount),
         threshold: threshold,
         costDel: dynamicCostDel,
         costIns: dynamicCostIns,
@@ -511,16 +471,15 @@ class DictationSequencer {
 
       // If a path was successfully found below the penalty threshold...
       if (result != null) {
-        // ...we finalize the match and clean out the used audio buffer.
+        // ...we finalize the match and increment the tokens consumed.
         _commitMatch(
           result,
-          asrChunks,
+          unconsumedTokens,
+          cleanTokens,
           targetWindow,
           targetWordIds,
           winStartChunk,
         );
-        // We set this to true so the loop runs AGAIN instantly!
-        // This allows multi-word highlights if the buffer was full.
         matchedSomething = true;
       }
     } while (matchedSomething);
@@ -535,7 +494,8 @@ class DictationSequencer {
   /// and fires the highlight message to the UI.
   void _commitMatch(
     AlignmentResult result,
-    List<String> asrChunks,
+    List<String> unconsumedTokens,
+    List<String> fullCleanTokens,
     List<String> targetWindow,
     List<int> targetWordIds,
     int winStartChunk,
@@ -547,7 +507,7 @@ class DictationSequencer {
         targetWordIds[result.bestStartJ < n ? result.bestStartJ : n - 1];
     int matchedWordEnd = targetWordIds[result.bestJ - 1];
 
-    List<String> matchedAsrSlice = asrChunks.sublist(
+    List<String> matchedAsrSlice = unconsumedTokens.sublist(
       result.bestStartI,
       result.bestI,
     );
@@ -582,16 +542,19 @@ class DictationSequencer {
       if (wId < matchedWordStart || wId > matchedWordEnd) continue;
 
       int absPredIdx = result.bestStartI + align.predIdx;
-      String chunk = asrChunks[absPredIdx];
+      String chunk = unconsumedTokens[absPredIdx];
       wordPredStrMap[wId] = (wordPredStrMap[wId] ?? '') + chunk;
 
-      int charStart = 0;
-      for (int k = 0; k < absPredIdx; k++) charStart += asrChunks[k].length;
+      // Extract timestamps. The index mapping is tricky because we have a global
+      // `currentSegmentAsr` but `unconsumedTokens` is a subset.
+      int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
+      int charStart = _getCharIndexForToken(fullCleanTokens, globalTokenIdx);
+      
       for (int c = 0; c < chunk.length; c++) {
-        if (charStart + c < asrTimestamps.length) {
+        if (charStart + c < currentSegmentTimestamps.length) {
           wordPredTsMap
               .putIfAbsent(wId, () => [])
-              .add(asrTimestamps[charStart + c]);
+              .add(currentSegmentTimestamps[charStart + c]);
         }
       }
     }
@@ -608,10 +571,9 @@ class DictationSequencer {
     // professional ErrorExplainer rules engine.
     Map<int, List<ReciterError>>? tajweedErrors;
     if (isTajweed) {
-      int rawStartIdx = asrChunks
-          .sublist(0, result.bestStartI)
-          .fold(0, (sum, c) => sum + c.length);
-      int safeStartIdx = min(rawStartIdx, asrTimestamps.length);
+      int globalStartIdx = asrConsumedTokenCount + result.bestStartI;
+      int charStart = _getCharIndexForToken(fullCleanTokens, globalStartIdx);
+      int safeStartIdx = min(charStart, currentSegmentTimestamps.length);
 
       tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
         alignments:
@@ -620,7 +582,7 @@ class DictationSequencer {
         refChunkToWordMap: chunkToWordMap, // Mapping chunks to word IDs
         currentAsrChunks: matchedAsrSlice, // The actual sounds the user spoke
         // Pass only the raw timestamps that belong to the user's spoken string slice
-        trackingTimestamps: asrTimestamps.sublist(safeStartIdx),
+        trackingTimestamps: currentSegmentTimestamps.sublist(safeStartIdx),
 
         bestAsrStartIdx: 0,
         targetChunkCursor: 0,
@@ -701,31 +663,37 @@ class DictationSequencer {
     // Move the cursor forward past the words we just successfully processed.
     targetWordCursor = matchedWordEnd + 1;
 
-    // -------------------------------------------------------------------------
-    // Buffer Slicing
-    // -------------------------------------------------------------------------
-    // We chop off all the garbage audio + the successfully matched audio from the buffer.
-    // The next loop iteration will start perfectly fresh.
-    int charSliceIdx = 0;
-    for (int k = 0; k < result.bestI; k++) charSliceIdx += asrChunks[k].length;
-
-    asrWindow = asrWindow.substring(charSliceIdx);
-    if (charSliceIdx <= asrTimestamps.length) {
-      asrTimestamps = asrTimestamps.sublist(charSliceIdx);
-    } else {
-      asrTimestamps = [];
-    }
-
-    if (charSliceIdx <= asrYsProbs.length) {
-      asrYsProbs = asrYsProbs.sublist(charSliceIdx);
-    } else {
-      asrYsProbs = [];
-    }
+    // We successfully consumed bestI tokens from our unconsumed array.
+    asrConsumedTokenCount += result.bestI;
 
     // [Tajweed] Save the very last phoneme of this successful match to bridge to the next word
     if (matchedRefSlice.isNotEmpty) {
       lastMatchedPhoneme = matchedRefSlice.last;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper Math
+  // ---------------------------------------------------------------------------
+  
+  int _getCharIndexForToken(List<String> tokens, int tokenIndex) {
+     if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
+     // Finding the exact character index mapping is hard if `chunkPhonemes` stripped noise.
+     // As an approximation, we sum the lengths of all previous clean tokens.
+     // (The exact alignment is difficult without tracking the stripped chars).
+     int chars = 0;
+     for (int i = 0; i < tokenIndex; i++) {
+        chars += tokens[i].length;
+     }
+     return chars;
+  }
+
+  List<double> _getUnconsumedYsProbs(List<String> cleanTokens, int consumedCount) {
+     int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
+     if (charStart < currentSegmentYsProbs.length) {
+        return currentSegmentYsProbs.sublist(charStart);
+     }
+     return [];
   }
 }
 
@@ -750,14 +718,11 @@ void _alignmentWorker(SendPort mainSendPort) {
         List<String> tokens = (message['tokens'] as List).cast<String>();
         PhonemeMatrix.preheat(tokens);
         break;
-      case IsolateCommands.feed:
-        sequencer.feed(message);
+      case IsolateCommands.syncStream:
+        sequencer.syncStream(message);
         break;
       case IsolateCommands.setAyah:
         sequencer.setAyah(message);
-        break;
-      case IsolateCommands.replaceTail:
-        sequencer.replaceTail(message);
         break;
       case IsolateCommands.setTajweedMode:
         sequencer.isTajweed = message['isTajweed'];

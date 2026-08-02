@@ -123,7 +123,13 @@ class SubCostTable {
       }
 
       if (count1 != count2) {
-        // Missing a Shadda (e.g., 'بِ' vs 'ببِ') or cutting a Maddah short ('يي' vs 'يييي').
+        // Check if it's a vowel (Maddah) or consonant (Shadda)
+        final vowels = const ['ا', 'و', 'ي', 'ى', 'ۦ', 'ۥ', '۪', 'ں'];
+        if (vowels.contains(base1)) {
+          // Maddah length variation. Very common and often perfectly legal (e.g. 2, 4, 6 beats).
+          return 0.15; // Low penalty for Madd length mismatch
+        }
+        // Missing a Shadda (e.g., 'بِ' vs 'ببِ')
         return 0.55;
       }
 

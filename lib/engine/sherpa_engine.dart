@@ -169,7 +169,6 @@ class SherpaEngine {
 
         if (kDebugMode) {
           DebugLogger.updateAsrBuffer(text);
-          DebugLogger.printStateIfChanged();
 
           if (isFinal) {
             DebugLogger.log('ASR', '⚡ Endpoint detected (${latency}ms)');

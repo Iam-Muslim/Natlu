@@ -493,6 +493,7 @@ class HighlightingController extends ChangeNotifier {
     }
 
     List<double> charDurations = [];
+    List<double> charYsProbs = [];
     StringBuffer asrTextBuffer = StringBuffer();
 
     const double lookaheadDelay = 0.320;
@@ -518,20 +519,22 @@ class HighlightingController extends ChangeNotifier {
       
       // Filter out severe acoustic hallucinations (low confidence noise).
       // ysProbs are log probabilities. -2.0 means roughly 13.5% confidence.
+      double prob = 0.0;
       if (result.ysProbs.length > i) {
-        double prob = result.ysProbs[i];
+        prob = result.ysProbs[i];
         if (prob < -2.0) {
           continue; // Ignore this token as it's likely microphone noise
         }
       }
       
-      rawStarts.add({'tok': tok, 'ts': realTs, 'lastBlankBefore': lastBlankTs});
+      rawStarts.add({'tok': tok, 'ts': realTs, 'lastBlankBefore': lastBlankTs, 'prob': prob});
     }
 
     for (int i = 0; i < rawStarts.length; i++) {
       String token = rawStarts[i]['tok'] as String;
       double spikeTime = rawStarts[i]['ts'] as double;
       double lastBlankBefore = rawStarts[i]['lastBlankBefore'] as double;
+      double prob = rawStarts[i]['prob'] as double;
 
       // 1. Calculate raw gap from previous token's spike time
       double prevSpikeTime = (i == 0)
@@ -604,6 +607,7 @@ class HighlightingController extends ChangeNotifier {
         // The duration is distributed proportionally based on the character's phonetic weight.
         double charDur = tokenDur * (charWeights[j] / totalWeight);
         charDurations.add(charDur);
+        charYsProbs.add(prob);
       }
     }
 
@@ -624,13 +628,12 @@ class HighlightingController extends ChangeNotifier {
       return;
     }
 
-    if (_expectingNewSegment) {
-      _lastProcessedText = '';
-      _expectingNewSegment = false;
-    }
-
     // Detect if the ASR engine started a completely new segment (e.g. after final=true)
-    if (!asrText.startsWith(_lastProcessedText)) {
+    bool isNewSegment = false;
+    if (_expectingNewSegment) {
+      isNewSegment = true;
+      _expectingNewSegment = false;
+    } else if (!asrText.startsWith(_lastProcessedText)) {
       int commonLen = 0;
       int minLen = min(_lastProcessedText.length, asrText.length);
       for (int i = 0; i < minLen; i++) {
@@ -643,51 +646,15 @@ class HighlightingController extends ChangeNotifier {
 
       // If it shares almost nothing with the old text, it's a new segment, not a tail correction.
       if (commonLen == 0 || (commonLen < 5 && _lastProcessedText.length > 20)) {
-        _lastProcessedText = '';
+        isNewSegment = true;
       }
     }
 
-    // charDurations is now calculated earlier in the method.
-
-    String newText = asrText;
-    List<double> newTimestamps = charDurations;
-    if (newText.startsWith(_lastProcessedText)) {
-      newText = newText.substring(_lastProcessedText.length);
-      if (charDurations.length >= _lastProcessedText.length) {
-        newTimestamps = charDurations.sublist(_lastProcessedText.length);
-      } else {
-        newTimestamps = [];
-      }
-      if (newText.isNotEmpty && _isolateStarted) {
-        _alignmentIsolate.feed(newText, newTimestamps);
-      }
-    } else {
-      // The ASR rewrote the past (corrected itself).
-      // Find the longest common prefix to know where the rewrite started.
-      int commonLen = 0;
-      int minLen = min(_lastProcessedText.length, asrText.length);
-      for (int i = 0; i < minLen; i++) {
-        if (_lastProcessedText[i] == asrText[i]) {
-          commonLen++;
-        } else {
-          break;
-        }
-      }
-
-      int backtrackChars = _lastProcessedText.length - commonLen;
-      String newTail = asrText.substring(commonLen);
-      List<double> newTailTimestamps = [];
-      if (charDurations.length >= commonLen) {
-        newTailTimestamps = charDurations.sublist(commonLen);
-      }
-
-      if (_isolateStarted) {
-        _alignmentIsolate.replaceTail(
-          backtrackChars,
-          newTail,
-          newTailTimestamps,
-        );
-      }
+    if (asrText.isNotEmpty && _isolateStarted) {
+      _alignmentIsolate.syncStream(asrText, charDurations, charYsProbs, isNewSegment);
+      
+      // If the model resets the string, we tell the isolate it's a new segment so it can 
+      // safely reset its `asrConsumedTokenCount` to 0. This fixes the massive desync!
     }
 
     _lastProcessedText = asrText;
