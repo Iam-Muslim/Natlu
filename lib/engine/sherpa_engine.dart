@@ -44,7 +44,7 @@ class TranscriptionResult {
   });
 }
 
-enum _EngineCommand { init, recognize, reset, destroy }
+enum _EngineCommand { init, recognize, reset, flushThenReset, destroy }
 
 class _IsolateMessage {
   final _EngineCommand command;
@@ -238,9 +238,28 @@ class SherpaEngine {
     return true;
   }
 
+  /// Hard reset: wipes the Sherpa stream and primes with silence.
+  /// Use ONLY for explicit user actions (stop button, manual ayah jump).
+  /// Do NOT call at automatic ayah boundaries — use [flushThenReset] instead.
   void resetBuffer() {
     _pendingChunks.clear();
     _sendPort?.send(_IsolateMessage(_EngineCommand.reset));
+  }
+
+  /// Flush-then-Reset: the correct way to cross an ayah boundary.
+  ///
+  /// The Zipformer model was trained on isolated ayah clips. Carrying cache
+  /// state across a boundary is out-of-distribution and causes hallucinations.
+  ///
+  /// Order (per model author's warning):
+  ///   1. Push ~1.05 s of silence through the CURRENT live cache
+  ///      → drains the right-context buffer and emits the last-word tail
+  ///   2. Collect and emit whatever comes out as isFinal=true
+  ///   3. THEN zero the states for the next ayah
+  ///   4. Feed 300ms priming silence for the next ayah's left-context
+  void flushThenReset() {
+    _pendingChunks.clear();
+    _sendPort?.send(_IsolateMessage(_EngineCommand.flushThenReset));
   }
 
   void destroy() {
@@ -405,9 +424,51 @@ class SherpaEngine {
               'isFinal': true,
               'startTime': startTime,
             });
+            // ── IMPORTANT: Do NOT reset the stream here ──────────────────────
+            // The model was trained on isolated ayah clips. Resetting the cache
+            // automatically on every VAD silence endpoint is WRONG during tracking:
+            //   - A reciter may pause mid-ayah (breath). Resetting destroys the
+            //     left-context that helps the model track the current ayah.
+            //   - At a true ayah boundary, the HighlightingController calls
+            //     flushThenReset() which properly drains the right-context buffer
+            //     BEFORE zeroing state, preventing loss of the last word's tail.
+            // We intentionally leave the stream/cache live here.
+            // ─────────────────────────────────────────────────────────────────
+          }
+
+        case _EngineCommand.flushThenReset:
+          // ── Flush-then-Reset (Ayah Boundary) ────────────────────────────────
+          // Step 1: Push ~1.05 s of silence through the LIVE cache.
+          //   The Zipformer right-context buffer is ~1.05 s (encode 1000ms profile).
+          //   Feeding zeros through the current stream causes the model to flush
+          //   whatever partial phonemes are still in its right-context window.
+          //   This guarantees the final word's tail is emitted before we reset.
+          if (recognizer != null && stream != null) {
+            // 1.05 s of silence at 16 kHz = 16,800 samples
+            final flushSilence = Float32List(16800);
+            stream!.acceptWaveform(sampleRate: 16000, samples: flushSilence);
+            while (recognizer!.isReady(stream!)) {
+              recognizer!.decode(stream!);
+            }
+
+            // Step 2: Emit whatever came out of the flush as a final result.
+            final flushed = recognizer!.getResult(stream!);
+            if (flushed.text.isNotEmpty) {
+              mainSendPort.send({
+                'text': flushed.text,
+                'tokens': flushed.tokens,
+                'timestamps': flushed.timestamps,
+                'ysProbs': <double>[],
+                'isFinal': true,
+                'startTime': DateTime.now().millisecondsSinceEpoch,
+              });
+            }
+
+            // Step 3: NOW zero the states — cache is fully drained.
             recognizer!.reset(stream!);
-            // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
-            // so the zeros prime the Zipformer attention cache (left_context) without delaying incoming speech!
+
+            // Step 4: Prime the fresh cache with 300ms silence so the next ayah
+            // starts with a warmed left-context (not cold zeros).
             stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
@@ -415,6 +476,9 @@ class SherpaEngine {
           }
 
         case _EngineCommand.reset:
+          // ── Hard Reset (explicit user action only) ───────────────────────────
+          // Used for: stop button, manual ayah jump, voice search start.
+          // NOT used for automatic ayah-advance (use flushThenReset for that).
           if (recognizer != null && stream != null) {
             recognizer!.reset(stream!);
             // Priming preroll: feed 300ms of pre-allocated silence and decode immediately

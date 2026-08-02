@@ -147,7 +147,10 @@ void main() {
             targetEndBd: windowEndBd,
             targetWordIds: windowWordIds,
             expectedWord: targetWordCursor,
-            threshold: 0.35, 
+            // Hadr / Easy Mode simulation for extreme noise
+            threshold: 0.45, 
+            costDel: 0.65,
+            costIns: 0.65,
           );
           
           if (result != null && result.words.isNotEmpty) {

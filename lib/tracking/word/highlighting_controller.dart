@@ -132,6 +132,11 @@ class HighlightingController extends ChangeNotifier {
   bool _expectingNewSegment = false;
   int? _pendingClearAyah;
 
+  /// Tracks how many words from the NEXT ayah were already consumed via lookahead
+  /// during the current ayah's DP matching. When we advance to the next ayah,
+  /// we pass this as `startWordCursor` so the matcher skips those already-matched words.
+  int _lookaheadWordsConsumed = 0;
+
   HighlightingController({
     required this.repository,
     required SherpaEngine engine,
@@ -210,6 +215,10 @@ class HighlightingController extends ChangeNotifier {
       isTajweed: isTajweed,
       forceClear: forceClear,
       trackingStrictness: AppState.instance.trackingStrictness.name,
+      // On auto-advance (forceClear=false), tell the isolate how many words of
+      // this new ayah were already consumed as lookahead in the previous ayah.
+      // The matcher will start at that word position instead of word 0.
+      startWordCursor: forceClear ? 0 : _lookaheadWordsConsumed,
     );
   }
 
@@ -221,6 +230,14 @@ class HighlightingController extends ChangeNotifier {
     int wordId = event['word_id'] as int;
     bool isRed = event['is_red'] as bool? ?? false;
     String cleanAsr = event['clean_asr'] as String? ?? '';
+
+    // Track lookahead words: any wordId ≥ the actual ayah's word count
+    // is a lookahead word belonging to the NEXT ayah.
+    final int actualWordCount = targetAyah.phonemeWords.length;
+    if (wordId >= actualWordCount) {
+      // e.g. wordId=2 in a 2-word ayah → lookahead word 0 of next ayah
+      _lookaheadWordsConsumed = (wordId - actualWordCount) + 1;
+    }
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -262,7 +279,13 @@ class HighlightingController extends ChangeNotifier {
           targetAyah.ayah,
         );
         if (nextVerse != null) {
-          // Delay very slightly to let the UI paint the last word green before jumping
+          // Schedule the flush FIRST (while old-ayah cache is still live).
+          // The engine isolate will: feed silence → drain right-context →
+          // emit tail → reset states → prime for next ayah.
+          flushAndResetForNextAyah();
+
+          // Then advance UI after 50ms — giving the engine isolate time to
+          // start the flush before the alignment isolate switches ayah context.
           Future.delayed(const Duration(milliseconds: 50), () {
             forceActiveAyah(nextVerse);
           });
@@ -473,13 +496,37 @@ class HighlightingController extends ChangeNotifier {
     _lastProcessedText = '';
 
     if (_isolateStarted) {
+      // forceClear: false → the Zipformer cache is kept alive across the ayah
+      // boundary during normal auto-advance. The flushAndResetForNextAyah() call
+      // (triggered ~50ms earlier, after the last word) has already scheduled the
+      // cache flush in the engine isolate. The alignment isolate just needs its
+      // word cursor reset to 0 for the new ayah without clearing the ASR buffer,
+      // so buffered audio from fast continuous recitation is not lost.
       _setIsolateAyah(verse, forceClear: false);
     }
 
     // We intentionally DO NOT reset the ASR engine or transcript tracking here.
-    // This allows seamless continuous recitation across ayahs without boundary clipping,
-    // preserving the Zipformer left_context neural network memory cache.
+    // The flush was already scheduled by flushAndResetForNextAyah().
     notifyListeners();
+  }
+
+  /// Called once the last word of an ayah is confirmed.
+  ///
+  /// This implements the author's flush-before-reset pattern:
+  ///   1. Tells the engine to push ~1.05s silence through the LIVE cache
+  ///      → drains the Zipformer right-context buffer (last word tail emitted)
+  ///   2. Then the engine zeroes the state for the next ayah
+  ///   3. Then primes the fresh cache with 300ms silence
+  ///
+  /// Must be called BEFORE forceActiveAyah() so the flush happens while the
+  /// old-ayah cache is still alive.
+  void flushAndResetForNextAyah() {
+    _engine.flushThenReset();
+    _lastProcessedText = '';
+    _expectingNewSegment = true;
+    // Reset lookahead counter — it was just consumed and passed to the isolate
+    // via startWordCursor in _setIsolateAyah (called from forceActiveAyah).
+    _lookaheadWordsConsumed = 0;
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
@@ -622,9 +669,13 @@ class HighlightingController extends ChangeNotifier {
 
     if (asrText.isEmpty) {
       _lastProcessedText = '';
-      if (result.isFinal) {
-        _expectingNewSegment = true;
-      }
+      // NOTE: We no longer set _expectingNewSegment=true here.
+      // In the old system, every Sherpa endpoint triggered a cache reset, so the
+      // next emission after isFinal=true would be a fresh empty string → new segment.
+      // In the new system, endpoint does NOT reset Sherpa (to avoid mid-ayah cache loss).
+      // The cache is only reset by flushAndResetForNextAyah(), which sets the flag itself.
+      // Setting it here would cause the SAME old buffer to be re-analyzed as a new
+      // segment when the next (identical) emission arrives → double-match bug.
       return;
     }
 
@@ -658,9 +709,9 @@ class HighlightingController extends ChangeNotifier {
     }
 
     _lastProcessedText = asrText;
-
-    if (result.isFinal) {
-      _expectingNewSegment = true;
-    }
+    // NOTE: _expectingNewSegment is NOT set here on result.isFinal.
+    // See the comment above for the full explanation. The flag is managed exclusively
+    // by flushAndResetForNextAyah() which is the only code path that actually resets
+    // the Sherpa stream, making a true "new segment" start.
   }
 }

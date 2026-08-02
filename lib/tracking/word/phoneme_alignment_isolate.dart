@@ -95,6 +95,7 @@ class PhonemeAlignmentIsolate {
     bool isTajweed = false,
     bool forceClear = false,
     String trackingStrictness = 'normal',
+    int startWordCursor = 0,
   }) {
     _sendPort?.send({
       'cmd': IsolateCommands.setAyah,
@@ -103,6 +104,7 @@ class PhonemeAlignmentIsolate {
       'isTajweed': isTajweed,
       'forceClear': forceClear,
       'trackingStrictness': trackingStrictness,
+      'startWordCursor': startWordCursor,
     });
   }
 
@@ -268,18 +270,39 @@ class DictationSequencer {
       endBd[n] = true;
     }
 
-    if (forceClear) {
-      currentSegmentAsr = '';
-      currentSegmentTimestamps = [];
-      currentSegmentYsProbs = [];
-      asrConsumedTokenCount = 0;
-    }
+    // ─── ASR buffer ───────────────────────────────────────────────────────────
+    // ALWAYS clear the ASR buffer on every ayah set — forceClear or auto-advance.
+    //
+    // Rationale for auto-advance (forceClear=false):
+    //   By the time forceActiveAyah() fires, the DP has consumed virtually all tokens
+    //   in currentSegmentAsr (e.g. asrConsumedTokenCount = 24/25). Keeping the buffer
+    //   alive caused a double-match bug:
+    //     1. flushAndResetForNextAyah() sets _expectingNewSegment=true
+    //     2. The flush result arrives as isFinal=true with the full old 25-token buffer
+    //     3. isNewSegment=true resets asrConsumedTokenCount=0
+    //     4. But currentSegmentAsr still has the old buffer → DP re-matches الصراط!
+    //   Clearing the buffer here prevents this entirely. Any unconsumed tail tokens
+    //   (typically 0–1) are negligible — they haven’t been matched yet, so discarding
+    //   them costs nothing in practice. The next real audio chunk will repopulate the
+    //   buffer correctly.
+    currentSegmentAsr = '';
+    currentSegmentTimestamps = [];
+    currentSegmentYsProbs = [];
+    asrConsumedTokenCount = 0;
 
     int wordCount = wordBoundaries.length - 1;
     acceptedWordsAsr = List.filled(wordCount, '');
     acceptedWordsTimestamps = List.generate(wordCount, (_) => []);
 
-    targetWordCursor = 0;
+    // ─── Word cursor ─────────────────────────────────────────────────────────
+    // forceClear (manual/stop): start at word 0.
+    // Auto-advance: start at startWordCursor (lookahead words already consumed).
+    if (forceClear) {
+      targetWordCursor = 0;
+    } else {
+      int startCursor = message['startWordCursor'] as int? ?? 0;
+      targetWordCursor = startCursor.clamp(0, wordCount);
+    }
     lastMatchedPhoneme = null;
 
     debugLog(
@@ -336,9 +359,9 @@ class DictationSequencer {
       // If we finished the Ayah, do nothing.
       if (targetWordCursor >= wordBoundaries.length - 1) break;
 
-      List<String> rawTokens = QuranNormalizer.chunkPhonemes(currentSegmentAsr);
-      List<String> cleanTokens = rawTokens
-          .where((t) => t.trim().isNotEmpty && t != '<blank>' && t != 'ؙ')
+      List<PhonemeToken> rawTokens = QuranNormalizer.chunkPhonemesWithIndices(currentSegmentAsr);
+      List<PhonemeToken> cleanTokens = rawTokens
+          .where((t) => t.text.trim().isNotEmpty && t.text != '<blank>' && t.text != 'ؙ')
           .toList();
 
       // [CRITICAL LOOKAHEAD JUMP HANDLING]
@@ -350,7 +373,7 @@ class DictationSequencer {
       }
 
       // We only feed the newly unconsumed tokens to the Math Engine!
-      List<String> unconsumedTokens = cleanTokens.sublist(asrConsumedTokenCount);
+      List<PhonemeToken> unconsumedTokens = cleanTokens.sublist(asrConsumedTokenCount);
 
       if (unconsumedTokens.isEmpty) break;
 
@@ -360,7 +383,7 @@ class DictationSequencer {
       // Buffer Management (Garbage Collection)
       // -----------------------------------------------------------------------
       // We limit how many tokens we analyze to prevent CPU lag.
-      int maxAsrChunks = 50;
+      int maxAsrChunks = 150; // Increased to 150 to allow ~6 seconds of buffer without dropping
       if (m > maxAsrChunks) {
          // Simply pretend we consumed the oldest tokens and dropped them!
          int chunksToDrop = m - maxAsrChunks;
@@ -378,14 +401,33 @@ class DictationSequencer {
       // -----------------------------------------------------------------------
       // Dynamic Lookahead Windowing
       // -----------------------------------------------------------------------
-      // We don't want to compare the tiny audio buffer against the ENTIRE AYAH.
-      // That is mathematically expensive. Instead, we estimate how many words
-      // the user could have possibly spoken based on the size of the audio buffer.
-      // We assume ~5 phonemes per word on average.
-      int estWords = max(1, (m / 5.0).round());
-      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
+      // Instead of dividing by a flat 5.0, we dynamically count reference phonemes
+      // to guarantee the target window perfectly bounds the ASR buffer.
+      int currentRefPhonemes = 0;
+      int endWordLimit = targetWordCursor;
 
-      int endWordLimit = targetWordCursor + estWords + lookaheadWords;
+      // Find winStartChunk first
+      for (int i = 0; i < refChunks.length; i++) {
+        if (chunkToWordMap[i] == targetWordCursor && winStartChunk == -1) {
+          winStartChunk = i;
+          break;
+        }
+      }
+
+      if (winStartChunk != -1) {
+        // Expand endWordLimit until the reference window absorbs 'm' audio tokens
+        for (int i = winStartChunk; i < refChunks.length; i++) {
+          currentRefPhonemes++;
+          endWordLimit = chunkToWordMap[i];
+          if (currentRefPhonemes >= m) {
+            break;
+          }
+        }
+      }
+
+      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
+      endWordLimit += lookaheadWords;
+
       if (trackingStrictness == 'easy') {
         endWordLimit = targetWordCursor; // Current word only
       }
@@ -435,13 +477,39 @@ class DictationSequencer {
       double dynamicCostIns = trackingStrictness == 'easy' ? 0.65 : 1.0;
 
       // -----------------------------------------------------------------------
+      // [HADR MODE] Dynamic Strictness for Fast Readers
+      // -----------------------------------------------------------------------
+      // If the user is reading very fast (Hadr), phonemes naturally merge and 
+      // drop. We measure their speed in real-time using average duration.
+      double averagePhonemeDuration = 0.15; // default normal speed
+      int unconsumedCharStart = _getCharIndexForToken(cleanTokens, asrConsumedTokenCount);
+      if (unconsumedCharStart < currentSegmentTimestamps.length) {
+          double totalDur = 0;
+          int durCount = 0;
+          for (int c = unconsumedCharStart; c < currentSegmentTimestamps.length; c++) {
+              totalDur += currentSegmentTimestamps[c];
+              durCount++;
+          }
+          if (durCount > 0) {
+              averagePhonemeDuration = totalDur / durCount;
+          }
+      }
+
+      if (averagePhonemeDuration < 0.08 && trackingStrictness != 'easy') {
+          // User is reciting very fast (< 0.08s per phoneme). Forgive dropped letters!
+          dynamicCostDel = 0.75;
+      }
+
+      // -----------------------------------------------------------------------
       // The Engine Call
       // -----------------------------------------------------------------------
       final stopwatch = Stopwatch()..start();
 
+      List<String> unconsumedStrings = unconsumedTokens.map((t) => t.text).toList();
+
       // We ask the purely mathematical ForwardDictationMatcher to find a path.
       AlignmentResult? result = _matcher.align(
-        currentAsrChunks: unconsumedTokens,
+        currentAsrChunks: unconsumedStrings,
         targetWindow: targetWindow,
         targetStartBd: targetStartBd,
         targetEndBd: targetEndBd,
@@ -494,8 +562,8 @@ class DictationSequencer {
   /// and fires the highlight message to the UI.
   void _commitMatch(
     AlignmentResult result,
-    List<String> unconsumedTokens,
-    List<String> fullCleanTokens,
+    List<PhonemeToken> unconsumedTokens,
+    List<PhonemeToken> fullCleanTokens,
     List<String> targetWindow,
     List<int> targetWordIds,
     int winStartChunk,
@@ -510,7 +578,7 @@ class DictationSequencer {
     List<String> matchedAsrSlice = unconsumedTokens.sublist(
       result.bestStartI,
       result.bestI,
-    );
+    ).map((t) => t.text).toList();
     List<String> matchedRefSlice = targetWindow.sublist(
       result.bestStartJ,
       result.bestJ,
@@ -542,11 +610,10 @@ class DictationSequencer {
       if (wId < matchedWordStart || wId > matchedWordEnd) continue;
 
       int absPredIdx = result.bestStartI + align.predIdx;
-      String chunk = unconsumedTokens[absPredIdx];
+      String chunk = unconsumedTokens[absPredIdx].text;
       wordPredStrMap[wId] = (wordPredStrMap[wId] ?? '') + chunk;
 
-      // Extract timestamps. The index mapping is tricky because we have a global
-      // `currentSegmentAsr` but `unconsumedTokens` is a subset.
+      // Extract timestamps mapped exactly in O(1) time
       int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
       int charStart = _getCharIndexForToken(fullCleanTokens, globalTokenIdx);
       
@@ -676,19 +743,12 @@ class DictationSequencer {
   // Helper Math
   // ---------------------------------------------------------------------------
   
-  int _getCharIndexForToken(List<String> tokens, int tokenIndex) {
+  int _getCharIndexForToken(List<PhonemeToken> tokens, int tokenIndex) {
      if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
-     // Finding the exact character index mapping is hard if `chunkPhonemes` stripped noise.
-     // As an approximation, we sum the lengths of all previous clean tokens.
-     // (The exact alignment is difficult without tracking the stripped chars).
-     int chars = 0;
-     for (int i = 0; i < tokenIndex; i++) {
-        chars += tokens[i].length;
-     }
-     return chars;
+     return tokens[tokenIndex].originalIndex;
   }
 
-  List<double> _getUnconsumedYsProbs(List<String> cleanTokens, int consumedCount) {
+  List<double> _getUnconsumedYsProbs(List<PhonemeToken> cleanTokens, int consumedCount) {
      int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
      if (charStart < currentSegmentYsProbs.length) {
         return currentSegmentYsProbs.sublist(charStart);

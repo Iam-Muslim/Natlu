@@ -33,6 +33,62 @@ import 'dart:typed_data';
 /// We want the tracker to forgive small phonetic mistakes so it can keep moving
 /// forward smoothly. (Strict Tajweed checking happens later in ErrorExplainer).
 class SubCostTable {
+  /// A clean, organized array of phoneme pairs that the Sherpa ASR model frequently
+  /// confuses due to acoustic similarity or mic muffling.
+  /// This list can be expanded without bloating the logic below.
+  static final List<Set<String>> _sherpaAcousticNeighbors = [
+    // 📊 Empirical substitutions found under extreme noise:
+    // {'م', 'ء'}, // Mim / Hamza
+    // {'ش', 'ك'}, // Shin / Kaf
+    // {'س', 'ت'}, // Sin / Ta
+    // {'س', 'ر'}, // Sin / Ra
+    // {'م', 'ف'}, // Mim / Fa
+    // {'ص', 'ء'}, // Sad / Hamza
+    // {'ص', 'ط'}, // Sad / Tta
+    // {'ه', 'د'}, // Ha / Dal
+    // {'ق', 'ر'}, // Qaf / Ra
+    // {'ش', 'ت'}, // Shin / Ta
+    // {'ع', 'ر'}, // Ayn / Ra
+    // {'ف', 'ت'}, // Fa / Ta
+    // {'ر', 'د'}, // Ra / Dal
+    // {'ش', 'ل'}, // Shin / Lam
+    // {'ر', 'ء'}, // Ra / Hamza
+    // {'خ', 'ق'}, // Kha / Qaf
+    // {'ت', 'س'}, // Ta / Sin
+    // {'ج', 'ء'}, // Jeem / Hamza
+    // {'س', 'ف'}, // Sin / Fa
+    // {'ذ', 'ت'}, // Thal / Ta
+    // {'ل', 'ت'}, // Lam / Ta
+    // {'م', 'ن'}, // Mim / Nun
+    // {'ب', 'د'}, // Ba / Dal
+
+    // Original extensive acoustic neighbor list for robustness against False Reds
+    // on cheap Android microphones:
+    {'س', 'ص'}, // Sin / Sad
+    {'ت', 'ط'}, // Ta / Tta
+    {'ذ', 'ظ'}, // Thal / Zha
+    {'د', 'ض'}, // Dal / Dha
+    {'ه', 'ح'}, // Ha / Hha
+    {'غ', 'خ'}, // Ghayn / Kha
+    {'ك', 'ق'}, // Kaf / Qaf
+    {'ء', 'ع'}, // Hamza / Ayn
+    {'ن', 'م'}, // Nun / Mim (Nasal confusion)
+    {'ن', 'ل'}, // Nun / Lam (Liquid confusion)
+    {'ز', 'ذ'}, // Zay / Thal
+    {'س', 'ث'}, // Sin / Tha
+    {'ظ', 'ض'}, // Zha / Dha
+    {'ن', 'ں'}, // Nun / Noon Ghunna
+    {'م', '۾'}, // Mim / Mim variants
+    {'ه', 'ت'}, // Ta-Marbuta / Ta (Wasl vs Waqf confusion)
+    {'و', 'ُ'}, // Waw / Damma (Madd confusion)
+    {'ي', 'ِ'}, // Ya / Kasra (Madd confusion)
+    {'ا', 'َ'}, // Alif / Fatha (Madd confusion)
+    {'ى', 'َ'}, // Alif Maqsura / Fatha
+    {'ت', 'د'}, // Ta / Dal (Sherpa bias)
+    {'ج', 'ش'}, // Jeem / Shin (Sherpa bias)
+    {'ف', 'ث'}, // Fa / Tha (Sherpa bias)
+  ];
+
   /// Calculates the exact float penalty for substituting [c1] (ASR) with [c2] (Reference).
   ///
   /// Returns:
@@ -150,27 +206,11 @@ class SubCostTable {
     // highly accurate with vowels (Tashkeel).
     // If the vowel matches perfectly, we give a highly forgiving 0.25 penalty.
     // If the vowel is wrong, we apply a harsh 0.60 penalty to stop False Greens.
-    if (isPair('س', 'ص') || // Sin / Sad
-        isPair('ت', 'ط') || // Ta / Tta
-        isPair('ذ', 'ظ') || // Thal / Zha
-        isPair('د', 'ض') || // Dal / Dha
-        isPair('ه', 'ح') || // Ha / Hha
-        isPair('غ', 'خ') || // Ghayn / Kha
-        isPair('ك', 'ق') || // Kaf / Qaf
-        isPair('ء', 'ع') || // Hamza / Ayn
-        isPair('ن', 'م') || // Nun / Mim (Nasal confusion)
-        isPair('ن', 'ل') || // Nun / Lam (Liquid confusion)
-        isPair('ز', 'ذ') || // Zay / Thal
-        isPair('س', 'ث') || // Sin / Tha
-        isPair('ظ', 'ض') || // Zha / Dha
-        isPair('ن', 'ں') || // Nun / Noon Ghunna
-        isPair('م', '۾') || // Mim / Mim variants
-        isPair('ه', 'ت') || // Ta-Marbuta / Ta (Wasl vs Waqf confusion)
-        isPair('و', 'ُ') || // Waw / Damma (Madd confusion)
-        isPair('ي', 'ِ') || // Ya / Kasra (Madd confusion)
-        isPair('ا', 'َ') || // Alif / Fatha (Madd confusion)
-        isPair('ى', 'َ')) {
-      // Alif Maqsura / Fatha
+    bool isNeighbor = _sherpaAcousticNeighbors.any(
+      (pair) => isPair(pair.elementAt(0), pair.elementAt(1)),
+    );
+
+    if (isNeighbor) {
       // The user's ASR is excellent at catching Tashkeel, even if it mixes up the consonant.
       // We extract the vowels (everything after the first base character) to check them.
       bool harakatMatch = false;

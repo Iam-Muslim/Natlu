@@ -12,7 +12,7 @@ import random
 # Set to True to inject static/hiss into the studio MP3s to simulate a cheap Android microphone
 SIMULATE_BAD_MIC = True
 # 0.01 = Light static, 0.05 = Noticeable hiss, 0.10 = Bad noisy room
-NOISE_LEVEL = 0.03 
+NOISE_LEVEL = 0.08 
 # ==========================================
 
 def download_audio(url, output_path):
@@ -29,6 +29,8 @@ def main():
         {"id": "Alafasy_128kbps", "name": "Alafasy"},
         {"id": "Husary_128kbps", "name": "Husary"},
         {"id": "Minshawy_Murattal_128kbps", "name": "Minshawy"},
+        {"id": "Abdurrahmaan_As-Sudais_192kbps", "name": "Sudais"},
+        {"id": "Saood_ash-Shuraym_128kbps", "name": "Shuraym"},
         # You can find more Qari IDs on everyayah.com
     ]
     
@@ -53,7 +55,7 @@ def main():
             scenarios.append(scenario)
     
     # Setup Sherpa
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     model_path = os.path.join(base_dir, "assets", "model", "zipformer_p_arabic_v2.int8.onnx")
     tokens_path = os.path.join(base_dir, "assets", "model", "tokens.txt")
     

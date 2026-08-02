@@ -653,10 +653,25 @@ class ForwardDictationMatcher {
             // Rule 2: If the weakest letter in this word dropped below 80% confidence,
             // we have absolute proof that the microphone/ASR model failed the user.
             if (minConf < 0.80) {
-              // Add the Word ID to the `shieldedWords` array. This is a secret message
-              // sent back to the Sequencer explicitly commanding it: "Do not turn me Red!"
+              // ── SHIELD PROMOTION ──────────────────────────────────────────────
+              // If the word score is ≤ 0.45 (generous but bounded — still blocks
+              // outright wrong words), the global DP found the word acoustically
+              // and the ASR low-confidence proves partial signal degradation.
+              // Promote directly to GREEN instead of leaving it grey.
+              // This handles the common case of الرَّحمن / بسم where the initial
+              // ءَرر (hamza + shadda) is consistently dropped by the ASR model
+              // even though the user recited it correctly.
+              if (wordScore <= 0.45 && passesTailAnchor) {
+                verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
+                debugLog?.call(
+                  '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardStr" | '
+                  'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf*100).toStringAsFixed(1)}%) → GREEN',
+                );
+                continue; // Skip the shieldedWords.add below, it's already green
+              }
+              // ── SHIELD ONLY (grey) ────────────────────────────────────────────
+              // Score > 0.45: too uncertain to call green, but still protect from red.
               shieldedWords.add(wId);
-              // Print a clear debug log so developers can trace the interception.
               debugLog?.call('🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf*100).toStringAsFixed(1)}%)');
             }
           }

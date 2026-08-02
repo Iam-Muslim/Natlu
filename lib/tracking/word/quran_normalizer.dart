@@ -11,8 +11,15 @@
 // normalized through the same pipeline before Levenshtein comparison.
 //
 // normalize_aya defaults from quran-transcript (used for tasmeea matching):
-//   remove_spaces=True, remove_tashkeel=True,
-//   ignore_alef_maksoora=True, remove_small_alef=True
+// remove_spaces=True, remove_tashkeel=True,
+// ignore_alef_maksoora=True, remove_small_alef=True
+
+class PhonemeToken {
+  final String text;
+  final int originalIndex;
+
+  PhonemeToken(this.text, this.originalIndex);
+}
 
 class QuranNormalizer {
   // ── Tashkeel (harakat + shadda + sukun + tanween) ──────────────────────────
@@ -156,6 +163,16 @@ class QuranNormalizer {
     return _chunkRegex
         .allMatches(phoneticScript)
         .map((m) => m.group(1)!)
+        .toList();
+  }
+
+  /// Same as `chunkPhonemes`, but returns the exact original character index
+  /// where this chunk began in the `phoneticScript`. This guarantees O(1)
+  /// mapping for acoustic timestamps and confidence arrays without latency.
+  static List<PhonemeToken> chunkPhonemesWithIndices(String phoneticScript) {
+    return _chunkRegex
+        .allMatches(phoneticScript)
+        .map((m) => PhonemeToken(m.group(1)!, m.start))
         .toList();
   }
 }
