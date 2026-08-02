@@ -299,10 +299,10 @@ class SherpaEngine {
                     provider: provider,
                     debug: kDebugMode,
                   ),
-                  enableEndpoint: false,
-                  rule1MinTrailingSilence: 2.4,
-                  rule2MinTrailingSilence: 1.2,
-                  rule3MinUtteranceLength: 99999.0,
+                  enableEndpoint: true,
+                  rule1MinTrailingSilence: 10.0,
+                  rule2MinTrailingSilence: 2.2,
+                  rule3MinUtteranceLength: 30.0,
                 ),
               );
             }

@@ -158,8 +158,6 @@ class _OrchestratorState extends State<_Orchestrator> {
   final bool _isLoadingEngine = false;
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
-  Timer? _voiceSearchSilenceTimer;
-  int _lastVoiceActivityTime = 0;
 
   @override
   void initState() {
@@ -168,11 +166,6 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     // Global subscription for Voice Search text and Endpoint auto-stopping
     _engine.transcriptionStream.listen((res) {
-      if (_isRecording && res.isFinal && mounted) {
-        DebugLogger.log('Orchestrator', 'Auto-stopping recording due to Sherpa Endpoint (10s silence)');
-        _toggleRecord();
-      }
-
       if (_isVoiceSearching && mounted) {
         setState(() {
           _voiceSearchAsrText = res.text;
@@ -186,7 +179,7 @@ class _OrchestratorState extends State<_Orchestrator> {
           } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
             DebugLogger.log(
               'VoiceSearch',
-              'Auto-stopping search due to Sherpa Endpoint (silence detected)',
+              'Auto-stopping search due to Sherpa Endpoint (post-speech silence detected)',
             );
             _stopVoiceSearch();
           }
@@ -212,7 +205,6 @@ class _OrchestratorState extends State<_Orchestrator> {
 
   @override
   void dispose() {
-    _voiceSearchSilenceTimer?.cancel();
     _ctrl?.dispose();
     super.dispose();
   }
@@ -351,25 +343,10 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      _voiceSearchSilenceTimer?.cancel();
-      _voiceSearchSilenceTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-        if (_isVoiceSearching && _voiceSearchAsrText.trim().isNotEmpty) {
-          if (DateTime.now().millisecondsSinceEpoch - _lastVoiceActivityTime >= 800) {
-            DebugLogger.log('VoiceSearch', '800ms silence detected. Forcing search stop.');
-            _engine.transcribe(Float32List(0), isFinal: true);
-            _voiceSearchSilenceTimer?.cancel();
-          }
-        }
-      });
-
       _audio
           .start(
             onChunk: (chunk, isFinal) {
               _engine.transcribe(chunk, isFinal: isFinal);
-
-              if (_isVoiceSearching && !isFinal) {
-                _lastVoiceActivityTime = DateTime.now().millisecondsSinceEpoch;
-              }
             },
           )
           .catchError((e) {
@@ -391,7 +368,6 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
-      _voiceSearchSilenceTimer?.cancel();
       await _audio.stop();
       _engine.resetBuffer();
       await WakelockPlus.disable();

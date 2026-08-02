@@ -328,53 +328,31 @@ class DictationSequencer {
   }
 
   void replaceTail(Map message) {
-    // How many characters from the end of the buffer we need to delete.
     int backtrack = message['backtrack'];
-    // The new text that will replace the deleted characters.
     String newTail = message['tail'];
-    // The new timings corresponding to the new text.
     List<double> newTailTimestamps = List<double>.from(message['timestamps']);
-    // The new confidences corresponding to the new text.
     List<double> newTailYsProbs = List<double>.from(message['ysProbs'] ?? []);
 
-    // Safety check: Ensure backtrack never exceeds the local unmatched asrWindow length.
-    // If backtrack > asrWindow.length, it means Sherpa is attempting to rewrite text
-    // that was already matched/committed. We clamp backtrack to asrWindow.length and
-    // slice off the overlap from newTail so we never corrupt the active unmatched buffer.
+    // Clamp backtrack to active unmatched buffer length
     int actualBacktrack = min(backtrack, asrWindow.length);
-    int overlap = backtrack - actualBacktrack;
     int keepLength = asrWindow.length - actualBacktrack;
 
-    String effectiveTail = (overlap < newTail.length)
-        ? newTail.substring(overlap)
-        : '';
-
-    asrWindow = asrWindow.substring(0, keepLength) + effectiveTail;
-
-    int tsOverlap = min(overlap, newTailTimestamps.length);
-    List<double> effectiveTimestamps = tsOverlap < newTailTimestamps.length
-        ? newTailTimestamps.sublist(tsOverlap)
-        : [];
+    asrWindow = asrWindow.substring(0, keepLength) + newTail;
 
     if (keepLength <= asrTimestamps.length) {
-      asrTimestamps = asrTimestamps.sublist(0, keepLength)..addAll(effectiveTimestamps);
+      asrTimestamps = asrTimestamps.sublist(0, keepLength)..addAll(newTailTimestamps);
     } else {
-      asrTimestamps = effectiveTimestamps;
+      asrTimestamps = List<double>.from(newTailTimestamps);
     }
 
-    int ysOverlap = min(overlap, newTailYsProbs.length);
-    List<double> effectiveYsProbs = ysOverlap < newTailYsProbs.length
-        ? newTailYsProbs.sublist(ysOverlap)
-        : [];
-
     if (keepLength <= asrYsProbs.length) {
-      asrYsProbs = asrYsProbs.sublist(0, keepLength)..addAll(effectiveYsProbs);
+      asrYsProbs = asrYsProbs.sublist(0, keepLength)..addAll(newTailYsProbs);
     } else {
-      asrYsProbs = effectiveYsProbs;
+      asrYsProbs = List<double>.from(newTailYsProbs);
     }
 
     debugLog(
-      '⏪ [ASR REWRITE] Backtrack $actualBacktrack chars (requested $backtrack) | New Tail: "$effectiveTail" | Buffer: "$asrWindow"',
+      '⏪ [ASR REWRITE] Backtrack $actualBacktrack chars (requested $backtrack) | New Tail: "$newTail" | Buffer: "$asrWindow"',
     );
     _processSequence();
   }
@@ -421,6 +399,12 @@ class DictationSequencer {
           asrTimestamps = asrTimestamps.sublist(charsToDrop);
         } else {
           asrTimestamps = [];
+        }
+
+        if (charsToDrop <= asrYsProbs.length) {
+          asrYsProbs = asrYsProbs.sublist(charsToDrop);
+        } else {
+          asrYsProbs = [];
         }
 
         asrChunks = asrChunks.sublist(chunksToDrop);
@@ -624,6 +608,11 @@ class DictationSequencer {
     // professional ErrorExplainer rules engine.
     Map<int, List<ReciterError>>? tajweedErrors;
     if (isTajweed) {
+      int rawStartIdx = asrChunks
+          .sublist(0, result.bestStartI)
+          .fold(0, (sum, c) => sum + c.length);
+      int safeStartIdx = min(rawStartIdx, asrTimestamps.length);
+
       tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
         alignments:
             globalAlignments, // The exact operations (equal, replace, insert, delete)
@@ -631,11 +620,7 @@ class DictationSequencer {
         refChunkToWordMap: chunkToWordMap, // Mapping chunks to word IDs
         currentAsrChunks: matchedAsrSlice, // The actual sounds the user spoke
         // Pass only the raw timestamps that belong to the user's spoken string slice
-        trackingTimestamps: asrTimestamps.sublist(
-          asrChunks
-              .sublist(0, result.bestStartI)
-              .fold(0, (sum, c) => sum + c.length),
-        ),
+        trackingTimestamps: asrTimestamps.sublist(safeStartIdx),
 
         bestAsrStartIdx: 0,
         targetChunkCursor: 0,
@@ -729,6 +714,12 @@ class DictationSequencer {
       asrTimestamps = asrTimestamps.sublist(charSliceIdx);
     } else {
       asrTimestamps = [];
+    }
+
+    if (charSliceIdx <= asrYsProbs.length) {
+      asrYsProbs = asrYsProbs.sublist(charSliceIdx);
+    } else {
+      asrYsProbs = [];
     }
 
     // [Tajweed] Save the very last phoneme of this successful match to bridge to the next word

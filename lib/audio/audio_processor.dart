@@ -93,7 +93,7 @@ class AudioProcessor {
       }
 
       int offset = 0;
-      // Process in exact 320ms blocks
+      // Process in exact 480ms blocks
       while (allBytes.length - offset >= recordChunkBytes) {
         final byteView = Uint8List.view(
           allBytes.buffer,

@@ -369,6 +369,7 @@ class HighlightingController extends ChangeNotifier {
       }
 
       _engine.resetBuffer();
+      _lastProcessedText = '';
       _lastResetTime = DateTime.now().millisecondsSinceEpoch;
       _pendingClearAyah = ayah;
       onAyahChanged?.call();
@@ -469,6 +470,7 @@ class HighlightingController extends ChangeNotifier {
     _state = TrackerState.tracking;
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
+    _lastProcessedText = '';
 
     if (_isolateStarted) {
       _setIsolateAyah(verse, forceClear: false);
@@ -512,6 +514,15 @@ class HighlightingController extends ChangeNotifier {
           tok == 'eps') {
         lastBlankTs = realTs; // Track the most recent silence marker
         continue;
+      }
+      
+      // Filter out severe acoustic hallucinations (low confidence noise).
+      // ysProbs are log probabilities. -2.0 means roughly 13.5% confidence.
+      if (result.ysProbs.length > i) {
+        double prob = result.ysProbs[i];
+        if (prob < -2.0) {
+          continue; // Ignore this token as it's likely microphone noise
+        }
       }
       
       rawStarts.add({'tok': tok, 'ts': realTs, 'lastBlankBefore': lastBlankTs});
