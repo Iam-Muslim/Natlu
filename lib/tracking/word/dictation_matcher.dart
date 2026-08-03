@@ -362,7 +362,6 @@ class ForwardDictationMatcher {
 
           // If the final score beats the strictness threshold...
           if (score <= threshold) {
-            int startWord = targetWordIds[stJ < n ? stJ : j - 1];
             int endWord = targetWordIds[j - 1];
             String candidateStr = targetWindow.sublist(stJ, j).join('');
             debugLog?.call(

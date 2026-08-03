@@ -155,7 +155,7 @@ void main() async {
         // MINING TRACE
         // ---------------------------------------------------------
         for (var align in result.trace) {
-          if (align.opType == 1) { // 1 = Substitution
+          if (align.opType == 'replace') { // 'replace' = Substitution
              if (align.refIdx >= 0 && align.predIdx >= 0) {
                  String refP = windowRefChunks[align.refIdx];
                  String predP = cleanAsr[align.predIdx];

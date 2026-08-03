@@ -34,6 +34,9 @@ class TranscriptionResult {
   // Newly merged SherpaONNX deep metrics
   final List<double> ysProbs;
 
+  /// Epoch/generation of the ASR stream. Incremented on resets/flushes to reject stale messages.
+  final int streamEpoch;
+
   TranscriptionResult({
     required this.text,
     this.isFinal = false,
@@ -41,6 +44,7 @@ class TranscriptionResult {
     this.tokens = const [],
     this.timestamps = const [],
     this.ysProbs = const [],
+    this.streamEpoch = 0,
   });
 }
 
@@ -63,8 +67,10 @@ class SherpaEngine {
   bool _isInitialized = false;
   Future<void>? _initFuture;
   final List<Map<String, dynamic>> _pendingChunks = [];
+  int _currentStreamEpoch = 0;
 
   bool get isInitialized => _isInitialized;
+  int get currentStreamEpoch => _currentStreamEpoch;
   Stream<TranscriptionResult> get transcriptionStream =>
       _outputController.stream;
 
@@ -205,6 +211,7 @@ class SherpaEngine {
             tokens: List<String>.from(message['tokens'] ?? []),
             timestamps: List<double>.from(message['timestamps'] ?? []),
             ysProbs: ysProbs,
+            streamEpoch: (message['streamEpoch'] as int?) ?? _currentStreamEpoch,
           ),
         );
       }
@@ -242,6 +249,7 @@ class SherpaEngine {
   /// Use ONLY for explicit user actions (stop button, manual ayah jump).
   /// Do NOT call at automatic ayah boundaries — use [flushThenReset] instead.
   void resetBuffer() {
+    _currentStreamEpoch++;
     _pendingChunks.clear();
     _sendPort?.send(_IsolateMessage(_EngineCommand.reset));
   }
@@ -253,11 +261,11 @@ class SherpaEngine {
   ///
   /// Order (per model author's warning):
   ///   1. Push ~1.05 s of silence through the CURRENT live cache
-  ///      → drains the right-context buffer and emits the last-word tail
-  ///   2. Collect and emit whatever comes out as isFinal=true
-  ///   3. THEN zero the states for the next ayah
-  ///   4. Feed 300ms priming silence for the next ayah's left-context
+  ///      → drains the right-context buffer
+  ///   2. Zero the states for the next ayah
+  ///   3. Feed 300ms priming silence for the next ayah's left-context
   void flushThenReset() {
+    _currentStreamEpoch++;
     _pendingChunks.clear();
     _sendPort?.send(_IsolateMessage(_EngineCommand.flushThenReset));
   }
@@ -289,13 +297,14 @@ class SherpaEngine {
     final Float32List primingBuffer = Float32List(
       4800,
     ); // 300ms pre-roll silence initialized once
+    int isolateStreamEpoch = 0;
 
-    port.listen((message) {
-      if (message is! _IsolateMessage) return;
+    port.listen((msg) {
+      if (msg is! _IsolateMessage) return;
 
-      switch (message.command) {
+      switch (msg.command) {
         case _EngineCommand.init:
-          final paths = message.payload as Map<String, String>;
+          final paths = msg.payload as Map<String, String>;
           try {
             if (!File(paths['modelPath']!).existsSync() ||
                 !File(paths['tokensPath']!).existsSync()) {
@@ -355,7 +364,7 @@ class SherpaEngine {
         case _EngineCommand.recognize:
           if (recognizer == null || stream == null) return;
 
-          final payload = message.payload as Map<String, dynamic>;
+          final payload = msg.payload as Map<String, dynamic>;
           final transferable = payload['chunk'] as TransferableTypedData;
           final rawBytesTemp = transferable.materialize().asUint8List();
           final rawBytes = rawBytesTemp.offsetInBytes % 4 != 0
@@ -404,6 +413,7 @@ class SherpaEngine {
               'ysProbs': extractYsProbs(partial),
               'isFinal': false,
               'startTime': startTime,
+              'streamEpoch': isolateStreamEpoch,
             });
           }
 
@@ -423,6 +433,7 @@ class SherpaEngine {
               'ysProbs': extractYsProbs(final_),
               'isFinal': true,
               'startTime': startTime,
+              'streamEpoch': isolateStreamEpoch,
             });
             // ── IMPORTANT: Do NOT reset the stream here ──────────────────────
             // The model was trained on isolated ayah clips. Resetting the cache
@@ -438,30 +449,16 @@ class SherpaEngine {
 
         case _EngineCommand.flushThenReset:
           // ── Flush-then-Reset (Ayah Boundary) ────────────────────────────────
-          // Step 1: Push ~1.05 s of silence through the LIVE cache.
-          //   The Zipformer right-context buffer is ~1.05 s (encode 1000ms profile).
-          //   Feeding zeros through the current stream causes the model to flush
-          //   whatever partial phonemes are still in its right-context window.
-          //   This guarantees the final word's tail is emitted before we reset.
+          // Step 1: Increment epoch so any pending/inflight results are invalidated.
+          isolateStreamEpoch++;
+
+          // Step 2: Push ~1.05 s of silence through the LIVE cache to drain it.
           if (recognizer != null && stream != null) {
             // 1.05 s of silence at 16 kHz = 16,800 samples
             final flushSilence = Float32List(16800);
             stream!.acceptWaveform(sampleRate: 16000, samples: flushSilence);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
-            }
-
-            // Step 2: Emit whatever came out of the flush as a final result.
-            final flushed = recognizer!.getResult(stream!);
-            if (flushed.text.isNotEmpty) {
-              mainSendPort.send({
-                'text': flushed.text,
-                'tokens': flushed.tokens,
-                'timestamps': flushed.timestamps,
-                'ysProbs': <double>[],
-                'isFinal': true,
-                'startTime': DateTime.now().millisecondsSinceEpoch,
-              });
             }
 
             // Step 3: NOW zero the states — cache is fully drained.
@@ -479,6 +476,7 @@ class SherpaEngine {
           // ── Hard Reset (explicit user action only) ───────────────────────────
           // Used for: stop button, manual ayah jump, voice search start.
           // NOT used for automatic ayah-advance (use flushThenReset for that).
+          isolateStreamEpoch++;
           if (recognizer != null && stream != null) {
             recognizer!.reset(stream!);
             // Priming preroll: feed 300ms of pre-allocated silence and decode immediately

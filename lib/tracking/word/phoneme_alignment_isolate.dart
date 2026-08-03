@@ -96,6 +96,7 @@ class PhonemeAlignmentIsolate {
     bool forceClear = false,
     String trackingStrictness = 'normal',
     int startWordCursor = 0,
+    int ayahNumber = 0,
   }) {
     _sendPort?.send({
       'cmd': IsolateCommands.setAyah,
@@ -105,6 +106,7 @@ class PhonemeAlignmentIsolate {
       'forceClear': forceClear,
       'trackingStrictness': trackingStrictness,
       'startWordCursor': startWordCursor,
+      'ayahNumber': ayahNumber,
     });
   }
 
@@ -114,6 +116,7 @@ class PhonemeAlignmentIsolate {
     List<double> segmentTimestamps, [
     List<double>? segmentYsProbs,
     bool isNewSegment = false,
+    int ayahNumber = 0,
   ]) {
     _sendPort?.send({
       'cmd': IsolateCommands.syncStream,
@@ -121,6 +124,7 @@ class PhonemeAlignmentIsolate {
       'timestamps': segmentTimestamps,
       'ysProbs': segmentYsProbs ?? [],
       'isNewSegment': isNewSegment,
+      'ayahNumber': ayahNumber,
     });
   }
 
@@ -208,6 +212,9 @@ class DictationSequencer {
   /// engine needs to know what the end of Word 1 sounded like to verify an Idgham.
   String? lastMatchedPhoneme;
 
+  /// Current Ayah number being tracked
+  int currentAyahNumber = 0;
+
   /// The purely mathematical engine.
   final ForwardDictationMatcher _matcher = ForwardDictationMatcher();
 
@@ -227,6 +234,7 @@ class DictationSequencer {
   /// Parses the raw string of the entire Ayah into individual phoneme chunks,
   /// maps them to specific Word IDs, and builds the boolean boundary arrays.
   void setAyah(Map message) {
+    currentAyahNumber = message['ayahNumber'] as int? ?? 0;
     String expectedPhonemes = (message['phonemes'] as String).replaceAll(
       ' ',
       '',
@@ -309,7 +317,7 @@ class DictationSequencer {
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
     debugLog(
-      '📖 [AYAH SET] Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length}',
+      '📖 [AYAH SET] Ayah: $currentAyahNumber | Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length}',
     );
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -323,6 +331,12 @@ class DictationSequencer {
   /// Then, we instantly kick off a processing loop to see if those new sounds
   /// are enough to complete the word we are waiting for.
   void syncStream(Map message) {
+    int msgAyahNumber = message['ayahNumber'] as int? ?? 0;
+    if (msgAyahNumber != 0 && currentAyahNumber != 0 && msgAyahNumber != currentAyahNumber) {
+      debugLog('🚫 [ISOLATE] Dropping syncStream for mismatched ayah $msgAyahNumber (current is $currentAyahNumber)');
+      return;
+    }
+
     String newAsr = message['asr'];
     List<double> newTimestamps = List<double>.from(message['timestamps']);
     List<double> newYsProbs = List<double>.from(message['ysProbs'] ?? []);

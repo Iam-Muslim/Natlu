@@ -219,6 +219,7 @@ class HighlightingController extends ChangeNotifier {
       // this new ayah were already consumed as lookahead in the previous ayah.
       // The matcher will start at that word position instead of word 0.
       startWordCursor: forceClear ? 0 : _lookaheadWordsConsumed,
+      ayahNumber: verse.ayah,
     );
   }
 
@@ -458,13 +459,7 @@ class HighlightingController extends ChangeNotifier {
     // CRITICAL: Synchronize Isolate state! Since we cleared the UI highlights,
     // the isolate must also reset its word cursor back to 0 for this Ayah.
     if (_currentMatch != null && _isolateStarted) {
-      _alignmentIsolate.setAyah(
-        _currentMatch!.verse.textPhoneme,
-        _calculateBoundaries(_currentMatch!.verse.phonemeWords),
-        isTajweed: isTajweed,
-        forceClear: true,
-        trackingStrictness: AppState.instance.trackingStrictness.name,
-      );
+      _setIsolateAyah(_currentMatch!.verse, forceClear: true);
     }
 
     _engine.resetBuffer();
@@ -524,6 +519,7 @@ class HighlightingController extends ChangeNotifier {
     _engine.flushThenReset();
     _lastProcessedText = '';
     _expectingNewSegment = true;
+    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     // Reset lookahead counter — it was just consumed and passed to the isolate
     // via startWordCursor in _setIsolateAyah (called from forceActiveAyah).
     _lookaheadWordsConsumed = 0;
@@ -535,7 +531,8 @@ class HighlightingController extends ChangeNotifier {
     if (_state == TrackerState.discovery) return;
     if (_currentMatch == null) return;
 
-    if (result.startTime < _lastResetTime) {
+    if (result.startTime < _lastResetTime ||
+        result.streamEpoch != _engine.currentStreamEpoch) {
       return;
     }
 
@@ -702,7 +699,13 @@ class HighlightingController extends ChangeNotifier {
     }
 
     if (asrText.isNotEmpty && _isolateStarted) {
-      _alignmentIsolate.syncStream(asrText, charDurations, charYsProbs, isNewSegment);
+      _alignmentIsolate.syncStream(
+        asrText,
+        charDurations,
+        charYsProbs,
+        isNewSegment,
+        _currentMatch?.verse.ayah ?? 0,
+      );
       
       // If the model resets the string, we tell the isolate it's a new segment so it can 
       // safely reset its `asrConsumedTokenCount` to 0. This fixes the massive desync!

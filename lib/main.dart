@@ -155,7 +155,6 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isRecording = false;
   String _initStatus = 'Starting…';
   bool _isToggling = false; // Prevents double-tap hardware crashes
-  final bool _isLoadingEngine = false;
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
 
@@ -567,7 +566,6 @@ class _OrchestratorState extends State<_Orchestrator> {
       isRecording: _isRecording,
       isVoiceSearching: _isVoiceSearching,
       voiceSearchText: _voiceSearchAsrText,
-      isLoadingEngine: _isLoadingEngine,
       onToggleRecord: _toggleRecord,
       onVoiceSearchToggle: _toggleVoiceSearch,
       onClearBuffer: () {

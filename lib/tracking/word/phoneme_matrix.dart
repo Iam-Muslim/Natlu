@@ -87,6 +87,9 @@ class SubCostTable {
     {'ت', 'د'}, // Ta / Dal (Sherpa bias)
     {'ج', 'ش'}, // Jeem / Shin (Sherpa bias)
     {'ف', 'ث'}, // Fa / Tha (Sherpa bias)
+    {'ي', 'ۦ'}, // Ya / Small Ya (Uthmani Quranic script)
+    {'و', 'ۥ'}, // Waw / Small Waw (Uthmani Quranic script)
+    {'ى', 'ي'}, // Alif Maqsura / Ya
   ];
 
   /// Calculates the exact float penalty for substituting [c1] (ASR) with [c2] (Reference).
@@ -136,16 +139,20 @@ class SubCostTable {
     }
 
     // -------------------------------------------------------------------------
-    // Rule 5: The Alif Maqsura & Ya Forgiveness Zone
-    // In many scripts (especially Uthmani), 'ي' (Ya) and 'ى' (Alif Maqsura) are
-    // visually or phonetically interchangeable at the ends of words.
-    // If the mismatch is just between these two, we forgive it.
+    // Rule 5: The Ya & Waw Madd Variant Forgiveness Zone
+    // In Quranic Uthmani text, 'ي' (Ya), 'ى' (Alif Maqsura), and 'ۦ' (Small Ya)
+    // represent the same long/short vowel sound depending on script convention.
+    // Similarly, 'و' (Waw) and 'ۥ' (Small Waw) represent the same sound.
     // -------------------------------------------------------------------------
-    // if (!sameBase &&
-    //     (base1 == 'ي' || base1 == 'ى') &&
-    //     (base2 == 'ي' || base2 == 'ى')) {
-    //   sameBase = true;
-    // }
+    final yaFamily = const ['ي', 'ى', 'ۦ', 'ۧ'];
+    if (!sameBase && yaFamily.contains(base1) && yaFamily.contains(base2)) {
+      sameBase = true;
+    }
+
+    final wawFamily = const ['و', 'ۥ', 'ۨ'];
+    if (!sameBase && wawFamily.contains(base1) && wawFamily.contains(base2)) {
+      sameBase = true;
+    }
 
     // -------------------------------------------------------------------------
     // Rule 6: The Ta-Marbuta & Ha Forgiveness Zone
@@ -162,7 +169,6 @@ class SubCostTable {
     // Rule 7: Shadda & Maddah (Length Penalty)
     // If we determined above that the Base letters are the same, we still need
     // to check if one has a Shadda/Maddah and the other doesn't.
-    // Missing a Shadda or shortening a Maddah gets a penalty of 0.55.
     // -------------------------------------------------------------------------
     if (sameBase) {
       // Shaddas and Maddahs are represented as repeated letters (e.g. 'ببِ' or 'يييي').
@@ -185,8 +191,10 @@ class SubCostTable {
           // Maddah length variation. Very common and often perfectly legal (e.g. 2, 4, 6 beats).
           return 0.15; // Low penalty for Madd length mismatch
         }
-        // Missing a Shadda (e.g., 'بِ' vs 'ببِ')
-        return 0.55;
+        // Missing or extra Shadda (e.g. 'بِ' vs 'ببِ' or 'رَ' vs 'ررَ').
+        // Low penalty for tracking alignment so dropped Shaddahs in fast speech don't
+        // abort the word match (Tajweed ErrorExplainer evaluates strictness separately).
+        return 0.25;
       }
 
       // If the lengths match but the strings are different, it is a wrong Tashkeel.

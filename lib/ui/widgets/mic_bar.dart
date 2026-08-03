@@ -22,7 +22,7 @@ class BottomActionBar extends StatefulWidget {
   const BottomActionBar({
     super.key,
     required this.isRecording,
-    required this.isLoadingEngine,
+    this.isLoadingEngine = false,
     required this.isAutoScrolling,
     required this.c,
     required this.onMic,
