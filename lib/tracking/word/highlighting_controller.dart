@@ -132,10 +132,7 @@ class HighlightingController extends ChangeNotifier {
   bool _expectingNewSegment = false;
   int? _pendingClearAyah;
 
-  /// Tracks how many words from the NEXT ayah were already consumed via lookahead
-  /// during the current ayah's DP matching. When we advance to the next ayah,
-  /// we pass this as `startWordCursor` so the matcher skips those already-matched words.
-  int _lookaheadWordsConsumed = 0;
+
 
   HighlightingController({
     required this.repository,
@@ -192,33 +189,13 @@ class HighlightingController extends ChangeNotifier {
   }
 
   void _setIsolateAyah(QuranVerse verse, {bool forceClear = false}) {
-    String combinedTextPhoneme = verse.textPhoneme;
-    List<String> combinedPhonemeWords = List.from(verse.phonemeWords);
-
-    String strictness = AppState.instance.trackingStrictness.name;
-    int lookaheadWords = strictness == 'strict'
-        ? 3
-        : (strictness == 'easy' ? 0 : 2); // default
-
-    final nextVerse = repository.getNextVerse(verse.surah, verse.ayah);
-    if (nextVerse != null) {
-      int wordsToAdd = min(lookaheadWords, nextVerse.phonemeWords.length);
-      for (int i = 0; i < wordsToAdd; i++) {
-        combinedTextPhoneme += " ${nextVerse.phonemeWords[i]}";
-        combinedPhonemeWords.add(nextVerse.phonemeWords[i]);
-      }
-    }
-
     _alignmentIsolate.setAyah(
-      combinedTextPhoneme,
-      _calculateBoundaries(combinedPhonemeWords),
+      verse.textPhoneme,
+      _calculateBoundaries(verse.phonemeWords),
       isTajweed: isTajweed,
       forceClear: forceClear,
       trackingStrictness: AppState.instance.trackingStrictness.name,
-      // On auto-advance (forceClear=false), tell the isolate how many words of
-      // this new ayah were already consumed as lookahead in the previous ayah.
-      // The matcher will start at that word position instead of word 0.
-      startWordCursor: forceClear ? 0 : _lookaheadWordsConsumed,
+      startWordCursor: 0,
       ayahNumber: verse.ayah,
     );
   }
@@ -232,13 +209,7 @@ class HighlightingController extends ChangeNotifier {
     bool isRed = event['is_red'] as bool? ?? false;
     String cleanAsr = event['clean_asr'] as String? ?? '';
 
-    // Track lookahead words: any wordId ≥ the actual ayah's word count
-    // is a lookahead word belonging to the NEXT ayah.
-    final int actualWordCount = targetAyah.phonemeWords.length;
-    if (wordId >= actualWordCount) {
-      // e.g. wordId=2 in a 2-word ayah → lookahead word 0 of next ayah
-      _lookaheadWordsConsumed = (wordId - actualWordCount) + 1;
-    }
+
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -486,15 +457,12 @@ class HighlightingController extends ChangeNotifier {
 
     if (_isolateStarted) {
       _setIsolateAyah(verse, forceClear: false);
-      _lookaheadWordsConsumed = 0;
     }
 
     notifyListeners();
   }
 
-  void flushAndResetForNextAyah() {
-    _lookaheadWordsConsumed = 0;
-  }
+  void flushAndResetForNextAyah() {}
 
   // ── Internal ──────────────────────────────────────────────────────────────
 

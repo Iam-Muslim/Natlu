@@ -336,8 +336,12 @@ class DictationSequencer {
   /// are enough to complete the word we are waiting for.
   void syncStream(Map message) {
     int msgAyahNumber = message['ayahNumber'] as int? ?? 0;
-    if (msgAyahNumber != 0 && currentAyahNumber != 0 && msgAyahNumber != currentAyahNumber) {
-      debugLog('🚫 [ISOLATE] Dropping syncStream for mismatched ayah $msgAyahNumber (current is $currentAyahNumber)');
+    if (msgAyahNumber != 0 &&
+        currentAyahNumber != 0 &&
+        msgAyahNumber != currentAyahNumber) {
+      debugLog(
+        '🚫 [ISOLATE] Dropping syncStream for mismatched ayah $msgAyahNumber (current is $currentAyahNumber)',
+      );
       return;
     }
 
@@ -348,7 +352,9 @@ class DictationSequencer {
 
     if (isNewSegment) {
       asrConsumedTokenCount = 0;
-      debugLog('🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.');
+      debugLog(
+        '🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.',
+      );
     }
 
     currentSegmentAsr = newAsr;
@@ -377,9 +383,16 @@ class DictationSequencer {
       // If we finished the Ayah, do nothing.
       if (targetWordCursor >= wordBoundaries.length - 1) break;
 
-      List<PhonemeToken> rawTokens = QuranNormalizer.chunkPhonemesWithIndices(currentSegmentAsr);
+      List<PhonemeToken> rawTokens = QuranNormalizer.chunkPhonemesWithIndices(
+        currentSegmentAsr,
+      );
       List<PhonemeToken> cleanTokens = rawTokens
-          .where((t) => t.text.trim().isNotEmpty && t.text != '<blank>' && t.text != 'ؙ')
+          .where(
+            (t) =>
+                t.text.trim().isNotEmpty &&
+                t.text != '<blank>' &&
+                t.text != 'ؙ',
+          )
           .toList();
 
       // [CRITICAL LOOKAHEAD JUMP HANDLING]
@@ -391,7 +404,9 @@ class DictationSequencer {
       }
 
       // We only feed the newly unconsumed tokens to the Math Engine!
-      List<PhonemeToken> unconsumedTokens = cleanTokens.sublist(asrConsumedTokenCount);
+      List<PhonemeToken> unconsumedTokens = cleanTokens.sublist(
+        asrConsumedTokenCount,
+      );
 
       if (unconsumedTokens.isEmpty) break;
 
@@ -401,14 +416,15 @@ class DictationSequencer {
       // Buffer Management (Garbage Collection)
       // -----------------------------------------------------------------------
       // We limit how many tokens we analyze to prevent CPU lag.
-      int maxAsrChunks = 150; // Increased to 150 to allow ~6 seconds of buffer without dropping
+      int maxAsrChunks =
+          150; // Increased to 150 to allow ~6 seconds of buffer without dropping
       if (m > maxAsrChunks) {
-         // Simply pretend we consumed the oldest tokens and dropped them!
-         int chunksToDrop = m - maxAsrChunks;
-         asrConsumedTokenCount += chunksToDrop;
-         unconsumedTokens = unconsumedTokens.sublist(chunksToDrop);
-         m = unconsumedTokens.length;
-         debugLog(
+        // Simply pretend we consumed the oldest tokens and dropped them!
+        int chunksToDrop = m - maxAsrChunks;
+        asrConsumedTokenCount += chunksToDrop;
+        unconsumedTokens = unconsumedTokens.sublist(chunksToDrop);
+        m = unconsumedTokens.length;
+        debugLog(
           '🗑️ [BUFFER GC] Dropped $chunksToDrop oldest tokens to prevent lag (Max $maxAsrChunks reached)',
         );
       }
@@ -417,38 +433,13 @@ class DictationSequencer {
       int winEndChunk = refChunks.length;
 
       // -----------------------------------------------------------------------
-      // Dynamic Lookahead Windowing
+      // Fixed Lookahead Windowing (Strictly Word-based)
       // -----------------------------------------------------------------------
-      // Instead of dividing by a flat 5.0, we dynamically count reference phonemes
-      // to guarantee the target window perfectly bounds the ASR buffer.
-      int currentRefPhonemes = 0;
-      int endWordLimit = targetWordCursor;
+      int lookaheadWords = trackingStrictness == 'easy'
+          ? 0
+          : (trackingStrictness == 'strict' ? 3 : 2);
 
-      // Find winStartChunk first
-      for (int i = 0; i < refChunks.length; i++) {
-        if (chunkToWordMap[i] == targetWordCursor && winStartChunk == -1) {
-          winStartChunk = i;
-          break;
-        }
-      }
-
-      if (winStartChunk != -1) {
-        // Expand endWordLimit until the reference window absorbs 'm' audio tokens
-        for (int i = winStartChunk; i < refChunks.length; i++) {
-          currentRefPhonemes++;
-          endWordLimit = chunkToWordMap[i];
-          if (currentRefPhonemes >= m) {
-            break;
-          }
-        }
-      }
-
-      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
-      endWordLimit += lookaheadWords;
-
-      if (trackingStrictness == 'easy') {
-        endWordLimit = targetWordCursor; // Current word only
-      }
+      int endWordLimit = targetWordCursor + lookaheadWords;
       if (endWordLimit > wordBoundaries.length - 1) {
         endWordLimit = wordBoundaries.length - 1;
       }
@@ -497,25 +488,32 @@ class DictationSequencer {
       // -----------------------------------------------------------------------
       // [HADR MODE] Dynamic Strictness for Fast Readers
       // -----------------------------------------------------------------------
-      // If the user is reading very fast (Hadr), phonemes naturally merge and 
+      // If the user is reading very fast (Hadr), phonemes naturally merge and
       // drop. We measure their speed in real-time using average duration.
       double averagePhonemeDuration = 0.15; // default normal speed
-      int unconsumedCharStart = _getCharIndexForToken(cleanTokens, asrConsumedTokenCount);
+      int unconsumedCharStart = _getCharIndexForToken(
+        cleanTokens,
+        asrConsumedTokenCount,
+      );
       if (unconsumedCharStart < currentSegmentTimestamps.length) {
-          double totalDur = 0;
-          int durCount = 0;
-          for (int c = unconsumedCharStart; c < currentSegmentTimestamps.length; c++) {
-              totalDur += currentSegmentTimestamps[c];
-              durCount++;
-          }
-          if (durCount > 0) {
-              averagePhonemeDuration = totalDur / durCount;
-          }
+        double totalDur = 0;
+        int durCount = 0;
+        for (
+          int c = unconsumedCharStart;
+          c < currentSegmentTimestamps.length;
+          c++
+        ) {
+          totalDur += currentSegmentTimestamps[c];
+          durCount++;
+        }
+        if (durCount > 0) {
+          averagePhonemeDuration = totalDur / durCount;
+        }
       }
 
       if (averagePhonemeDuration < 0.08 && trackingStrictness != 'easy') {
-          // User is reciting very fast (< 0.08s per phoneme). Forgive dropped letters!
-          dynamicCostDel = 0.75;
+        // User is reciting very fast (< 0.08s per phoneme). Forgive dropped letters!
+        dynamicCostDel = 0.75;
       }
 
       // -----------------------------------------------------------------------
@@ -523,7 +521,9 @@ class DictationSequencer {
       // -----------------------------------------------------------------------
       final stopwatch = Stopwatch()..start();
 
-      List<String> unconsumedStrings = unconsumedTokens.map((t) => t.text).toList();
+      List<String> unconsumedStrings = unconsumedTokens
+          .map((t) => t.text)
+          .toList();
 
       // We ask the purely mathematical ForwardDictationMatcher to find a path.
       AlignmentResult? result = _matcher.align(
@@ -593,10 +593,10 @@ class DictationSequencer {
         targetWordIds[result.bestStartJ < n ? result.bestStartJ : n - 1];
     int matchedWordEnd = targetWordIds[result.bestJ - 1];
 
-    List<String> matchedAsrSlice = unconsumedTokens.sublist(
-      result.bestStartI,
-      result.bestI,
-    ).map((t) => t.text).toList();
+    List<String> matchedAsrSlice = unconsumedTokens
+        .sublist(result.bestStartI, result.bestI)
+        .map((t) => t.text)
+        .toList();
     List<String> matchedRefSlice = targetWindow.sublist(
       result.bestStartJ,
       result.bestJ,
@@ -634,7 +634,7 @@ class DictationSequencer {
       // Extract timestamps mapped exactly in O(1) time
       int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
       int charStart = _getCharIndexForToken(fullCleanTokens, globalTokenIdx);
-      
+
       for (int c = 0; c < chunk.length; c++) {
         if (charStart + c < currentSegmentTimestamps.length) {
           wordPredTsMap
@@ -709,12 +709,12 @@ class DictationSequencer {
       // ════════════════════════════════════════════════════════════════════════════
       // [ANDROID ASR FAULT DETECTION "THE SHIELD"]
       // ════════════════════════════════════════════════════════════════════════════
-      // The DP Engine just told us this word failed strictness, which means `isSkipped` 
+      // The DP Engine just told us this word failed strictness, which means `isSkipped`
       // is currently TRUE. By default, this means we are about to emit a Red event.
       // HOWEVER, before we emit it, we look inside the `shieldedWords` array.
       if (isSkipped && result.shieldedWords.contains(w)) {
-        // We found the word inside the Shield array! This means the Math Engine proved 
-        // that the microphone glitched and the user is NOT to blame. 
+        // We found the word inside the Shield array! This means the Math Engine proved
+        // that the microphone glitched and the user is NOT to blame.
         // We use `continue` to instantly skip the rest of the loop.
         // The Red event is NEVER fired, and the UI word safely stays Grey!
         continue;
@@ -760,18 +760,21 @@ class DictationSequencer {
   // ---------------------------------------------------------------------------
   // Helper Math
   // ---------------------------------------------------------------------------
-  
+
   int _getCharIndexForToken(List<PhonemeToken> tokens, int tokenIndex) {
-     if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
-     return tokens[tokenIndex].originalIndex;
+    if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
+    return tokens[tokenIndex].originalIndex;
   }
 
-  List<double> _getUnconsumedYsProbs(List<PhonemeToken> cleanTokens, int consumedCount) {
-     int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
-     if (charStart < currentSegmentYsProbs.length) {
-        return currentSegmentYsProbs.sublist(charStart);
-     }
-     return [];
+  List<double> _getUnconsumedYsProbs(
+    List<PhonemeToken> cleanTokens,
+    int consumedCount,
+  ) {
+    int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
+    if (charStart < currentSegmentYsProbs.length) {
+      return currentSegmentYsProbs.sublist(charStart);
+    }
+    return [];
   }
 }
 
