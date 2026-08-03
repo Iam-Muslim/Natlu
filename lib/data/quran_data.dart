@@ -143,12 +143,32 @@ class QuranMetadataService {
   }
 }
 
+class ContinuousQuranWord {
+  final int globalIndex;
+  final int surah;
+  final int ayah;
+  final int wordInAyah;
+  final String uthmani;
+  final String phoneme;
+
+  const ContinuousQuranWord({
+    required this.globalIndex,
+    required this.surah,
+    required this.ayah,
+    required this.wordInAyah,
+    required this.uthmani,
+    required this.phoneme,
+  });
+}
+
 class QuranRepository {
   final QuranMetadataService _service;
 
   List<QuranVerse> _allVerses = [];
   bool _isLoaded = false;
   final Map<int, List<QuranVerse>> _surahCache = {};
+  final Map<int, List<ContinuousQuranWord>> _surahWordsCache = {};
+  final Map<int, Map<int, int>> _ayahStartWordIndexCache = {};
 
   QuranRepository(this._service);
 
@@ -175,6 +195,45 @@ class QuranRepository {
   List<QuranVerse> getSurah(int surah) {
     if (!_isLoaded) return [];
     return _surahCache[surah] ?? [];
+  }
+
+  List<ContinuousQuranWord> getSurahWords(int surah) {
+    if (!_isLoaded) return [];
+    if (_surahWordsCache.containsKey(surah)) {
+      return _surahWordsCache[surah]!;
+    }
+
+    final verses = getSurah(surah);
+    final List<ContinuousQuranWord> words = [];
+    final Map<int, int> ayahStartMap = {};
+    int globalIdx = 0;
+
+    for (final verse in verses) {
+      ayahStartMap[verse.ayah] = globalIdx;
+      for (int i = 0; i < verse.phonemeWords.length; i++) {
+        final uthmani =
+            i < verse.uthmaniWords.length ? verse.uthmaniWords[i] : '';
+        words.add(ContinuousQuranWord(
+          globalIndex: globalIdx++,
+          surah: verse.surah,
+          ayah: verse.ayah,
+          wordInAyah: i,
+          uthmani: uthmani,
+          phoneme: verse.phonemeWords[i],
+        ));
+      }
+    }
+
+    _ayahStartWordIndexCache[surah] = ayahStartMap;
+    _surahWordsCache[surah] = words;
+    return words;
+  }
+
+  int getAyahStartGlobalIndex(int surah, int ayah) {
+    if (!_surahWordsCache.containsKey(surah)) {
+      getSurahWords(surah);
+    }
+    return _ayahStartWordIndexCache[surah]?[ayah] ?? 0;
   }
 
   QuranVerse? getVerse(int surah, int ayah) {

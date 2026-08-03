@@ -120,11 +120,31 @@ class QuranNormalizer {
   //   U+06DC = sakt marker (small sin)
   //   U+06EA = jazm/special marker
   //   U+0640 = tatweel (kashida/extension)
-  static final String _residualsStr =
+  static const String _residualsStr =
       r'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652\u06EB\u0686\u065E\u06E3\u0619\u06DC\u06EA\u0640';
 
+  static const Set<int> _residualCodeUnits = {
+    0x064B, // fathan
+    0x064C, // dammatan
+    0x064D, // kasratan
+    0x064E, // fatha
+    0x064F, // damma
+    0x0650, // kasra
+    0x0651, // shadda
+    0x0652, // sukun
+    0x06EB, // tanween idhaam determiner
+    0x0686, // qalqalah (small jeem)
+    0x065E, // fatha momala (imala)
+    0x06E3, // sakt (small seen above)
+    0x0619, // dama mokhtalasa
+    0x06DC, // sakt marker
+    0x06EA, // jazm / special marker
+    0x0640, // tatweel (kashida)
+  };
+
   static bool isResidual(String char) {
-    return RegExp('^[$_residualsStr]\$').hasMatch(char);
+    if (char.isEmpty) return false;
+    return _residualCodeUnits.contains(char.codeUnitAt(0));
   }
 
   // ── Regex: identical non-residual chars + optional trailing residuals ─────────────

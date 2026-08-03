@@ -102,6 +102,16 @@ class AlignmentResult {
 /// across Ayahs, this engine strictly forces the user to move forward in time.
 /// This prevents the highlight from jumping wildly around the screen.
 class ForwardDictationMatcher {
+  Float64List _prevCost = Float64List(256);
+  Float64List _currCost = Float64List(256);
+  Int32List _prevStartI = Int32List(256);
+  Int32List _prevStartJ = Int32List(256);
+  Int32List _currStartI = Int32List(256);
+  Int32List _currStartJ = Int32List(256);
+  Uint8List _op = Uint8List(256 * 256);
+  Int32List _pIds = Int32List(256);
+  Int32List _rIds = Int32List(256);
+
   /// The core mathematical function.
   /// Returns an [AlignmentResult] if a match was found below the threshold.
   /// Returns `null` if the user's speech was too different from the target text.
@@ -127,6 +137,9 @@ class ForwardDictationMatcher {
     /// The maximum allowable penalty score. If the best path's score is higher
     /// than this threshold, we reject the match.
     required double threshold,
+
+    /// Optional pre-encoded integer IDs for the target window (skips encoding string phonemes in hot loop).
+    Int32List? targetEncodedIds,
 
     /// The penalty for completely dropping/skipping a required sound.
     /// Can be lowered (e.g., 0.65) to forgive stuttering in Easy Mode.
@@ -160,61 +173,53 @@ class ForwardDictationMatcher {
     double priorWeight = 0.10;
 
     // -------------------------------------------------------------------------
-    // Instant Integer Encoding
-    // String comparisons in Dart are extremely slow. We instantly convert the
-    // entire ASR and Reference strings into raw 32-bit Integer Arrays using
-    // the high-speed PhonemeMatrix encoder.
+    // Reusable Scratchpad Buffer Management (Zero Allocations)
     // -------------------------------------------------------------------------
-    Int32List pIds = Int32List(m);
+    if (_prevCost.length <= n + 1) {
+      int newSize = max(n + 10, _prevCost.length * 2);
+      _prevCost = Float64List(newSize);
+      _currCost = Float64List(newSize);
+      _prevStartI = Int32List(newSize);
+      _prevStartJ = Int32List(newSize);
+      _currStartI = Int32List(newSize);
+      _currStartJ = Int32List(newSize);
+    }
+    if (_pIds.length <= m) {
+      _pIds = Int32List(max(m + 10, _pIds.length * 2));
+    }
+    int opSize = (m + 1) * (n + 1);
+    if (_op.length < opSize) {
+      _op = Uint8List(max(opSize + 100, _op.length * 2));
+    }
+
+    // -------------------------------------------------------------------------
+    // Instant Integer Encoding
+    // -------------------------------------------------------------------------
+    Int32List pIds = _pIds;
     for (int i = 0; i < m; i++) {
       pIds[i] = PhonemeMatrix.encode(currentAsrChunks[i]);
     }
 
-    Int32List rIds = Int32List(n);
-    for (int j = 0; j < n; j++) {
-      rIds[j] = PhonemeMatrix.encode(targetWindow[j]);
+    Int32List rIds;
+    if (targetEncodedIds != null) {
+      rIds = targetEncodedIds;
+    } else {
+      if (_rIds.length <= n) {
+        _rIds = Int32List(max(n + 10, _rIds.length * 2));
+      }
+      rIds = _rIds;
+      for (int j = 0; j < n; j++) {
+        rIds[j] = PhonemeMatrix.encode(targetWindow[j]);
+      }
     }
 
-    // -------------------------------------------------------------------------
-    // O(n) Memory Allocation (The Rolling Rows Technique)
-    // -------------------------------------------------------------------------
-    // Normally, a DP algorithm allocates an M x N matrix. If M=100 and N=100,
-    // that's 10,000 floats. That is terrible for CPU cache locality.
-    //
-    // Because a DP algorithm only ever looks at the "Current Row" and the
-    // "Previous Row", we don't need a full 2D grid!
-    // We only allocate TWO rows. When we finish calculating the current row,
-    // we swap them, and the current row becomes the previous row.
-    // This reduces memory complexity from O(M*N) down to O(N). Extremely fast!
-
-    // prevCost holds the DP float penalties for the previous ASR chunk
-    Float64List prevCost = Float64List(n + 1);
-    // currCost holds the DP float penalties being computed for the current ASR chunk
-    Float64List currCost = Float64List(n + 1);
-
-    // We also track the "origin" of every cell. This answers the question:
-    // "Where did this specific alignment path originally start?"
-    // This allows Substring matching, where the user can start matching the word
-    // AFTER saying some garbage acoustic sounds.
-    Int32List prevStartI = Int32List(n + 1);
-    Int32List prevStartJ = Int32List(n + 1);
-    Int32List currStartI = Int32List(n + 1);
-    Int32List currStartJ = Int32List(n + 1);
-
-    // -------------------------------------------------------------------------
-    // [Tajweed] The 1-Byte Traceback Array
-    // -------------------------------------------------------------------------
-    // While the cost calculations can be crushed into just 2 rows, we still need
-    // to remember the EXACT path we took if we want to extract Tajweed errors later.
-    //
-    // Instead of storing heavy 64-bit class objects for the path, we allocate a
-    // massive but extremely lightweight 8-bit array (`Uint8List`).
-    // Every cell in this M*N grid will store exactly 1 byte:
-    // 0 = Substitution (Diagonal move)
-    // 1 = Insertion (Vertical move)
-    // 2 = Deletion (Horizontal move)
-    // This allows native Tajweed Error checking without needing a second DP function.
-    Uint8List op = Uint8List((m + 1) * (n + 1));
+    Float64List prevCost = _prevCost;
+    Float64List currCost = _currCost;
+    Int32List prevStartI = _prevStartI;
+    Int32List prevStartJ = _prevStartJ;
+    Int32List currStartI = _currStartI;
+    Int32List currStartJ = _currStartJ;
+    Uint8List op = _op;
 
     // -------------------------------------------------------------------------
     // Initialization: Row 0
@@ -228,9 +233,9 @@ class ForwardDictationMatcher {
         prevStartI[j] = 0;
         prevStartJ[j] = j;
       } else {
-        // [BUG FIX] Allow horizontal moves (Insertions) along Row 0. 
-        // This is critical. If the user misses the first letter of a word, the path 
-        // MUST be able to step horizontally from the word boundary to the second letter 
+        // [BUG FIX] Allow horizontal moves (Insertions) along Row 0.
+        // This is critical. If the user misses the first letter of a word, the path
+        // MUST be able to step horizontally from the word boundary to the second letter
         // before consuming any ASR audio.
         if (j > 0 && prevCost[j - 1] < double.infinity) {
           prevCost[j] = prevCost[j - 1] + costIns;
@@ -362,11 +367,13 @@ class ForwardDictationMatcher {
 
           // If the final score beats the strictness threshold...
           if (score <= threshold) {
-            int endWord = targetWordIds[j - 1];
-            String candidateStr = targetWindow.sublist(stJ, j).join('');
-            debugLog?.call(
-              '🧮 [CANDIDATE] Words $startWord..$endWord ("$candidateStr") | Score: ${score.toStringAsFixed(3)} (Acst: ${normDist.toStringAsFixed(3)}, Prior: ${prior.toStringAsFixed(3)})',
-            );
+            if (debugLog != null) {
+              int endWord = targetWordIds[j - 1];
+              String candidateStr = targetWindow.sublist(stJ, j).join('');
+              debugLog(
+                '🧮 [CANDIDATE] Words $startWord..$endWord ("$candidateStr") | Score: ${score.toStringAsFixed(3)} (Acst: ${normDist.toStringAsFixed(3)}, Prior: ${prior.toStringAsFixed(3)})',
+              );
+            }
 
             // [EDGE-BOUND TAIL STABILITY RULE]
             // We check if the tail of the word is mathematically stable before committing.
@@ -431,11 +438,13 @@ class ForwardDictationMatcher {
     // we need to extract the exact step-by-step trace so the Tajweed engine can
     // analyze the user's specific phonetic mistakes.
     if (bestI != -1) {
-      String matchedAsr = currentAsrChunks.sublist(bestStartI, bestI).join('');
-      String matchedRef = targetWindow.sublist(bestStartJ, bestJ).join('');
-      debugLog?.call(
-        '✅ [DP SUCCESS] Matched: "$matchedAsr" ➔ "$matchedRef" | Score: ${bestScore.toStringAsFixed(3)} <= $threshold',
-      );
+      if (debugLog != null) {
+        String matchedAsr = currentAsrChunks.sublist(bestStartI, bestI).join('');
+        String matchedRef = targetWindow.sublist(bestStartJ, bestJ).join('');
+        debugLog(
+          '✅ [DP SUCCESS] Matched: "$matchedAsr" ➔ "$matchedRef" | Score: ${bestScore.toStringAsFixed(3)} <= $threshold',
+        );
+      }
 
       List<PhonemeGroupAlignment> trace = [];
       int currI = bestI;
@@ -494,13 +503,15 @@ class ForwardDictationMatcher {
       List<PhonemeGroupAlignment> finalTrace = trace.reversed.toList();
 
       // Log the exact Levenshtein path
-      String pathStr = finalTrace.map((a) {
-        if (a.opType == 'equal') return 'M';
-        if (a.opType == 'replace') return 'S';
-        if (a.opType == 'insert') return 'I';
-        if (a.opType == 'delete') return 'D';
-        return '?';
-      }).join('-');
+      String pathStr = finalTrace
+          .map((a) {
+            if (a.opType == 'equal') return 'M';
+            if (a.opType == 'replace') return 'S';
+            if (a.opType == 'insert') return 'I';
+            if (a.opType == 'delete') return 'D';
+            return '?';
+          })
+          .join('-');
       debugLog?.call('🗺️ [DP PATH] $pathStr');
 
       // ═════════════════════════════════════════════════════════════════════════
@@ -525,7 +536,8 @@ class ForwardDictationMatcher {
       Map<int, double> wordTailCost =
           {}; // [Tail Anchor] Tracks the cost of the final reference phoneme for each word
       Map<int, String> heardWordStr = {};
-      Map<int, List<double>> wordConfs = {}; // <--- Holds exact ysProbs for each word
+      Map<int, List<double>> wordConfs =
+          {}; // <--- Holds exact ysProbs for each word
 
       // Determine the Word ID where the winning path started.
       int matchedWordStart = targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
@@ -535,7 +547,6 @@ class ForwardDictationMatcher {
 
       // ── Step 1: Map trace to actual phonetic strings and penalties ──
       for (var align in finalTrace) {
-        
         if (align.refIdx >= 0) {
           int absRefIdx = bestStartJ + align.refIdx;
           if (absRefIdx < targetWordIds.length) {
@@ -550,7 +561,9 @@ class ForwardDictationMatcher {
         // AND if the Sherpa engine actually provided probability metrics (asrYsProbs != null).
         // Finally, we check that `bestStartI + align.predIdx` (the global audio index)
         // is safely within the array bounds to prevent an IndexOutOfRangeException crash.
-        if (align.predIdx >= 0 && asrYsProbs != null && (bestStartI + align.predIdx) < asrYsProbs.length) {
+        if (align.predIdx >= 0 &&
+            asrYsProbs != null &&
+            (bestStartI + align.predIdx) < asrYsProbs.length) {
           // Calculate the global index where this exact phoneme lives in the audio array.
           int globalIndex = bestStartI + align.predIdx;
           // The engine outputs log-probabilities (e.g. -0.0018). We use `exp()` to convert it to a percentage.
@@ -575,7 +588,9 @@ class ForwardDictationMatcher {
 
         if (align.predIdx >= 0) {
           asrLens[currentWId] = (asrLens[currentWId] ?? 0) + 1;
-          heardWordStr[currentWId] = (heardWordStr[currentWId] ?? '') + currentAsrChunks[bestStartI + align.predIdx];
+          heardWordStr[currentWId] =
+              (heardWordStr[currentWId] ?? '') +
+              currentAsrChunks[bestStartI + align.predIdx];
         }
         if (align.refIdx >= 0) {
           refLens[currentWId] = (refLens[currentWId] ?? 0) + 1;
@@ -635,20 +650,20 @@ class ForwardDictationMatcher {
           // The word failed the strictness threshold (so it's destined to be Red).
           // However, we must check if the microphone glitched and gave us garbage.
           // ══════════════════════════════════════════════════════════════════════
-          
-          // Rule 1: Only shield words that are relatively close matches (Score <= 0.65). 
+
+          // Rule 1: Only shield words that are relatively close matches (Score <= 0.65).
           // If the score is huge (e.g. >0.80), the user said a completely wrong word.
           if (wordScore <= 0.65) {
             // Assume perfect confidence initially, in case no audio was mapped.
             double minConf = 1.0;
-            
+
             // Verify that this word actually had audio letters mapped to it.
             if (wordConfs[wId] != null && wordConfs[wId]!.isNotEmpty) {
               // Iterate through all the letters in this word and find the LOWEST confidence.
               // A single microphone glitch on ONE letter is enough to ruin the entire word.
               minConf = wordConfs[wId]!.reduce((a, b) => a < b ? a : b);
             }
-            
+
             // Rule 2: If the weakest letter in this word dropped below 80% confidence,
             // we have absolute proof that the microphone/ASR model failed the user.
             if (minConf < 0.80) {
@@ -664,14 +679,16 @@ class ForwardDictationMatcher {
                 verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
                 debugLog?.call(
                   '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardStr" | '
-                  'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf*100).toStringAsFixed(1)}%) → GREEN',
+                  'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf * 100).toStringAsFixed(1)}%) → GREEN',
                 );
                 continue; // Skip the shieldedWords.add below, it's already green
               }
               // ── SHIELD ONLY (grey) ────────────────────────────────────────────
               // Score > 0.45: too uncertain to call green, but still protect from red.
               shieldedWords.add(wId);
-              debugLog?.call('🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf*100).toStringAsFixed(1)}%)');
+              debugLog?.call(
+                '🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf * 100).toStringAsFixed(1)}%)',
+              );
             }
           }
           // ══════════════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
@@ -35,8 +36,9 @@ import '../../utils/debug_logger.dart';
 class IsolateCommands {
   static const int setup = 0;
   static const int syncStream = 1; // Sync full ASR stream for current segment
-  static const int setAyah = 2; // Initialize a new Ayah with expected phonemes
+  static const int setSurahReference = 2; // Initialize a Surah with continuous expected phonemes
   static const int shutdown = 3; // Terminate the isolate
+  static const int jumpToWord = 4; // Jump targetWordCursor to a specific global word index
   static const int setTajweedMode = 5; // Toggle tajweed mode
   static const int setTrackingStrictness = 6; // Set strictness mode
 }
@@ -88,25 +90,33 @@ class PhonemeAlignmentIsolate {
     _sendPort?.send({'cmd': IsolateCommands.setup, 'tokens': tokens});
   }
 
-  /// Tells the background thread to load a new Ayah.
-  void setAyah(
+  /// Tells the background thread to load a Surah reference.
+  void setSurahReference(
     String expectedPhonemes,
     List<int> wordBoundaries, {
     bool isTajweed = false,
     bool forceClear = false,
     String trackingStrictness = 'normal',
-    int startWordCursor = 0,
-    int ayahNumber = 0,
+    int startGlobalWord = 0,
+    int surahNumber = 0,
   }) {
     _sendPort?.send({
-      'cmd': IsolateCommands.setAyah,
+      'cmd': IsolateCommands.setSurahReference,
       'phonemes': expectedPhonemes,
       'boundaries': wordBoundaries,
       'isTajweed': isTajweed,
       'forceClear': forceClear,
       'trackingStrictness': trackingStrictness,
-      'startWordCursor': startWordCursor,
-      'ayahNumber': ayahNumber,
+      'startGlobalWord': startGlobalWord,
+      'surahNumber': surahNumber,
+    });
+  }
+
+  /// Jumps the tracking cursor to a specific global word index (e.g. when user taps an Ayah).
+  void jumpToWord(int globalWordIndex) {
+    _sendPort?.send({
+      'cmd': IsolateCommands.jumpToWord,
+      'globalWordIndex': globalWordIndex,
     });
   }
 
@@ -212,8 +222,16 @@ class DictationSequencer {
   /// engine needs to know what the end of Word 1 sounded like to verify an Idgham.
   String? lastMatchedPhoneme;
 
-  /// Current Ayah number being tracked
+  /// Current Surah and Ayah number being tracked
+  int currentSurahNumber = 0;
   int currentAyahNumber = 0;
+
+  /// Fast O(1) chunk boundary lookup per word
+  List<int> wordStartChunk = [];
+  List<int> wordEndChunk = [];
+
+  /// Pre-encoded integer phoneme IDs for the entire Surah
+  Int32List refEncodedIds = Int32List(0);
 
   /// The purely mathematical engine.
   final ForwardDictationMatcher _matcher = ForwardDictationMatcher();
@@ -229,12 +247,12 @@ class DictationSequencer {
   }
 
   /// --------------------------------------------------------------------------
-  /// Ayah Initialization
+  /// Continuous Surah Reference Initialization
   /// --------------------------------------------------------------------------
-  /// Parses the raw string of the entire Ayah into individual phoneme chunks,
-  /// maps them to specific Word IDs, and builds the boolean boundary arrays.
-  void setAyah(Map message) {
-    currentAyahNumber = message['ayahNumber'] as int? ?? 0;
+  /// Parses the continuous raw string of the entire Surah into individual phoneme chunks,
+  /// maps them to specific global Word IDs, and builds the boolean boundary arrays.
+  void setSurahReference(Map message) {
+    currentSurahNumber = message['surahNumber'] as int? ?? 0;
     String expectedPhonemes = (message['phonemes'] as String).replaceAll(
       ' ',
       '',
@@ -244,6 +262,7 @@ class DictationSequencer {
     trackingStrictness =
         message['trackingStrictness'] as String? ?? trackingStrictness;
     bool forceClear = message['forceClear'] as bool? ?? false;
+    int startGlobalWord = message['startGlobalWord'] as int? ?? 0;
 
     refChunks = QuranNormalizer.chunkPhonemes(expectedPhonemes);
     chunkToWordMap = [];
@@ -278,34 +297,34 @@ class DictationSequencer {
       endBd[n] = true;
     }
 
-    // ─── ASR buffer & Carry-Forward ─────────────────────────────────────────
-    // The Sherpa engine cache IS reset between ayahs (flushThenReset) per the
-    // model author's guidance — cross-ayah cache is out-of-distribution and
-    // causes hallucinations. However, during fast continuous recitation (Wasl),
-    // the ASR buffer may already contain DECODED TEXT tokens from the next
-    // ayah. These tokens were produced by audio already consumed by Sherpa
-    // and cannot be re-heard after the engine reset.
-    //
-    // We preserve these unconsumed tokens as a "carry-forward prefix" that is
-    // prepended to the new Sherpa stream's output. This lets the DP matcher
-    // immediately process them against the new ayah's reference, preventing
-    // the first word(s) from being wrongly marked RED during fast recitation.
     int wordCount = wordBoundaries.length - 1;
 
+    wordStartChunk = List.filled(wordCount, 0);
+    wordEndChunk = List.filled(wordCount, 0);
+
+    for (int j = 0; j < refChunks.length; j++) {
+      int w = chunkToWordMap[j];
+      if (w < wordCount) {
+        if (j == 0 || chunkToWordMap[j - 1] != w) {
+          wordStartChunk[w] = j;
+        }
+        wordEndChunk[w] = j + 1;
+      }
+    }
+
+    refEncodedIds = Int32List(refChunks.length);
+    for (int i = 0; i < refChunks.length; i++) {
+      refEncodedIds[i] = PhonemeMatrix.encode(refChunks[i]);
+    }
+
     if (forceClear) {
-      // Manual ayah jump / stop button / session start: wipe everything
       currentSegmentAsr = '';
       currentSegmentTimestamps = [];
       currentSegmentYsProbs = [];
       asrConsumedTokenCount = 0;
-      targetWordCursor = 0;
+      targetWordCursor = startGlobalWord.clamp(0, wordCount);
     } else {
-      // Automatic ayah advance during continuous recitation:
-      // Preserve currentSegmentAsr and asrConsumedTokenCount so that
-      // in-flight decoded tokens from fast recitation (Wasl) are immediately
-      // matched against the new ayah without dropping any words.
-      int startCursor = message['startWordCursor'] as int? ?? 0;
-      targetWordCursor = startCursor.clamp(0, wordCount);
+      targetWordCursor = startGlobalWord.clamp(0, wordCount);
     }
 
     acceptedWordsAsr = List.filled(wordCount, '');
@@ -316,16 +335,32 @@ class DictationSequencer {
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
     debugLog(
-      '📖 [AYAH SET] Ayah: $currentAyahNumber | Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length} | Consumed: $asrConsumedTokenCount',
+      '📖 [SURAH SET] Surah: $currentSurahNumber | Words: $wordCount | StartWord: $targetWordCursor | Tajweed: $isTajweed | Strict: $trackingStrictness',
     );
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
 
-    // Try immediate matching with already-decoded tokens in the buffer
     if (!forceClear && currentSegmentAsr.isNotEmpty) {
       _processSequence();
     }
+  }
+
+  void jumpToWord(Map message) {
+    int globalWordIndex = message['globalWordIndex'] as int? ?? 0;
+    int wordCount = wordBoundaries.length - 1;
+    targetWordCursor = globalWordIndex.clamp(0, max(0, wordCount));
+
+    // FIX: Clear stale ASR state from the previous recording session.
+    // If we don't reset these, asrConsumedTokenCount stays at its old value.
+    // The new session's fresh (short) ASR text will be immediately fully-consumed
+    // by the clamping logic → unconsumedTokens.isEmpty → matching never fires.
+    currentSegmentAsr = '';
+    currentSegmentTimestamps = [];
+    currentSegmentYsProbs = [];
+    asrConsumedTokenCount = 0;
+
+    debugLog('🎯 [JUMP TO WORD] Cursor jumped to global word $targetWordCursor (ASR state cleared)');
   }
 
   /// --------------------------------------------------------------------------
@@ -335,16 +370,6 @@ class DictationSequencer {
   /// Then, we instantly kick off a processing loop to see if those new sounds
   /// are enough to complete the word we are waiting for.
   void syncStream(Map message) {
-    int msgAyahNumber = message['ayahNumber'] as int? ?? 0;
-    if (msgAyahNumber != 0 &&
-        currentAyahNumber != 0 &&
-        msgAyahNumber != currentAyahNumber) {
-      debugLog(
-        '🚫 [ISOLATE] Dropping syncStream for mismatched ayah $msgAyahNumber (current is $currentAyahNumber)',
-      );
-      return;
-    }
-
     String newAsr = message['asr'];
     List<double> newTimestamps = List<double>.from(message['timestamps']);
     List<double> newYsProbs = List<double>.from(message['ysProbs'] ?? []);
@@ -376,24 +401,26 @@ class DictationSequencer {
   /// audio buffer, and loops again immediately (in case the user read really fast
   /// and there are 2 words hiding inside the audio buffer!).
   void _processSequence() {
+    if (currentSegmentAsr.isEmpty) return;
+
+    // Chunk and filter clean tokens ONCE per sequence tick rather than on every loop iteration
+    final List<PhonemeToken> rawTokens =
+        QuranNormalizer.chunkPhonemesWithIndices(currentSegmentAsr);
+    final List<PhonemeToken> cleanTokens = rawTokens
+        .where(
+          (t) =>
+              t.text.trim().isNotEmpty &&
+              t.text != '<blank>' &&
+              t.text != 'ؙ',
+        )
+        .toList();
+
     bool matchedSomething;
     do {
       matchedSomething = false;
 
       // If we finished the Ayah, do nothing.
       if (targetWordCursor >= wordBoundaries.length - 1) break;
-
-      List<PhonemeToken> rawTokens = QuranNormalizer.chunkPhonemesWithIndices(
-        currentSegmentAsr,
-      );
-      List<PhonemeToken> cleanTokens = rawTokens
-          .where(
-            (t) =>
-                t.text.trim().isNotEmpty &&
-                t.text != '<blank>' &&
-                t.text != 'ؙ',
-          )
-          .toList();
 
       // [CRITICAL LOOKAHEAD JUMP HANDLING]
       // If the model rewrote past history such that the new token count is LESS than
@@ -429,34 +456,27 @@ class DictationSequencer {
         );
       }
 
-      int winStartChunk = -1;
-      int winEndChunk = refChunks.length;
-
       // -----------------------------------------------------------------------
-      // Fixed Lookahead Windowing (Strictly Word-based)
+      // Fixed Lookahead Windowing (Strictly Word-based, O(1) Array Indexing)
       // -----------------------------------------------------------------------
       int lookaheadWords = trackingStrictness == 'easy'
           ? 0
           : (trackingStrictness == 'strict' ? 3 : 2);
 
-      int endWordLimit = targetWordCursor + lookaheadWords;
-      if (endWordLimit > wordBoundaries.length - 1) {
-        endWordLimit = wordBoundaries.length - 1;
+      int wordCount = wordBoundaries.length - 1;
+      if (targetWordCursor >= wordCount ||
+          targetWordCursor >= wordStartChunk.length) {
+        break;
       }
 
-      // We slice the Reference text starting precisely at the word we are expecting,
-      // and ending at our dynamic lookahead limit.
-      for (int i = 0; i < refChunks.length; i++) {
-        if (chunkToWordMap[i] == targetWordCursor && winStartChunk == -1) {
-          winStartChunk = i;
-        }
-        if (winStartChunk != -1 && chunkToWordMap[i] > endWordLimit) {
-          winEndChunk = i;
-          break;
-        }
-      }
+      int endWordLimit = min(targetWordCursor + lookaheadWords, wordCount - 1);
 
-      if (winStartChunk == -1) break;
+      int winStartChunk = wordStartChunk[targetWordCursor];
+      int winEndChunk = (endWordLimit < wordEndChunk.length)
+          ? wordEndChunk[endWordLimit]
+          : refChunks.length;
+
+      if (winStartChunk >= winEndChunk) break;
 
       debugLog(
         '🔍 [WINDOW] Analyzing reference chunks [$winStartChunk..${winEndChunk - 1}] (Words $targetWordCursor..$endWordLimit). ASR buffer size: $m chunks.',
@@ -533,6 +553,11 @@ class DictationSequencer {
         targetEndBd: targetEndBd,
         targetWordIds: targetWordIds,
         expectedWord: targetWordCursor,
+        targetEncodedIds: Int32List.sublistView(
+          refEncodedIds,
+          winStartChunk,
+          winEndChunk,
+        ),
         // YsProbs must be mapped from the characters, but for now we simply pass
         // the unconsumed segment probabilities. We calculate the unconsumed character index.
         asrYsProbs: _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount),
@@ -802,8 +827,11 @@ void _alignmentWorker(SendPort mainSendPort) {
       case IsolateCommands.syncStream:
         sequencer.syncStream(message);
         break;
-      case IsolateCommands.setAyah:
-        sequencer.setAyah(message);
+      case IsolateCommands.setSurahReference:
+        sequencer.setSurahReference(message);
+        break;
+      case IsolateCommands.jumpToWord:
+        sequencer.jumpToWord(message);
         break;
       case IsolateCommands.setTajweedMode:
         sequencer.isTajweed = message['isTajweed'];
