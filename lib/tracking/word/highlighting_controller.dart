@@ -280,16 +280,10 @@ class HighlightingController extends ChangeNotifier {
           targetAyah.ayah,
         );
         if (nextVerse != null) {
-          // Schedule the flush FIRST (while old-ayah cache is still live).
-          // The engine isolate will: feed silence → drain right-context →
-          // emit tail → reset states → prime for next ayah.
-          flushAndResetForNextAyah();
-
-          // Then advance UI after 50ms — giving the engine isolate time to
-          // start the flush before the alignment isolate switches ayah context.
-          Future.delayed(const Duration(milliseconds: 50), () {
-            forceActiveAyah(nextVerse);
-          });
+          // Seamless continuous recitation (Wasl):
+          // Immediately advance to next Ayah. The live microphone stream continues
+          // uninterrupted so that incoming audio (e.g. "الحمد لله") is never destroyed.
+          forceActiveAyah(nextVerse);
         } else {
           finalize();
         }
@@ -491,37 +485,14 @@ class HighlightingController extends ChangeNotifier {
     _lastProcessedText = '';
 
     if (_isolateStarted) {
-      // forceClear: false → the Zipformer cache is kept alive across the ayah
-      // boundary during normal auto-advance. The flushAndResetForNextAyah() call
-      // (triggered ~50ms earlier, after the last word) has already scheduled the
-      // cache flush in the engine isolate. The alignment isolate just needs its
-      // word cursor reset to 0 for the new ayah without clearing the ASR buffer,
-      // so buffered audio from fast continuous recitation is not lost.
       _setIsolateAyah(verse, forceClear: false);
+      _lookaheadWordsConsumed = 0;
     }
 
-    // We intentionally DO NOT reset the ASR engine or transcript tracking here.
-    // The flush was already scheduled by flushAndResetForNextAyah().
     notifyListeners();
   }
 
-  /// Called once the last word of an ayah is confirmed.
-  ///
-  /// This implements the author's flush-before-reset pattern:
-  ///   1. Tells the engine to push ~1.05s silence through the LIVE cache
-  ///      → drains the Zipformer right-context buffer (last word tail emitted)
-  ///   2. Then the engine zeroes the state for the next ayah
-  ///   3. Then primes the fresh cache with 300ms silence
-  ///
-  /// Must be called BEFORE forceActiveAyah() so the flush happens while the
-  /// old-ayah cache is still alive.
   void flushAndResetForNextAyah() {
-    _engine.flushThenReset();
-    _lastProcessedText = '';
-    _expectingNewSegment = true;
-    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
-    // Reset lookahead counter — it was just consumed and passed to the isolate
-    // via startWordCursor in _setIsolateAyah (called from forceActiveAyah).
     _lookaheadWordsConsumed = 0;
   }
 

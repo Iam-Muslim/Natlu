@@ -448,29 +448,9 @@ class SherpaEngine {
           }
 
         case _EngineCommand.flushThenReset:
-          // ── Flush-then-Reset (Ayah Boundary) ────────────────────────────────
-          // Step 1: Increment epoch so any pending/inflight results are invalidated.
-          isolateStreamEpoch++;
-
-          // Step 2: Push ~1.05 s of silence through the LIVE cache to drain it.
-          if (recognizer != null && stream != null) {
-            // 1.05 s of silence at 16 kHz = 16,800 samples
-            final flushSilence = Float32List(16800);
-            stream!.acceptWaveform(sampleRate: 16000, samples: flushSilence);
-            while (recognizer!.isReady(stream!)) {
-              recognizer!.decode(stream!);
-            }
-
-            // Step 3: NOW zero the states — cache is fully drained.
-            recognizer!.reset(stream!);
-
-            // Step 4: Prime the fresh cache with 300ms silence so the next ayah
-            // starts with a warmed left-context (not cold zeros).
-            stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
-            while (recognizer!.isReady(stream!)) {
-              recognizer!.decode(stream!);
-            }
-          }
+          // In live continuous streaming, the stream flows uninterrupted to avoid
+          // destroying in-flight speech samples during fast recitation (Wasl).
+          break;
 
         case _EngineCommand.reset:
           // ── Hard Reset (explicit user action only) ───────────────────────────

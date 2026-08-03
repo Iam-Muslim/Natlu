@@ -278,50 +278,54 @@ class DictationSequencer {
       endBd[n] = true;
     }
 
-    // ─── ASR buffer ───────────────────────────────────────────────────────────
-    // ALWAYS clear the ASR buffer on every ayah set — forceClear or auto-advance.
+    // ─── ASR buffer & Carry-Forward ─────────────────────────────────────────
+    // The Sherpa engine cache IS reset between ayahs (flushThenReset) per the
+    // model author's guidance — cross-ayah cache is out-of-distribution and
+    // causes hallucinations. However, during fast continuous recitation (Wasl),
+    // the ASR buffer may already contain DECODED TEXT tokens from the next
+    // ayah. These tokens were produced by audio already consumed by Sherpa
+    // and cannot be re-heard after the engine reset.
     //
-    // Rationale for auto-advance (forceClear=false):
-    //   By the time forceActiveAyah() fires, the DP has consumed virtually all tokens
-    //   in currentSegmentAsr (e.g. asrConsumedTokenCount = 24/25). Keeping the buffer
-    //   alive caused a double-match bug:
-    //     1. flushAndResetForNextAyah() sets _expectingNewSegment=true
-    //     2. The flush result arrives as isFinal=true with the full old 25-token buffer
-    //     3. isNewSegment=true resets asrConsumedTokenCount=0
-    //     4. But currentSegmentAsr still has the old buffer → DP re-matches الصراط!
-    //   Clearing the buffer here prevents this entirely. Any unconsumed tail tokens
-    //   (typically 0–1) are negligible — they haven’t been matched yet, so discarding
-    //   them costs nothing in practice. The next real audio chunk will repopulate the
-    //   buffer correctly.
-    currentSegmentAsr = '';
-    currentSegmentTimestamps = [];
-    currentSegmentYsProbs = [];
-    asrConsumedTokenCount = 0;
-
+    // We preserve these unconsumed tokens as a "carry-forward prefix" that is
+    // prepended to the new Sherpa stream's output. This lets the DP matcher
+    // immediately process them against the new ayah's reference, preventing
+    // the first word(s) from being wrongly marked RED during fast recitation.
     int wordCount = wordBoundaries.length - 1;
-    acceptedWordsAsr = List.filled(wordCount, '');
-    acceptedWordsTimestamps = List.generate(wordCount, (_) => []);
 
-    // ─── Word cursor ─────────────────────────────────────────────────────────
-    // forceClear (manual/stop): start at word 0.
-    // Auto-advance: start at startWordCursor (lookahead words already consumed).
     if (forceClear) {
+      // Manual ayah jump / stop button / session start: wipe everything
+      currentSegmentAsr = '';
+      currentSegmentTimestamps = [];
+      currentSegmentYsProbs = [];
+      asrConsumedTokenCount = 0;
       targetWordCursor = 0;
     } else {
+      // Automatic ayah advance during continuous recitation:
+      // Preserve currentSegmentAsr and asrConsumedTokenCount so that
+      // in-flight decoded tokens from fast recitation (Wasl) are immediately
+      // matched against the new ayah without dropping any words.
       int startCursor = message['startWordCursor'] as int? ?? 0;
       targetWordCursor = startCursor.clamp(0, wordCount);
     }
+
+    acceptedWordsAsr = List.filled(wordCount, '');
+    acceptedWordsTimestamps = List.generate(wordCount, (_) => []);
     lastMatchedPhoneme = null;
 
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
     debugLog(
-      '📖 [AYAH SET] Ayah: $currentAyahNumber | Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length}',
+      '📖 [AYAH SET] Ayah: $currentAyahNumber | Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length} | Consumed: $asrConsumedTokenCount',
     );
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
+
+    // Try immediate matching with already-decoded tokens in the buffer
+    if (!forceClear && currentSegmentAsr.isNotEmpty) {
+      _processSequence();
+    }
   }
 
   /// --------------------------------------------------------------------------
@@ -344,7 +348,7 @@ class DictationSequencer {
 
     if (isNewSegment) {
       asrConsumedTokenCount = 0;
-      debugLog('🔄 [SYNC] New ASR segment started. Resetting consumed tokens to 0.');
+      debugLog('🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.');
     }
 
     currentSegmentAsr = newAsr;
