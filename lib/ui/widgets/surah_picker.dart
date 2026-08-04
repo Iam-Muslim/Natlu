@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
+import '../../data/quran_data.dart';
 import '../../state/app_state.dart';
 import '../../tracking/word/highlighting_controller.dart';
-import '../../data/quran_data.dart';
+import 'surah/surah_list_tile.dart';
 
-/// Surah Picker — full-screen bottom sheet with search.
-///
-/// Design principles:
-/// - Clean list with large touch targets (64px rows)
-/// - Search field always visible at top
-/// - Current surah highlighted with warm gold
-/// - Arabic calligraphy font for surah names
-/// - Voice search mic button for hands-free navigation
+/// Surah Picker modal bottom sheet with search and voice navigation.
 class SurahPickerSheet extends StatefulWidget {
   final int current;
   final void Function(int surah, {int? ayah}) onPick;
@@ -44,36 +38,18 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   @override
   void initState() {
     super.initState();
-    // Dynamically load from JSON repository instead of hardcoded lists
     _surahs = widget.controller.repository.surahMetadata;
-    _normalizedNames = _surahs
-        .map((s) => s.surahName)
-        .toList();
-  }
-
-  String _toArabicDigits(int number) {
-    const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return number
-        .toString()
-        .split('')
-        .map((e) => digits[int.parse(e)])
-        .join('');
+    _normalizedNames = _surahs.map((s) => s.surahName).toList();
   }
 
   String _normalizeArabic(String text) {
     final RegExp diacritics = RegExp(r'[\u064B-\u065F\u0670]');
     String normalized = text.replaceAll(diacritics, '');
-    
-    // Normalize alifs
     normalized = normalized.replaceAll(RegExp(r'[أإآٱ]'), 'ا');
-    // Normalize taa marbutah
     normalized = normalized.replaceAll('ة', 'ه');
-    // Normalize alif maqsura
     normalized = normalized.replaceAll('ى', 'ي');
-    // Normalize hamza forms
     normalized = normalized.replaceAll('ؤ', 'و');
     normalized = normalized.replaceAll('ئ', 'ي');
-    
     return normalized;
   }
 
@@ -81,7 +57,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   Widget build(BuildContext context) {
     final app = AppState.instance;
     final ThemeColors c = app.colors;
-
     final normQuery = _normalizeArabic(_query);
 
     final List<int> items = [];
@@ -103,8 +78,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_scrolled && ctrl.hasClients && _query.isEmpty) {
             _scrolled = true;
-            double offset =
-                (widget.current - 1) * 72.0; // Estimated tile height
+            double offset = (widget.current - 1) * 72.0;
             if (offset > ctrl.position.maxScrollExtent) {
               offset = ctrl.position.maxScrollExtent;
             }
@@ -143,8 +117,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                 ),
                 const SizedBox(height: 16),
 
-
-
                 // ── Search + Voice Search ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -168,12 +140,8 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                               fontWeight: FontWeight.w500,
                             ),
                             decoration: InputDecoration(
-                              hintText: app.isArabic
-                                  ? 'ابحث'
-                                  : 'Search...',
-                              hintStyle: TextStyle(
-                                color: c.muted,
-                              ),
+                              hintText: app.isArabic ? 'ابحث' : 'Search...',
+                              hintStyle: TextStyle(color: c.muted),
                               prefixIcon: Icon(
                                 Icons.search_rounded,
                                 color: c.gold,
@@ -218,7 +186,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                       color: c.gold.withValues(alpha: 0.3),
                                       blurRadius: 12,
                                       offset: const Offset(0, 4),
-                                    )
+                                    ),
                                   ]
                                 : [],
                           ),
@@ -238,7 +206,9 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                               Text(
                                 app.isArabic ? 'بحث بالصوت' : 'Voice Search',
                                 style: TextStyle(
-                                  color: widget.isVoiceSearching ? Colors.white : c.text,
+                                  color: widget.isVoiceSearching
+                                      ? Colors.white
+                                      : c.text,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
                                 ),
@@ -252,8 +222,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                 ),
                 const SizedBox(height: 12),
 
-
-
                 // ── Surah List ──
                 Expanded(
                   child: ListView.builder(
@@ -264,117 +232,14 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                     itemBuilder: (_, i) {
                       final int idx = items[i];
                       final int sNum = idx + 1;
-                      final bool sel = widget.current == sNum;
+                      final bool isSel = widget.current == sNum;
                       final QuranVerse surahMeta = _surahs[idx];
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 4,
-                        ),
-                        child: GestureDetector(
-                          onTap: () => widget.onPick(sNum),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? c.gold.withValues(alpha: 0.1)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: sel
-                                    ? c.gold.withValues(alpha: 0.3)
-                                    : Colors.transparent,
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                // ── Number Badge ──
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    color: sel
-                                        ? c.gold
-                                        : c.surfaceHigh,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: sel
-                                        ? null
-                                        : Border.all(
-                                            color: c.border.withValues(alpha: 0.3),
-                                          ),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: sel
-                                      ? const Icon(
-                                          Icons.check_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        )
-                                      : Text(
-                                          app.isArabic
-                                              ? _toArabicDigits(sNum)
-                                              : '$sNum',
-                                          style: TextStyle(
-                                            color: c.muted,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                ),
-                                const SizedBox(width: 14),
-
-                                // ── Surah Names ──
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: app.isArabic
-                                        ? CrossAxisAlignment.start
-                                        : CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        surahMeta.surahName,
-                                        textDirection: TextDirection.rtl,
-                                        style: TextStyle(
-                                          fontFamily: 'HafsSmart',
-                                          color: sel ? c.gold : c.text,
-                                          fontSize: 18,
-                                          fontWeight: sel
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (!app.isArabic) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          surahMeta.surahNameEn,
-                                          style: TextStyle(
-                                            color: c.muted,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-
-                                // ── Arrow ──
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: sel
-                                      ? c.gold
-                                      : c.border,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      return SurahListTile(
+                        surahNumber: sNum,
+                        surahMeta: surahMeta,
+                        isSelected: isSel,
+                        onTap: () => widget.onPick(sNum),
                       );
                     },
                   ),

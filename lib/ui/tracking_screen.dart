@@ -1,22 +1,23 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:scroll_to_index/scroll_to_index.dart';
-// //logs
 import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:share_plus/share_plus.dart';
-import '../main.dart';
-import '../utils/debug_logger.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../main.dart';
 import '../state/app_state.dart';
 import '../tracking/word/highlighting_controller.dart';
+import '../utils/debug_logger.dart';
+import 'widgets/dialogs/voice_search_dialog.dart';
 import 'widgets/mic_bar.dart';
-import 'widgets/verse_row.dart';
-import 'widgets/surah_picker.dart';
 import 'widgets/settings_dialog.dart';
+import 'widgets/surah_picker.dart';
+import 'widgets/verse_row.dart';
 
+/// Main interactive screen for real-time recitation tracking and reading.
+/// Manages scrolling, distraction-free reading headers, and mode switches.
 class TrackingScreen extends StatefulWidget {
   final HighlightingController controller;
   final bool isRecording;
@@ -50,13 +51,12 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _lastAyah;
   int? _lastSurah;
   bool _isAutoScrolling = false;
-  Ticker? _autoScrollTicker;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WakelockPlus.enable(); // Prevent screen sleep during reading/recitation
+    WakelockPlus.enable();
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -85,10 +85,9 @@ class _TrackingScreenState extends State<TrackingScreen>
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
-    _autoScrollTicker?.dispose();
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
-    WakelockPlus.disable(); // Always disable wakelock when exiting the screen
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -110,10 +109,11 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (widget.isVoiceSearching && !oldWidget.isVoiceSearching) {
       _voiceSearchNotifier.value = widget.voiceSearchText;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showVoiceSearchDialog();
+        if (mounted) {
+          VoiceSearchDialog.show(context, onStop: widget.onVoiceSearchToggle);
+        }
       });
     } else if (!widget.isVoiceSearching && oldWidget.isVoiceSearching) {
-      // Close dialog and SurahPicker if open by popping until first route
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && Navigator.of(context).canPop()) {
           Navigator.of(context).popUntil((route) => route.isFirst);
@@ -122,88 +122,12 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
   }
 
-  void _showVoiceSearchDialog() {
-    final app = AppState.instance;
-    final c = app.colors;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.15),
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Container(
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: c.gold.withValues(alpha: 0.25),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: c.gold.withValues(alpha: 0.1),
-                  blurRadius: 30,
-                  spreadRadius: 0,
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Pulsing Stop Button ──
-                  GestureDetector(
-                    onTap: widget.onVoiceSearchToggle,
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: c.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: c.red.withValues(alpha: 0.25),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Icon(Icons.stop_rounded, color: c.red, size: 28),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // ── Listening Text ──
-                  Text(
-                    app.isArabic
-                        ? 'اتلو آية من القران العظيم للانتقال اليها'
-                        : 'Recite an Ayah from the Quran to jump to it',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: c.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _onControllerUpdate() {
     if (widget.controller.targetSurah != _lastSurah) {
       _lastSurah = widget.controller.targetSurah;
       _keys.clear();
       _lastAyah = null;
 
-      // Jump to top immediately when Surah changes so the new Surah
-      // doesn't inherit the previous Surah's scroll offset (which causes
-      // it to animate wildly from the bottom).
       if (_scroll.hasClients) {
         _scroll.jumpTo(0);
       }
@@ -228,9 +152,6 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _forceScrollToAyah(int ayah) {
     if (!_scroll.hasClients) return;
-
-    // If the scroll is a massive jump (e.g. loading a new Surah), make it incredibly fast
-    // to prevent Flutter from trying to render hundreds of verses in 500ms, which causes lag.
     _scroll.scrollToIndex(
       ayah,
       duration: const Duration(milliseconds: 100),
@@ -242,7 +163,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
       if (_scroll.hasClients) {
-        // Jumping to the current position cancels the ongoing animation
         _scroll.jumpTo(_scroll.position.pixels);
       }
       WakelockPlus.disable();
@@ -279,7 +199,6 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     final durationSeconds = distance / pixelsPerSec;
 
-    // Use native Flutter ScrollActivity for perfectly smooth, tear-free linear scrolling.
     _scroll
         .animateTo(
           position.maxScrollExtent,
@@ -291,7 +210,6 @@ class _TrackingScreenState extends State<TrackingScreen>
             if (_scroll.hasClients &&
                 (_scroll.position.maxScrollExtent - _scroll.position.pixels) >
                     2.0) {
-              // maxScrollExtent expanded dynamically as new items were laid out during the scroll.
               _startAutoScrollLoop();
             } else {
               setState(() => _isAutoScrolling = false);
@@ -315,14 +233,11 @@ class _TrackingScreenState extends State<TrackingScreen>
         onVoiceSearchToggle: widget.onVoiceSearchToggle,
         onPick: (n, {ayah}) async {
           if (widget.isRecording) {
-            widget
-                .onToggleRecord(); // Ensure main recording stops on manual navigate
+            widget.onToggleRecord();
           }
           if (Navigator.of(context).canPop()) {
             Navigator.pop(context);
           }
-          // Jump to top BEFORE swapping data so ListView doesn't try to
-          // maintain the old offset in the new Surah.
           if (_scroll.hasClients) {
             _scroll.jumpTo(0);
           }
@@ -367,10 +282,10 @@ class _TrackingScreenState extends State<TrackingScreen>
             body: Stack(
               fit: StackFit.expand,
               children: [
-                // Main Content
-                Positioned.fill(child: _buildWordCheckerContent(c, app, top)),
+                // Main Verse Content
+                Positioned.fill(child: _buildVerseContent(c, app, top)),
 
-                // Top Header (AnimatedSwitcher for mode change)
+                // Top Floating Header
                 Positioned(
                   top: 0,
                   left: 0,
@@ -379,16 +294,15 @@ class _TrackingScreenState extends State<TrackingScreen>
                     duration: const Duration(milliseconds: 300),
                     transitionBuilder: (child, animation) {
                       return SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0, -1),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
+                        position: Tween<Offset>(
+                          begin: const Offset(0, -1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
                         child: child,
                       );
                     },
@@ -407,16 +321,15 @@ class _TrackingScreenState extends State<TrackingScreen>
                     duration: const Duration(milliseconds: 400),
                     transitionBuilder: (child, animation) {
                       return SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0, 1),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
                         child: child,
                       );
                     },
@@ -442,12 +355,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  /// ──────────────────────────────────────────────────────────────────────────
-  /// HEADER — Surah selector + action buttons
-  ///
-  /// Hides during recording & auto-scroll for distraction-free reading.
-  /// Clean pill-shaped container with warm gold accent.
-  /// ──────────────────────────────────────────────────────────────────────────
   Widget _buildHeader(ThemeColors c, AppState app, double top) {
     if (widget.isRecording || _isAutoScrolling) {
       return const SizedBox.shrink(key: ValueKey('empty_header'));
@@ -473,7 +380,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         child: Row(
           mainAxisSize: MainAxisSize.max,
           children: [
-            // ── Surah Selector ──
+            // Surah Selector
             Flexible(
               flex: 4,
               child: ConstrainedBox(
@@ -535,7 +442,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
             const SizedBox(width: 8),
 
-            // ── Action Buttons ──
+            // Action Buttons
             Expanded(
               flex: 6,
               child: Row(
@@ -604,13 +511,10 @@ class _TrackingScreenState extends State<TrackingScreen>
                       label: app.isArabic ? 'إعدادات' : 'Settings',
                       color: c.text,
                       onTap: _showSettingsDialog,
-                      // //logs
                       onLongPress: () async {
                         try {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Preparing logs...'),
-                            ), // //logs
+                            const SnackBar(content: Text('Preparing logs...')),
                           );
                           String allLogs = globalSessionLogs.join('\n');
                           final directory = await getTemporaryDirectory();
@@ -640,18 +544,15 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  /// Individual header action button — icon + label, large touch target.
   Widget _buildActionBtn({
     required IconData icon,
     required String label,
     required Color color,
     required VoidCallback onTap,
-    // //logs
     VoidCallback? onLongPress,
   }) {
     return GestureDetector(
       onTap: onTap,
-      // //logs
       onLongPress: onLongPress,
       behavior: HitTestBehavior.opaque,
       child: Padding(
@@ -681,15 +582,9 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  /// ──────────────────────────────────────────────────────────────────────────
-  /// VERSE LIST — The main content area
-  ///
-  /// Full-screen ListView of ayahs. Padding animates based on header
-  /// visibility for smooth transitions.
-  /// ──────────────────────────────────────────────────────────────────────────
-  Widget _buildWordCheckerContent(ThemeColors c, AppState app, double top) {
+  Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
     return Builder(
-      key: const ValueKey('word_checker_content'),
+      key: const ValueKey('verse_list_content'),
       builder: (context) {
         final displayVerses = widget.controller.repository.getSurah(
           widget.controller.targetSurah,
@@ -706,11 +601,9 @@ class _TrackingScreenState extends State<TrackingScreen>
           physics: _isAutoScrolling
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
-          padding: EdgeInsets.zero, // Padding is 0, list is truly full-screen
-          itemCount:
-              displayVerses.length + 2, // +2 for top and bottom padding items
+          padding: EdgeInsets.zero,
+          itemCount: displayVerses.length + 2,
           itemBuilder: (_, i) {
-            // Top Padding Item (Animates based on header visibility)
             if (i == 0) {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 400),
@@ -719,7 +612,6 @@ class _TrackingScreenState extends State<TrackingScreen>
               );
             }
 
-            // Bottom Padding Item
             if (i == displayVerses.length + 1) {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 400),

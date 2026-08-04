@@ -2,105 +2,20 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../tajweed/error_explainer.dart';
+import 'models/alignment_models.dart';
 import 'phoneme_matrix.dart';
 
-///
-/// FILE ROLE: Core Engine / DP Algorithm
-/// ALGORITHM: Forward Substring DP (Levenshtein / Smith-Waterman variant)
-/// DEPENDENCIES: phoneme_matrix.dart (Penalty Lookup)
-/// RESPONSIBILITY:
-/// - Compares ASR phoneme streams against Reference target text.
-/// - Calculates insertion, deletion, and substitution costs.
-/// - Determines the optimal mathematical alignment path (bestScore).
-/// - Extracts the exact traceback (PhonemeGroupAlignment array) required by Tajweed rules.
-/// AI NOTE: This file is purely mathematical. Do NOT add UI logic, app state, or buffer management here.
-/// That belongs in `phoneme_alignment_isolate.dart`.
-///
-
-/// ────────────────────────────────────────────────────────────────────────────
-/// [AlignmentResult] - The Output Payload
-/// ────────────────────────────────────────────────────────────────────────────
-/// This class holds the final results of a successful Dynamic Programming match.
-/// When the matcher finishes chewing through thousands of possibilities, it
-/// bundles the "best path" into this neat package to send back to the Orchestrator.
-class WordMatch {
-  final int wordId;
-  final double score;
-
-  WordMatch({required this.wordId, required this.score});
-}
-
-class AlignmentResult {
-  /// The index where the ASR audio slice ENDED.
-  /// This tells us exactly how much of the buffer we successfully consumed.
-  final int bestI;
-
-  /// The index where the Reference Text ENDED.
-  /// If bestJ equals the total length of the target window, it means we
-  /// successfully read the entire target word(s).
-  final int bestJ;
-
-  /// The index where the ASR audio slice BEGAN.
-  /// Because we allow the user to have "garbage" sounds before they start reading
-  /// the correct word, this index tells us exactly where the "garbage" stopped
-  /// and the "real reading" began.
-  final int bestStartI;
-
-  /// The index where the Reference Text BEGAN.
-  /// Usually this is 0 (the start of the word we are looking for).
-  final int bestStartJ;
-
-  /// The normalized penalty score for this match (between 0.0 and 1.0).
-  /// This includes the artificial 'position prior' penalty, used by the engine
-  /// to penalize jumping ahead too many words.
-  final double bestScore;
-
-  /// The pure acoustic penalty score (between 0.0 and 1.0) WITHOUT any artificial
-  /// position penalties. This is passed to the Tajweed ErrorExplainer so it can accurately
-  /// judge the microphone/audio quality without being contaminated by position jumps.
-  final double pureAcousticScore;
-
-  /// The exact step-by-step path the engine took to align the two strings.
-  /// Each item in this list tells us: "At this phoneme, the user was equal,
-  /// substituted, inserted, or deleted".
-  /// This trace is the lifeblood of the Tajweed system.
-  final List<PhonemeGroupAlignment> trace;
-
-  /// The words that were successfully matched and passed the strictness threshold.
-  final List<WordMatch> words;
-
-  /// The words that failed the strictness threshold, but were shielded from
-  /// turning Red because the ASR confidence was suspiciously low (Case 2 Fault).
-  final List<int> shieldedWords;
-
-  AlignmentResult({
-    required this.bestI,
-    required this.bestJ,
-    required this.bestStartI,
-    required this.bestStartJ,
-    required this.bestScore,
-    required this.pureAcousticScore,
-    required this.trace,
-    required this.words,
-    required this.shieldedWords,
-  });
-}
+export 'models/alignment_models.dart';
 
 /// ────────────────────────────────────────────────────────────────────────────
 /// [ForwardDictationMatcher] - The Mathematical Brain
 /// ────────────────────────────────────────────────────────────────────────────
-/// This is the most computationally intense part of the entire application.
-/// It uses a highly optimized variant of the Smith-Waterman / Levenshtein
-/// Dynamic Programming algorithm.
+/// Computes optimal monotonic phonetic alignment using a Smith-Waterman / Levenshtein
+/// dynamic programming trellis over pre-encoded integer phoneme identifiers.
 ///
-/// Its job is to take a stream of raw, messy acoustic phonemes (ASR) and a clean
-/// target string (Reference text), and find the optimal path that aligns them
-/// with the lowest possible penalty score.
-///
-/// Why is it called "Forward"?
-/// Because unlike old systems that allowed "wrap around" or "jumping backwards"
-/// across Ayahs, this engine strictly forces the user to move forward in time.
-/// This prevents the highlight from jumping wildly around the screen.
+/// Computational Complexity:
+/// - Time: O(M * N) operations, where M = ASR length, N = Reference word length.
+/// - Memory: O(N) heap allocations (reusable typed scratch buffers, zero GC pressure).
 class ForwardDictationMatcher {
   Float64List _prevCost = Float64List(256);
   Float64List _currCost = Float64List(256);
@@ -112,64 +27,41 @@ class ForwardDictationMatcher {
   Int32List _pIds = Int32List(256);
   Int32List _rIds = Int32List(256);
 
-  /// The core mathematical function.
-  /// Returns an [AlignmentResult] if a match was found below the threshold.
-  /// Returns `null` if the user's speech was too different from the target text.
+  /// Performs monotonic phonetic alignment of the incoming ASR stream against the target word.
   AlignmentResult? align({
-    /// The incoming phonemes from the microphone.
+    /// Incoming phonetic tokens from the speech recognizer.
     required List<String> currentAsrChunks,
 
-    /// The target phonemes the user is supposed to be reading.
+    /// Target reference phonemes for the expected word.
     required List<String> targetWindow,
 
-    /// A boolean array mapping which chunks represent the start of a new word.
-    required List<bool> targetStartBd,
-
-    /// A boolean array mapping which chunks represent the end of a word.
-    required List<bool> targetEndBd,
-
-    /// An array mapping every chunk to its specific Word ID in the Ayah.
-    required List<int> targetWordIds,
-
-    /// The exact Word ID we are actively hoping the user is reading right now.
+    /// The active Word ID being evaluated.
     required int expectedWord,
 
-    /// The maximum allowable penalty score. If the best path's score is higher
-    /// than this threshold, we reject the match.
-    required double threshold,
+    /// Tuning parameters, thresholds, and penalty weights.
+    required AlignmentConfig config,
 
     /// Optional pre-encoded integer IDs for the target window (skips encoding string phonemes in hot loop).
     Int32List? targetEncodedIds,
 
-    /// The penalty for completely dropping/skipping a required sound.
-    /// Can be lowered (e.g., 0.65) to forgive stuttering in Easy Mode.
-    double costDel = 1.0,
-
-    /// The penalty for the ASR hallucinating an extra sound.
-    /// Can be lowered (e.g., 0.65) to forgive insertions in Easy Mode.
-    double costIns = 1.0,
-
-    bool requireStableTail = false,
-
-    /// Optional array of log probabilities for ASR forgiveness.
+    /// Optional acoustic log probabilities for ASR fault mitigation.
     List<double>? asrYsProbs,
 
-    /// A callback function to print debug information to the Isolate console.
+    /// Callback for diagnostic isolate logging.
     void Function(String)? debugLog,
   }) {
+    final double threshold = config.threshold;
+    final double costDel = config.costDel;
+    final double costIns = config.costIns;
+    final bool requireStableTail = config.requireStableTail;
     // -------------------------------------------------------------------------
     // Dimension Setup
     // m = Length of ASR string.
-    // n = Length of Reference string.
+    // n = Length of Reference string (current expected word).
     // The DP matrix will theoretically be (m) rows by (n) columns.
     // -------------------------------------------------------------------------
     int m = currentAsrChunks.length;
     int n = targetWindow.length;
-
-    // Prior weight ensures we favor matching the `expectedWord` rather than
-    // accidentally matching a similar-sounding word ahead in the lookahead window.
-    // Setting this to 0.08 ensures lookahead jumps face a real penalty threshold.
-    double priorWeight = 0.08;
 
     // -------------------------------------------------------------------------
     // Reusable Scratchpad Buffer Management (Zero Allocations)
@@ -223,30 +115,22 @@ class ForwardDictationMatcher {
     // -------------------------------------------------------------------------
     // Initialization: Row 0
     // -------------------------------------------------------------------------
-    // We initialize the topmost row. If the target string represents the start of
-    // a valid word (`targetStartBd`), we allow a path to start here with 0.0 cost.
-    // Otherwise, we block the path by assigning infinity.
-    for (int j = 0; j <= n; j++) {
-      if (targetStartBd[j]) {
-        prevCost[j] = 0.0;
-        prevStartI[j] = 0;
-        prevStartJ[j] = j;
+    // Top-left origin starts at 0.0 cost.
+    prevCost[0] = 0.0;
+    prevStartI[0] = 0;
+    prevStartJ[0] = 0;
+
+    for (int j = 1; j <= n; j++) {
+      // Allow horizontal moves (Insertions / user dropped leading phoneme)
+      if (prevCost[j - 1] < double.infinity) {
+        prevCost[j] = prevCost[j - 1] + costIns;
+        prevStartI[j] = prevStartI[j - 1];
+        prevStartJ[j] = prevStartJ[j - 1];
+        op[j] = 2; // Insertion
       } else {
-        // [BUG FIX] Allow horizontal moves (Insertions) along Row 0.
-        // This is critical. If the user misses the first letter of a word, the path
-        // MUST be able to step horizontally from the word boundary to the second letter
-        // before consuming any ASR audio.
-        if (j > 0 && prevCost[j - 1] < double.infinity) {
-          prevCost[j] = prevCost[j - 1] + costIns;
-          prevStartI[j] = prevStartI[j - 1];
-          prevStartJ[j] = prevStartJ[j - 1];
-          // Record '2' (Insertion) in the 1-byte traceback grid for Row 0
-          op[j] = 2;
-        } else {
-          prevCost[j] = double.infinity;
-          prevStartI[j] = -1;
-          prevStartJ[j] = -1;
-        }
+        prevCost[j] = double.infinity;
+        prevStartI[j] = -1;
+        prevStartJ[j] = -1;
       }
     }
 
@@ -263,16 +147,11 @@ class ForwardDictationMatcher {
     // -------------------------------------------------------------------------
     // We iterate over every incoming ASR chunk (i).
     for (int i = 1; i <= m; i++) {
-      // Initialize the first column of the current row.
-      if (targetStartBd[0]) {
-        currCost[0] = 0.0;
-        currStartI[0] = i;
-        currStartJ[0] = 0;
-      } else {
-        currCost[0] = double.infinity;
-        currStartI[0] = -1;
-        currStartJ[0] = -1;
-      }
+      // Initialize the first column: allow matching to start at any incoming ASR audio chunk,
+      // naturally skipping any preceding background noise or speech.
+      currCost[0] = 0.0;
+      currStartI[0] = i;
+      currStartJ[0] = 0;
 
       // Grab the Integer ID of the current ASR phoneme.
       int pId = pIds[i - 1];
@@ -287,14 +166,11 @@ class ForwardDictationMatcher {
         int subStartI = prevStartI[j - 1];
         int subStartJ = prevStartJ[j - 1];
 
-        // If chunk (j-1) is a word start boundary in the reference window,
-        // a fresh alignment can start here at ASR chunk (i-1) skipping any preceding ASR garbage!
-        if (targetStartBd[j - 1]) {
-          if (matchCost < subCost) {
-            subCost = matchCost;
-            subStartI = i - 1;
-            subStartJ = j - 1;
-          }
+        // Fresh word start at ASR chunk (i-1)
+        if (j == 1 && matchCost < subCost) {
+          subCost = matchCost;
+          subStartI = i - 1;
+          subStartJ = 0;
         }
 
         // Path 2: Deletion (ASR hallucinated an extra sound)
@@ -307,12 +183,10 @@ class ForwardDictationMatcher {
         int insStartI = currStartI[j - 1];
         int insStartJ = currStartJ[j - 1];
 
-        if (targetStartBd[j - 1]) {
-          if (costIns < insCost) {
-            insCost = costIns;
-            insStartI = i;
-            insStartJ = j - 1;
-          }
+        if (j == 1 && costIns < insCost) {
+          insCost = costIns;
+          insStartI = i;
+          insStartJ = 0;
         }
 
         // Decision Making: Pick the cheapest path
@@ -335,173 +209,45 @@ class ForwardDictationMatcher {
       }
 
       // -----------------------------------------------------------------------
-      // End-of-Row Scoring Evaluation
+      // End-of-Row Scoring Evaluation (Strict Word End at j = n)
       // -----------------------------------------------------------------------
-      // Pre-pass: Find the best acoustic distance for any path starting at expectedWord
-      double minExpectedWordDist = double.infinity;
-      for (int j = 1; j <= n; j++) {
-        if (targetEndBd[j] && currCost[j] < double.infinity) {
-          int stJ = currStartJ[j];
-          if (stJ >= 0) {
-            int startWord = targetWordIds[stJ < n ? stJ : j - 1];
-            if (startWord == expectedWord) {
-              int stI = currStartI[j];
-              if (stI >= 0) {
-                int refLen = j - stJ;
-                int asrLen = i - stI;
-                if (refLen > 0) {
-                  int denom = max(asrLen, max(refLen, 1));
-                  if (denom < 4) denom = 4;
-                  double dist = currCost[j] / denom;
-                  if (dist < minExpectedWordDist) {
-                    minExpectedWordDist = dist;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      if (currCost[n] < double.infinity) {
+        int stI = currStartI[n];
+        int stJ = currStartJ[n];
 
-      // After processing the entire row for this specific ASR chunk, we check
-      // if any cell in the row represents a completed word (targetEndBd).
-      for (int j = 1; j <= n; j++) {
-        if (targetEndBd[j] && currCost[j] < double.infinity) {
-          int stI = currStartI[j];
-          int stJ = currStartJ[j];
-
-          if (stI < 0 || stJ < 0) continue;
-
-          // Calculate how many phonemes were consumed by both strings in this path.
-          int refLen = j - stJ;
+        if (stI >= 0 && stJ == 0) {
+          int refLen = n - stJ;
           int asrLen = i - stI;
 
-          // CRITICAL: A valid word match MUST consume at least one reference character.
-          if (refLen == 0) continue;
+          if (refLen > 0) {
+            int denom = max(asrLen, max(refLen, 1));
+            if (denom < 4) denom = 4;
 
-          // Normalize the penalty distance by dividing it by the length of the string.
-          int denom = max(asrLen, max(refLen, 1));
-          if (denom < 4) denom = 4;
+            double normDist = currCost[n] / denom;
 
-          double normDist = currCost[j] / denom;
-
-          // Apply the Prior Weight.
-          int startWord = targetWordIds[stJ < n ? stJ : j - 1];
-          int jumpDistance = startWord - expectedWord;
-          double prior = priorWeight * jumpDistance.abs();
-
-          // Increased prior penalty for jumping forward to short words (< 3 phonemes)
-          // that share similar phonemes with previous/skipped words in the window.
-          if (jumpDistance > 0) {
-            int wordStartIdx = stJ < n ? stJ : j - 1;
-            while (wordStartIdx > 0 && targetWordIds[wordStartIdx - 1] == startWord) {
-              wordStartIdx--;
-            }
-            int wordEndIdx = stJ < n ? stJ : j - 1;
-            while (wordEndIdx < n && targetWordIds[wordEndIdx] == startWord) {
-              wordEndIdx++;
-            }
-            int wordLen = wordEndIdx - wordStartIdx;
-
-            if (wordLen < 3) {
-              bool hasSimilarPhonemes = false;
-              for (int k = wordStartIdx; k < wordEndIdx; k++) {
-                int pJump = rIds[k];
-                for (int p = 0; p < wordStartIdx; p++) {
-                  if (targetWordIds[p] >= expectedWord) {
-                    int pPrev = rIds[p];
-                    if (pJump == pPrev || PhonemeMatrix.getCost(pJump, pPrev) < 0.25) {
-                      hasSimilarPhonemes = true;
-                      break;
-                    }
-                  }
-                }
-                if (hasSimilarPhonemes) break;
-              }
-
-              if (hasSimilarPhonemes) {
-                prior += 0.15 * jumpDistance;
-              }
-            }
-          }
-
-          // The Final Score is the combination of acoustic distance + prior penalty.
-          double score = normDist + prior;
-
-          // If the pure acoustic distance beats the strictness threshold and final score with prior is acceptable...
-          if (normDist <= threshold && score <= threshold + 0.15) {
-            if (debugLog != null) {
-              int endWord = targetWordIds[j - 1];
-              String candidateStr = targetWindow.sublist(stJ, j).join('');
-              debugLog(
-                '🧮 [CANDIDATE] Words $startWord..$endWord ("$candidateStr") | Score: ${score.toStringAsFixed(3)} (Acst: ${normDist.toStringAsFixed(3)}, Prior: ${prior.toStringAsFixed(3)})',
-              );
-            }
-
-            // [EDGE-BOUND TAIL STABILITY RULE]
-            bool isStable = true;
-            if (requireStableTail) {
-              if (i == m && op[i * (n + 1) + j] == 2) {
+            if (normDist <= threshold) {
+              // [EDGE-BOUND TAIL STABILITY RULE]
+              bool isStable = true;
+              if (requireStableTail && i == m && op[i * (n + 1) + n] == 2) {
                 isStable = false;
               }
-            }
 
-            // Candidate ranking logic:
-            // 1. If no candidate yet, accept.
-            // 2. If candidate starts at the same word:
-            //    - If it matches more words (j > bestJ) with comparable score, accept.
-            //    - Else if score is lower, accept.
-            // 3. If candidate starts at an EARLIER word (closer to expectedWord), accept
-            //    (earlier valid word match must always take precedence over skipping words).
-            // 4. If candidate starts at a LATER word (jump candidate):
-            //    - REJECT if we already have a valid match for an earlier word.
-            //    - REJECT if the expected word has an active in-progress match (minExpectedWordDist <= threshold + 0.18).
-            int candStartWord = targetWordIds[stJ < n ? stJ : j - 1];
-            int bestStartWord = bestI == -1
-                ? -1
-                : targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
-
-            bool isBetter;
-            if (bestI == -1) {
-              if (candStartWord > expectedWord && minExpectedWordDist <= (threshold + 0.18)) {
-                // Block lookahead jump because expected word is currently being spoken/matched!
-                isBetter = false;
-              } else {
-                isBetter = true;
+              if (isStable && (bestI == -1 || normDist < bestScore)) {
+                bestScore = normDist;
+                bestNormDist = normDist;
+                bestI = i;
+                bestJ = n;
+                bestStartI = stI;
+                bestStartJ = stJ;
               }
-            } else if (candStartWord == bestStartWord) {
-              if (j > bestJ && score <= bestScore + 0.05) {
-                isBetter = true;
-              } else if (score < bestScore) {
-                isBetter = true;
-              } else {
-                isBetter = false;
-              }
-            } else if (candStartWord < bestStartWord) {
-              isBetter = true;
-            } else {
-              // candStartWord > bestStartWord
-              // A jump candidate cannot overwrite an earlier valid word match!
-              isBetter = false;
-            }
-
-            if (isStable && isBetter) {
-              bestScore = score;
-              bestNormDist = normDist;
-              bestI = i;
-              bestJ = j;
-              bestStartI = stI;
-              bestStartJ = stJ;
             }
           }
         }
       }
 
       // -----------------------------------------------------------------------
-      // Row Swapping (The Magic of O(n) Memory)
+      // Row Swapping (O(n) Memory)
       // -----------------------------------------------------------------------
-      // Before moving to the next ASR chunk (i+1), we swap the pointers.
-      // The current row becomes the previous row. The previous row is overwritten.
       final tmpC = prevCost;
       prevCost = currCost;
       currCost = tmpC;
@@ -518,9 +264,6 @@ class ForwardDictationMatcher {
     // -------------------------------------------------------------------------
     // Matrix Finished. Traceback Extraction.
     // -------------------------------------------------------------------------
-    // If we survived the nested loops and found a valid champion path (bestI != -1),
-    // we need to extract the exact step-by-step trace so the Tajweed engine can
-    // analyze the user's specific phonetic mistakes.
     if (bestI != -1) {
       if (debugLog != null) {
         String matchedAsr = currentAsrChunks.sublist(bestStartI, bestI).join('');
@@ -534,20 +277,14 @@ class ForwardDictationMatcher {
       int currI = bestI;
       int currJ = bestJ;
 
-      // [Tajweed] Native Traceback from the 1-byte array.
-      // We start at the end of the winning path (bestI, bestJ).
-      // We walk completely backward through the grid until we hit the origin (bestStartI, bestStartJ).
+      // Traceback from the 1-byte array
       while (currI > bestStartI || currJ > bestStartJ) {
-        // Grab the 1-byte directional indicator we saved earlier.
         int opType = op[currI * (n + 1) + currJ];
 
         if (currI > bestStartI && currJ > bestStartJ && opType == 0) {
-          // Op 0: Substitution or Exact Match (Diagonal step backward)
           double sc = PhonemeMatrix.getCost(pIds[currI - 1], rIds[currJ - 1]);
           trace.add(
             PhonemeGroupAlignment(
-              // If the penalty score is practically zero (<=0.25), it's a valid match.
-              // Otherwise, it was heavily penalized, meaning it is a 'replace' error for Tajweed.
               opType: sc <= 0.25 ? 'equal' : 'replace',
               refIdx: (currJ - 1) - bestStartJ,
               predIdx: (currI - 1) - bestStartI,
@@ -556,8 +293,6 @@ class ForwardDictationMatcher {
           currI--;
           currJ--;
         } else if (currI > bestStartI && opType == 1) {
-          // Op 1: Deletion / ASR-Insertion (Vertical step backward)
-          // The ASR hallucinates a sound not in the text.
           trace.add(
             PhonemeGroupAlignment(
               opType: 'insert',
@@ -567,8 +302,6 @@ class ForwardDictationMatcher {
           );
           currI--;
         } else if (currJ > bestStartJ) {
-          // Op 2: Insertion / ASR-Deletion (Horizontal step backward)
-          // The user swallowed a letter and the ASR missed it.
           trace.add(
             PhonemeGroupAlignment(
               opType: 'delete',
@@ -578,15 +311,12 @@ class ForwardDictationMatcher {
           );
           currJ--;
         } else {
-          // Safety break in case of an invalid matrix state.
           break;
         }
       }
 
-      // We built the list by walking backwards, so we must reverse it before returning!
       List<PhonemeGroupAlignment> finalTrace = trace.reversed.toList();
 
-      // Log the exact Levenshtein path
       String pathStr = finalTrace
           .map((a) {
             if (a.opType == 'equal') return 'M';
@@ -599,223 +329,112 @@ class ForwardDictationMatcher {
       debugLog?.call('🗺️ [DP PATH] $pathStr');
 
       // ═════════════════════════════════════════════════════════════════════════
-      // [POST-PROCESSING] NATIVE WORD PARSING & STRICTNESS CHECK
+      // [POST-PROCESSING] ZERO-ALLOCATION SCALAR WORD EVALUATION
       // ═════════════════════════════════════════════════════════════════════════
-      // The DP matrix computes one overall `bestScore` for the entire path.
-      // However, if the user reads a long phrase (e.g., Word 2 + Word 3), the DP
-      // might "average out" a mumbled Word 2 with a perfectly spoken Word 3.
-      //
-      // To prevent this, we natively segment the DP traceback by word boundaries.
-      // We calculate the exact penalty for each individual word. If a word's
-      // individual score fails the `threshold`, we explicitly drop it from the
-      // `verifiedWords` list, forcing the UI to highlight it as skipped (Red).
+      int asrLen = 0;
+      int refLen = 0;
+      double totalPenalty = 0.0;
+      double wordTailCost = 1.0;
+      String heardWordStr = '';
+      List<double> wordConfs = [];
 
-      // Trackers for individual word statistics
-      Map<int, int> asrLens =
-          {}; // How many ASR phonemes were assigned to each word
-      Map<int, int> refLens =
-          {}; // How many Reference phonemes belong to each word
-      Map<int, double> penalties =
-          {}; // Total penalty score (insertions, deletions, replacements) for each word
-      Map<int, double> wordTailCost =
-          {}; // [Tail Anchor] Tracks the cost of the final reference phoneme for each word
-      Map<int, String> heardWordStr = {};
-      Map<int, List<double>> wordConfs =
-          {}; // <--- Holds exact ysProbs for each word
-
-      // Determine the Word ID where the winning path started.
-      int matchedWordStart = targetWordIds[bestStartJ < n ? bestStartJ : n - 1];
-
-      // `currentWId` tracks which word the current traceback operation belongs to.
-      int currentWId = matchedWordStart;
-
-      // ── Step 1: Map trace to actual phonetic strings and penalties ──
       for (var align in finalTrace) {
-        if (align.refIdx >= 0) {
-          int absRefIdx = bestStartJ + align.refIdx;
-          if (absRefIdx < targetWordIds.length) {
-            currentWId = targetWordIds[absRefIdx];
-          }
-        }
-
-        // ---------------------------------------------------------------------
-        // [CASE 2 SHIELD] Acoustic Confidence Extraction
-        // ---------------------------------------------------------------------
-        // We only extract confidence if this step mapped to actual ASR audio (predIdx >= 0)
-        // AND if the Sherpa engine actually provided probability metrics (asrYsProbs != null).
-        // Finally, we check that `bestStartI + align.predIdx` (the global audio index)
-        // is safely within the array bounds to prevent an IndexOutOfRangeException crash.
         if (align.predIdx >= 0 &&
             asrYsProbs != null &&
             (bestStartI + align.predIdx) < asrYsProbs.length) {
-          // Calculate the global index where this exact phoneme lives in the audio array.
           int globalIndex = bestStartI + align.predIdx;
-          // The engine outputs log-probabilities (e.g. -0.0018). We use `exp()` to convert it to a percentage.
           double confidencePercentage = exp(asrYsProbs[globalIndex]);
-          // Create an array for this specific Word ID if it doesn't exist yet.
-          wordConfs.putIfAbsent(currentWId, () => []);
-          // Push the exact percentage of this specific letter into the word's array.
-          wordConfs[currentWId]!.add(confidencePercentage);
+          wordConfs.add(confidencePercentage);
         }
 
-        // [Tail Anchor] Constantly overwrite the tail cost for the current word.
-        // Since the trace is sequential, this will ultimately hold the cost of the FINAL reference phoneme.
-        // We ignore 'insert' because insertions don't consume reference phonemes.
         if (align.opType == 'delete') {
-          wordTailCost[currentWId] = costDel;
+          wordTailCost = costDel;
         } else if (align.predIdx >= 0 && align.opType != 'insert') {
-          wordTailCost[currentWId] = PhonemeMatrix.getCost(
+          wordTailCost = PhonemeMatrix.getCost(
             pIds[bestStartI + align.predIdx],
             rIds[bestStartJ + align.refIdx],
           );
         }
 
         if (align.predIdx >= 0) {
-          asrLens[currentWId] = (asrLens[currentWId] ?? 0) + 1;
-          heardWordStr[currentWId] =
-              (heardWordStr[currentWId] ?? '') +
-              currentAsrChunks[bestStartI + align.predIdx];
+          asrLen++;
+          heardWordStr += currentAsrChunks[bestStartI + align.predIdx];
         }
         if (align.refIdx >= 0) {
-          refLens[currentWId] = (refLens[currentWId] ?? 0) + 1;
+          refLen++;
         }
 
         if (align.opType == 'insert') {
-          penalties[currentWId] = (penalties[currentWId] ?? 0.0) + costIns;
+          totalPenalty += costIns;
         } else if (align.opType == 'delete') {
-          penalties[currentWId] = (penalties[currentWId] ?? 0.0) + costDel;
+          totalPenalty += costDel;
         } else if (align.opType == 'replace') {
           double exactCost = PhonemeMatrix.getCost(
             pIds[bestStartI + align.predIdx],
             rIds[bestStartJ + align.refIdx],
           );
-          penalties[currentWId] = (penalties[currentWId] ?? 0.0) + exactCost;
+          totalPenalty += exactCost;
         }
       }
 
-      // ── Step 2: Evaluate individual word strictness ──
-      List<WordMatch> verifiedWords = [];
-      List<int> shieldedWords = [];
+      int denom = max(asrLen, max(refLen, 1));
+      if (denom < 4) denom = 4;
+      double wordScore = totalPenalty / denom;
+      bool passesTailAnchor = !requireStableTail || wordTailCost == 0.0;
+      String refWordStr = targetWindow.join('');
 
-      for (int wId in asrLens.keys) {
-        int asrLen = asrLens[wId] ?? 0;
-        int refLen = refLens[wId] ?? 0;
-        double penalty = penalties[wId] ?? 0.0;
-
-        // The individual word score is calculated exactly like the segment score:
-        // Penalty / max(Length).
-        int denom = max(asrLen, max(refLen, 1));
-
-        // Protect short words from failing due to a single 1.0 penalty.
-        if (denom < 4) denom = 4;
-
-        double wordScore = penalty / denom;
-        double tailCost = wordTailCost[wId] ?? 1.0;
-
-        // [Tail Anchor] If Tajweed mode is on, enforce that the word's final phoneme
-        // must be a perfect match (0.0 cost) to prevent fabricated matches on short words.
-        bool passesTailAnchor = !requireStableTail || tailCost == 0.0;
-
-        // If the word passes the strictness threshold on its own, it is verified!
-        String refWordStr = '';
-        for (int k = 0; k < targetWindow.length; k++) {
-          if (targetWordIds[k] == wId) refWordStr += targetWindow[k];
-        }
-        String heardStr = heardWordStr[wId] ?? '';
-
-        if (wordScore <= threshold && passesTailAnchor) {
-          verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
-          debugLog?.call(
-            '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Threshold)',
-          );
-        } else {
-          debugLog?.call(
-            '❌ WORD FAIL: ref word is "$refWordStr", heard word is "$heardStr" | Score: ${wordScore.toStringAsFixed(3)} > $threshold, penalty: $penalty, denom: $denom, tail: $passesTailAnchor',
-          );
-          // ══════════════════════════════════════════════════════════════════════
-          // [ANDROID ASR FAULT SHIELD - CASE 2 ONLY]
-          // The word failed the strictness threshold (so it's destined to be Red).
-          // However, we must check if the microphone glitched and gave us garbage.
-          // ══════════════════════════════════════════════════════════════════════
-
-          // Rule 1: Only shield words that are relatively close matches (Score <= 0.65).
-          // If the score is huge (e.g. >0.80), the user said a completely wrong word.
-          if (wordScore <= 0.65) {
-            // Assume perfect confidence initially, in case no audio was mapped.
-            double minConf = 1.0;
-
-            // Verify that this word actually had audio letters mapped to it.
-            if (wordConfs[wId] != null && wordConfs[wId]!.isNotEmpty) {
-              // Iterate through all the letters in this word and find the LOWEST confidence.
-              // A single microphone glitch on ONE letter is enough to ruin the entire word.
-              minConf = wordConfs[wId]!.reduce((a, b) => a < b ? a : b);
-            }
-
-            // Rule 2: If the weakest letter in this word dropped below 80% confidence,
-            // we have absolute proof that the microphone/ASR model failed the user.
-            if (minConf < 0.80) {
-              // ── SHIELD PROMOTION ──────────────────────────────────────────────
-              // If the word score is ≤ 0.45 (generous but bounded — still blocks
-              // outright wrong words), the global DP found the word acoustically
-              // and the ASR low-confidence proves partial signal degradation.
-              // Promote directly to GREEN instead of leaving it grey.
-              // This handles the common case of الرَّحمن / بسم where the initial
-              // ءَرر (hamza + shadda) is consistently dropped by the ASR model
-              // even though the user recited it correctly.
-              if (wordScore <= 0.45 && passesTailAnchor) {
-                verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
-                debugLog?.call(
-                  '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardStr" | '
-                  'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf * 100).toStringAsFixed(1)}%) → GREEN',
-                );
-                continue; // Skip the shieldedWords.add below, it's already green
-              }
-              // ── SHIELD ONLY (grey) ────────────────────────────────────────────
-              // Score > 0.45: too uncertain to call green, but still protect from red.
-              shieldedWords.add(wId);
-              debugLog?.call(
-                '🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf * 100).toStringAsFixed(1)}%)',
-              );
-            }
-          }
-          // ══════════════════════════════════════════════════════════════════════
-
-          // If the word score is too high, it was a "mumbled" word that the DP
-          // tried to drag across the finish line. We drop it here!
-          String reason = wordScore > threshold
-              ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
-              : '(Failed Tail Anchor: TailCost=$tailCost)';
-          debugLog?.call(
-            '❌ REFUSE: ref word is "$refWordStr", heard word is "$heardStr" | $reason',
-          );
-        }
-      }
-
-      // If the match was so poor that EVERY single word inside it failed the
-      // strictness evaluation, then this entire segment match is likely just
-      // ASR hallucination or background noise. We must abort and return null
-      // so the Sequencer doesn't accidentally advance the cursor and mark them red.
-      if (verifiedWords.isEmpty) {
+      if (wordScore <= threshold && passesTailAnchor) {
         debugLog?.call(
-          '⚠️ [DP STRICTNESS] All matched words failed strictness. Aborting segment match. Waiting for better audio...',
+          '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Threshold)',
         );
-        return null;
+        return AlignmentResult(
+          bestI: bestI,
+          bestJ: bestJ,
+          bestStartI: bestStartI,
+          bestStartJ: bestStartJ,
+          bestScore: wordScore,
+          pureAcousticScore: bestNormDist,
+          trace: finalTrace,
+          words: [WordMatch(wordId: expectedWord, score: wordScore)],
+          shieldedWords: const [],
+        );
       }
 
-      return AlignmentResult(
-        bestI: bestI,
-        bestJ: bestJ,
-        bestStartI: bestStartI,
-        bestStartJ: bestStartJ,
-        bestScore: bestScore,
-        pureAcousticScore: bestNormDist,
-        trace: finalTrace,
-        words: verifiedWords,
-        shieldedWords: shieldedWords,
+      // [CASE 2 ACOUSTIC SHIELDING]
+      if (wordScore <= 0.65) {
+        double minConf = 1.0;
+        if (wordConfs.isNotEmpty) {
+          minConf = wordConfs.reduce((a, b) => a < b ? a : b);
+        }
+
+        if (minConf < 0.80 && wordScore <= 0.45 && passesTailAnchor) {
+          debugLog?.call(
+            '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardWordStr" | '
+            'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf * 100).toStringAsFixed(1)}%) → GREEN',
+          );
+          return AlignmentResult(
+            bestI: bestI,
+            bestJ: bestJ,
+            bestStartI: bestStartI,
+            bestStartJ: bestStartJ,
+            bestScore: wordScore,
+            pureAcousticScore: bestNormDist,
+            trace: finalTrace,
+            words: [WordMatch(wordId: expectedWord, score: wordScore)],
+            shieldedWords: const [],
+          );
+        }
+      }
+
+      String reason = wordScore > threshold
+          ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
+          : '(Failed Tail Anchor: TailCost=$wordTailCost)';
+      debugLog?.call(
+        '❌ REFUSE: ref word is "$refWordStr", heard word is "$heardWordStr" | $reason',
       );
+      return null;
     }
 
-    // If no path beat the strictness threshold, return null. The user must keep reading.
     return null;
   }
 }

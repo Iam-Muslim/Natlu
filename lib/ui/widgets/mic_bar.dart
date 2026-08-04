@@ -2,13 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../state/app_state.dart';
 
-/// Bottom floating action bar — the primary interaction point.
-///
-/// Design principles:
-/// - Large, obvious button (64px) — easy for elderly users
-/// - Single primary action visible at a time (Record or Pause)
-/// - Pulsing glow when recording — clear visual feedback
-/// - Floating pill shape — modern & non-intrusive
+/// Bottom floating action bar — primary interaction point for Recite, Stop, and AutoScroll.
 class BottomActionBar extends StatefulWidget {
   final bool isRecording;
   final bool isLoadingEngine;
@@ -27,7 +21,7 @@ class BottomActionBar extends StatefulWidget {
     required this.c,
     required this.onMic,
     required this.onToggleAutoScroll,
-    required this.onSettingsTap, // Kept for signature compatibility, unused here as settings moved
+    required this.onSettingsTap,
     this.isVoiceSearching = false,
   });
 
@@ -38,8 +32,6 @@ class BottomActionBar extends StatefulWidget {
 class _BottomActionBarState extends State<BottomActionBar>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-  // _pulseAnimation is currently unused
-  // late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -48,11 +40,6 @@ class _BottomActionBarState extends State<BottomActionBar>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    /*
-    _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    */
 
     if (widget.isRecording) {
       _pulseController.repeat(reverse: true);
@@ -81,7 +68,6 @@ class _BottomActionBarState extends State<BottomActionBar>
     final c = widget.c;
     final app = AppState.instance;
 
-    // Choose the correct button based on current state
     Widget actionButton;
     if (widget.isAutoScrolling) {
       // ── AutoScroll Pause Button ──
@@ -131,7 +117,6 @@ class _BottomActionBarState extends State<BottomActionBar>
     );
   }
 
-  /// Builds a consistent floating action button with label underneath.
   Widget _buildFloatingButton({
     required VoidCallback onTap,
     required Gradient gradient,
@@ -142,55 +127,56 @@ class _BottomActionBarState extends State<BottomActionBar>
     bool isLoading = false,
     required String label,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: shadowBlur,
-              spreadRadius: shadowSpread,
-              offset: const Offset(0, 4),
+    final app = AppState.instance;
+    final c = widget.c;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              gradient: gradient,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: shadowColor,
+                  blurRadius: shadowBlur,
+                  spreadRadius: shadowSpread,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ],
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.15),
-            width: 1.5,
+            child: Center(
+              child: isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : (icon != null
+                      ? Icon(icon, color: Colors.white, size: 30)
+                      : const SizedBox.shrink()),
+            ),
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (isLoading)
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2.5,
-                ),
-              )
-            else if (icon != null)
-              Icon(icon, color: Colors.white, size: 26),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ],
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: app.isArabic ? 'HafsSmart' : null,
+            color: c.text,
+            fontSize: app.isArabic ? 15 : 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+      ],
     );
   }
 }

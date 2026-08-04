@@ -1,7 +1,7 @@
 // lib/engine/sherpa_engine.dart
 // Cache-aware streaming CTC engine for Muno459/quran_phoneme_zipformer (Muno459/zipformer_p-arabic)
 //
-// Model specs (from official model documentation & ONNX metadata):
+// Model specs:
 //   Architecture     = Zipformer2 causal streaming CTC (~65.5M parameters)
 //   Tokens/Units     = 250 phoneme units (consonant+ḥaraka units) + blank_id
 //   Front end        = 80-bin kaldi fbank (povey window, 25ms / 10ms shift, 16 kHz)
@@ -10,19 +10,18 @@
 //   subsampling      = 8
 //   hop_length       = 160 samples (10ms)
 //   → 1 encoder frame = 80ms of audio
-//
-// Sherpa-ONNX uses OnlineZipformer2CtcModelConfig which handles the cache tensors
-// internally — we just call acceptWaveform() and decode().
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:isolate';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
+
 import '../utils/debug_logger.dart';
+import 'models/sherpa_protocol.dart';
 
 class TranscriptionResult {
   final String text;
@@ -30,11 +29,7 @@ class TranscriptionResult {
   final int startTime;
   final List<String> tokens;
   final List<double> timestamps;
-
-  // Newly merged SherpaONNX deep metrics
   final List<double> ysProbs;
-
-  /// Epoch/generation of the ASR stream. Incremented on resets/flushes to reject stale messages.
   final int streamEpoch;
 
   TranscriptionResult({
@@ -48,14 +43,6 @@ class TranscriptionResult {
   });
 }
 
-enum _EngineCommand { init, recognize, reset, flushThenReset, destroy }
-
-class _IsolateMessage {
-  final _EngineCommand command;
-  final dynamic payload;
-  _IsolateMessage(this.command, [this.payload]);
-}
-
 class SherpaEngine {
   Isolate? _isolate;
   SendPort? _sendPort;
@@ -66,7 +53,7 @@ class SherpaEngine {
 
   bool _isInitialized = false;
   Future<void>? _initFuture;
-  final List<Map<String, dynamic>> _pendingChunks = [];
+  final List<SherpaRecognizeCommand> _pendingChunks = [];
   int _currentStreamEpoch = 0;
 
   bool get isInitialized => _isInitialized;
@@ -76,7 +63,6 @@ class SherpaEngine {
 
   Future<String> _extractAsset(String assetPath) async {
     final Directory docDir = await getApplicationSupportDirectory();
-    // Prefix with version to force re-extraction on updates
     final String prefix = 'v2_zipformer_';
     final File file = File(
       '${docDir.path}/$prefix${assetPath.split('/').last}',
@@ -98,6 +84,7 @@ class SherpaEngine {
         'CRITICAL: $assetPath copied as 0 bytes — check pubspec.yaml.',
       );
     }
+
     return file.path;
   }
 
@@ -117,10 +104,8 @@ class SherpaEngine {
   Future<void> _doInitialize() async {
     if (_isolate != null) {
       if (_sendPort != null) {
-        _sendPort!.send(_IsolateMessage(_EngineCommand.destroy));
-        await Future.delayed(
-          const Duration(milliseconds: 100),
-        ); // Give C++ time to free memory
+        _sendPort!.send(const SherpaDestroyCommand());
+        await Future.delayed(const Duration(milliseconds: 100));
       }
       _isolate?.kill(priority: Isolate.immediate);
     }
@@ -140,60 +125,35 @@ class SherpaEngine {
       if (message is SendPort) {
         _sendPort = message;
         _sendPort!.send(
-          _IsolateMessage(_EngineCommand.init, {
-            'modelPath': modelPath,
-            'tokensPath': tokensPath,
-          }),
+          SherpaInitCommand(modelPath: modelPath, tokensPath: tokensPath),
         );
-      } else if (message == 'INIT_DONE') {
+      } else if (message is SherpaInitSuccessEvent) {
         _isInitialized = true;
         _initFuture = null;
         completer.complete();
         for (final pending in _pendingChunks) {
-          final transferable = TransferableTypedData.fromList([
-            pending['chunk'] as Float32List,
-          ]);
-          _sendPort?.send(
-            _IsolateMessage(_EngineCommand.recognize, {
-              'chunk': transferable,
-              'isFinal': pending['isFinal'],
-              'startTime': pending['startTime'],
-            }),
-          );
+          _sendPort?.send(pending);
         }
         _pendingChunks.clear();
-      } else if (message is String && message.startsWith('INIT_ERROR:')) {
+      } else if (message is SherpaInitErrorEvent) {
         _initFuture = null;
-        completer.completeError(Exception(message.substring(11)));
-      } else if (message is Map) {
-        final int startTime = message['startTime'] as int;
-        final int latency = DateTime.now().millisecondsSinceEpoch - startTime;
-
-        final ysProbs = List<double>.from(message['ysProbs'] ?? []);
-        final text = message['text'] as String;
-        final bool isFinal = message['isFinal'] as bool;
+        completer.completeError(Exception(message.error));
+      } else if (message is SherpaTranscriptionEvent) {
+        final int latency =
+            DateTime.now().millisecondsSinceEpoch - message.startTime;
 
         if (kDebugMode) {
-          DebugLogger.updateAsrBuffer(text);
+          DebugLogger.updateAsrBuffer(message.text);
 
-          if (isFinal) {
+          if (message.isFinal) {
             DebugLogger.log('ASR', '⚡ Endpoint detected (${latency}ms)');
           }
 
-          DebugLogger.log('ASR-METRICS', '--- VERIFYING SHERPA METRICS ---');
-          DebugLogger.log('ASR-METRICS', 'RAW Tokens:  ${message['tokens']}');
-          DebugLogger.log('ASR-METRICS', 'RAW ysProbs: $ysProbs');
-          DebugLogger.log('ASR-METRICS', '---------------------------------');
-
-          // Debug Print: Check if any token had unusually low acoustic confidence
-          if (ysProbs.isNotEmpty) {
-            final minLogProb = ysProbs.reduce(
+          if (message.ysProbs.isNotEmpty) {
+            final minLogProb = message.ysProbs.reduce(
               (curr, next) => curr < next ? curr : next,
             );
-            // Convert log-probability to a percentage (e.g., -0.001818 -> 0.998 -> 99.8%)
             final double minConfidencePercentage = exp(minLogProb) * 100;
-
-            // Now we can use normal percentages. If confidence drops below 80%:
             if (minConfidencePercentage < 80.0) {
               DebugLogger.log(
                 'ASR-CONFIDENCE',
@@ -205,13 +165,13 @@ class SherpaEngine {
 
         _outputController.add(
           TranscriptionResult(
-            text: text,
-            isFinal: isFinal,
-            startTime: startTime,
-            tokens: List<String>.from(message['tokens'] ?? []),
-            timestamps: List<double>.from(message['timestamps'] ?? []),
-            ysProbs: ysProbs,
-            streamEpoch: (message['streamEpoch'] as int?) ?? _currentStreamEpoch,
+            text: message.text,
+            isFinal: message.isFinal,
+            startTime: message.startTime,
+            tokens: message.tokens,
+            timestamps: message.timestamps,
+            ysProbs: message.ysProbs,
+            streamEpoch: message.streamEpoch,
           ),
         );
       }
@@ -222,52 +182,37 @@ class SherpaEngine {
   }
 
   /// Feed a normalized float chunk [-1.0, 1.0] (16 kHz mono) into the recognizer.
-  /// [isFinal] = true flushes the current utterance.
   bool transcribe(Float32List audioChunk, {bool isFinal = false}) {
+    final transferable = TransferableTypedData.fromList([audioChunk]);
+    final cmd = SherpaRecognizeCommand(
+      chunk: transferable,
+      isFinal: isFinal,
+      startTime: DateTime.now().millisecondsSinceEpoch,
+    );
+
     if (!_isInitialized) {
       if (_initFuture != null) {
-        _pendingChunks.add({
-          'chunk': audioChunk,
-          'isFinal': isFinal,
-          'startTime': DateTime.now().millisecondsSinceEpoch,
-        });
+        _pendingChunks.add(cmd);
       }
       return true;
     }
-    final transferable = TransferableTypedData.fromList([audioChunk]);
-    _sendPort?.send(
-      _IsolateMessage(_EngineCommand.recognize, {
-        'chunk': transferable,
-        'isFinal': isFinal,
-        'startTime': DateTime.now().millisecondsSinceEpoch,
-      }),
-    );
+
+    _sendPort?.send(cmd);
     return true;
   }
 
   /// Hard reset: wipes the Sherpa stream and primes with silence.
-  /// Use ONLY for explicit user actions (stop button, manual ayah jump).
-  /// Do NOT call at automatic ayah boundaries — use [flushThenReset] instead.
   void resetBuffer() {
     _currentStreamEpoch++;
     _pendingChunks.clear();
-    _sendPort?.send(_IsolateMessage(_EngineCommand.reset));
+    _sendPort?.send(const SherpaResetCommand());
   }
 
-  /// Flush-then-Reset: the correct way to cross an ayah boundary.
-  ///
-  /// The Zipformer model was trained on isolated ayah clips. Carrying cache
-  /// state across a boundary is out-of-distribution and causes hallucinations.
-  ///
-  /// Order (per model author's warning):
-  ///   1. Push ~1.05 s of silence through the CURRENT live cache
-  ///      → drains the right-context buffer
-  ///   2. Zero the states for the next ayah
-  ///   3. Feed 300ms priming silence for the next ayah's left-context
+  /// Flush-then-Reset: crosses an Ayah boundary cleanly without loss of speech.
   void flushThenReset() {
     _currentStreamEpoch++;
     _pendingChunks.clear();
-    _sendPort?.send(_IsolateMessage(_EngineCommand.flushThenReset));
+    _sendPort?.send(const SherpaFlushCommand());
   }
 
   void destroy() {
@@ -275,7 +220,7 @@ class SherpaEngine {
     _isInitialized = false;
     _initFuture = null;
     _pendingChunks.clear();
-    _sendPort?.send(_IsolateMessage(_EngineCommand.destroy));
+    _sendPort?.send(const SherpaDestroyCommand());
     Future.delayed(const Duration(milliseconds: 200), () {
       _isolate?.kill(priority: Isolate.immediate);
       _receivePort?.close();
@@ -285,7 +230,7 @@ class SherpaEngine {
     });
   }
 
-  // ─── Isolate ──────────────────────────────────────────────────────────────
+  // ─── Isolate Worker ────────────────────────────────────────────────────────
   static void _isolateEntry(SendPort mainSendPort) {
     initBindings();
 
@@ -294,20 +239,17 @@ class SherpaEngine {
 
     OnlineRecognizer? recognizer;
     OnlineStream? stream;
-    final Float32List primingBuffer = Float32List(
-      4800,
-    ); // 300ms pre-roll silence initialized once
+    final Float32List primingBuffer = Float32List(4800); // 300ms pre-roll silence
     int isolateStreamEpoch = 0;
 
     port.listen((msg) {
-      if (msg is! _IsolateMessage) return;
+      if (msg is! SherpaCommand) return;
 
-      switch (msg.command) {
-        case _EngineCommand.init:
-          final paths = msg.payload as Map<String, String>;
+      switch (msg) {
+        case SherpaInitCommand(:final modelPath, :final tokensPath):
           try {
-            if (!File(paths['modelPath']!).existsSync() ||
-                !File(paths['tokensPath']!).existsSync()) {
+            if (!File(modelPath).existsSync() ||
+                !File(tokensPath).existsSync()) {
               throw Exception('CRITICAL: ONNX model files missing on disk.');
             }
 
@@ -317,11 +259,10 @@ class SherpaEngine {
                   feat: FeatureConfig(sampleRate: 16000, featureDim: 80),
                   model: OnlineModelConfig(
                     zipformer2Ctc: OnlineZipformer2CtcModelConfig(
-                      model: paths['modelPath']!,
+                      model: modelPath,
                     ),
-                    tokens: paths['tokensPath']!,
-                    numThreads:
-                        2, // 2 threads gives ~40% latency reduction on mobile multi-core ARM chips
+                    tokens: tokensPath,
+                    numThreads: 2,
                     modelType: 'zipformer2_ctc',
                     provider: provider,
                     debug: kDebugMode,
@@ -338,9 +279,8 @@ class SherpaEngine {
               recognizer = tryCreateRecognizer(
                 Platform.isAndroid ? 'xnnpack' : 'cpu',
               );
-            } catch (providerError) {
+            } catch (_) {
               if (Platform.isAndroid) {
-                // Fallback gracefully to 'cpu' if xnnpack/NEON is unsupported on this chipset
                 recognizer = tryCreateRecognizer('cpu');
               } else {
                 rethrow;
@@ -348,51 +288,40 @@ class SherpaEngine {
             }
 
             stream = recognizer!.createStream();
-
-            // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
-            // so the zeros prime the Zipformer attention cache (left_context) for the VERY FIRST utterance!
             stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
 
-            mainSendPort.send('INIT_DONE');
+            mainSendPort.send(const SherpaInitSuccessEvent());
           } catch (e) {
-            mainSendPort.send('INIT_ERROR:$e');
+            mainSendPort.send(SherpaInitErrorEvent(e.toString()));
           }
 
-        case _EngineCommand.recognize:
+        case SherpaRecognizeCommand(
+          :final chunk,
+          :final isFinal,
+          :final startTime,
+        ):
           if (recognizer == null || stream == null) return;
 
-          final payload = msg.payload as Map<String, dynamic>;
-          final transferable = payload['chunk'] as TransferableTypedData;
-          final rawBytesTemp = transferable.materialize().asUint8List();
+          final rawBytesTemp = chunk.materialize().asUint8List();
           final rawBytes = rawBytesTemp.offsetInBytes % 4 != 0
               ? Uint8List.fromList(rawBytesTemp)
               : rawBytesTemp;
-          final isFinal = payload['isFinal'] as bool;
-          final startTime = payload['startTime'] as int;
 
           if (rawBytes.isNotEmpty) {
             final floats = rawBytes.buffer.asFloat32List(
               rawBytes.offsetInBytes,
               rawBytes.lengthInBytes ~/ 4,
             );
-
             stream!.acceptWaveform(sampleRate: 16000, samples: floats);
           }
 
           while (recognizer!.isReady(stream!)) {
             recognizer!.decode(stream!);
           }
-          // ════════════════════════════════════════════════════════════════════════════
-          // [CROSS-PLATFORM COMPATIBILITY]
-          // If the iOS/Web version uses the OFFICIAL unmodified sherpa_onnx package,
-          // the `OnlineRecognizerResult` class will NOT have the `ysProbs` property.
-          // To prevent Dart from throwing a compiler error or crashing the app, we
-          // cast the result to `dynamic` and try to extract it at runtime. If it fails,
-          // we gracefully return an empty array `[]`.
-          // ════════════════════════════════════════════════════════════════════════════
+
           List<double> extractYsProbs(dynamic result) {
             try {
               return List<double>.from(result.ysProbs);
@@ -402,19 +331,20 @@ class SherpaEngine {
           }
 
           final partial = recognizer!.getResult(stream!);
-          bool endpointDetected = recognizer!.isEndpoint(stream!);
+          final bool endpointDetected = recognizer!.isEndpoint(stream!);
 
-          // If endpoint isn't detected and it's not manually finalized, send partial.
           if (!endpointDetected && !isFinal) {
-            mainSendPort.send({
-              'text': partial.text,
-              'tokens': partial.tokens,
-              'timestamps': partial.timestamps,
-              'ysProbs': extractYsProbs(partial),
-              'isFinal': false,
-              'startTime': startTime,
-              'streamEpoch': isolateStreamEpoch,
-            });
+            mainSendPort.send(
+              SherpaTranscriptionEvent(
+                text: partial.text,
+                tokens: List<String>.from(partial.tokens),
+                timestamps: List<double>.from(partial.timestamps),
+                ysProbs: extractYsProbs(partial),
+                isFinal: false,
+                startTime: startTime,
+                streamEpoch: isolateStreamEpoch,
+              ),
+            );
           }
 
           if (isFinal || endpointDetected) {
@@ -424,50 +354,35 @@ class SherpaEngine {
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
-            final final_ = recognizer!.getResult(stream!);
+            final finalResult = recognizer!.getResult(stream!);
 
-            mainSendPort.send({
-              'text': final_.text,
-              'tokens': final_.tokens,
-              'timestamps': final_.timestamps,
-              'ysProbs': extractYsProbs(final_),
-              'isFinal': true,
-              'startTime': startTime,
-              'streamEpoch': isolateStreamEpoch,
-            });
-            // ── IMPORTANT: Do NOT reset the stream here ──────────────────────
-            // The model was trained on isolated ayah clips. Resetting the cache
-            // automatically on every VAD silence endpoint is WRONG during tracking:
-            //   - A reciter may pause mid-ayah (breath). Resetting destroys the
-            //     left-context that helps the model track the current ayah.
-            //   - At a true ayah boundary, the HighlightingController calls
-            //     flushThenReset() which properly drains the right-context buffer
-            //     BEFORE zeroing state, preventing loss of the last word's tail.
-            // We intentionally leave the stream/cache live here.
-            // ─────────────────────────────────────────────────────────────────
+            mainSendPort.send(
+              SherpaTranscriptionEvent(
+                text: finalResult.text,
+                tokens: List<String>.from(finalResult.tokens),
+                timestamps: List<double>.from(finalResult.timestamps),
+                ysProbs: extractYsProbs(finalResult),
+                isFinal: true,
+                startTime: startTime,
+                streamEpoch: isolateStreamEpoch,
+              ),
+            );
           }
 
-        case _EngineCommand.flushThenReset:
-          // In live continuous streaming, the stream flows uninterrupted to avoid
-          // destroying in-flight speech samples during fast recitation (Wasl).
+        case SherpaFlushCommand():
           break;
 
-        case _EngineCommand.reset:
-          // ── Hard Reset (explicit user action only) ───────────────────────────
-          // Used for: stop button, manual ayah jump, voice search start.
-          // NOT used for automatic ayah-advance (use flushThenReset for that).
+        case SherpaResetCommand():
           isolateStreamEpoch++;
           if (recognizer != null && stream != null) {
             recognizer!.reset(stream!);
-            // Priming preroll: feed 300ms of pre-allocated silence and decode immediately
-            // so the zeros prime the Zipformer attention cache (left_context) without delaying incoming speech!
             stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
           }
 
-        case _EngineCommand.destroy:
+        case SherpaDestroyCommand():
           stream?.free();
           recognizer?.free();
           stream = null;
