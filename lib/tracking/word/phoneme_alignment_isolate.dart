@@ -359,6 +359,7 @@ class DictationSequencer {
     currentSegmentTimestamps = [];
     currentSegmentYsProbs = [];
     asrConsumedTokenCount = 0;
+    lastMatchedPhoneme = null;
 
     debugLog('🎯 [JUMP TO WORD] Cursor jumped to global word $targetWordCursor (ASR state cleared)');
   }
@@ -457,11 +458,14 @@ class DictationSequencer {
       }
 
       // -----------------------------------------------------------------------
-      // Fixed Lookahead Windowing (Strictly Word-based, O(1) Array Indexing)
+      // Dynamic Lookahead Windowing (Word-based & Audio-buffer responsive)
+      // easy: looks only at current word (0 lookahead words)
+      // normal: looks ahead up to 3 words
+      // strict: looks ahead up to 3 words
       // -----------------------------------------------------------------------
-      int lookaheadWords = trackingStrictness == 'easy'
+      int lookaheadWords = (trackingStrictness == 'easy')
           ? 0
-          : (trackingStrictness == 'strict' ? 3 : 2);
+          : (trackingStrictness == 'strict' ? 3 : 3);
 
       int wordCount = wordBoundaries.length - 1;
       if (targetWordCursor >= wordCount ||
@@ -469,9 +473,15 @@ class DictationSequencer {
         break;
       }
 
-      int endWordLimit = min(targetWordCursor + lookaheadWords, wordCount - 1);
-
       int winStartChunk = wordStartChunk[targetWordCursor];
+
+      int endWordLimit = (trackingStrictness == 'easy')
+          ? targetWordCursor
+          : min(
+              wordCount - 1,
+              targetWordCursor + lookaheadWords,
+            );
+
       int winEndChunk = (endWordLimit < wordEndChunk.length)
           ? wordEndChunk[endWordLimit]
           : refChunks.length;
