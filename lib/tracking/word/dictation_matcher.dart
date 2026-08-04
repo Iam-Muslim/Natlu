@@ -2,10 +2,95 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../tajweed/error_explainer.dart';
-import 'models/alignment_models.dart';
 import 'phoneme_matrix.dart';
 
-export 'models/alignment_models.dart';
+/// The edit operation chosen in the DP trellis at cell (i, j).
+enum AlignmentOp {
+  /// Exact phonetic match between ASR and reference.
+  match,
+
+  /// Phonetic substitution error.
+  replace,
+
+  /// Extra sound inserted.
+  insert,
+
+  /// Expected sound omitted/swallowed.
+  delete,
+}
+
+/// Parameters configuring the strictness of the DP alignment engine.
+class AlignmentConfig {
+  /// Maximum normalized penalty threshold allowed for a valid match.
+  final double threshold;
+
+  /// Penalty cost for omitting a reference phoneme (Deletions).
+  final double costDel;
+
+  /// Penalty cost for hallucinating an extra phoneme (Insertions).
+  final double costIns;
+
+  /// When true, enforces that the final reference phoneme has 0.0 penalty.
+  final bool requireStableTail;
+
+  const AlignmentConfig({
+    required this.threshold,
+    this.costDel = 1.0,
+    this.costIns = 1.0,
+    this.requireStableTail = false,
+  });
+
+  /// Factory helper for standard reciting strictness modes.
+  factory AlignmentConfig.fromStrictness(
+    String strictness, {
+    bool isTajweed = false,
+    double averagePhonemeDuration = 0.15,
+  }) {
+    double threshold = strictness == 'easy'
+        ? 0.35
+        : (strictness == 'strict' ? 0.15 : 0.25);
+
+    double costDel = strictness == 'easy' ? 0.65 : 1.0;
+    double costIns = strictness == 'easy' ? 0.65 : 1.0;
+
+    // Fast Hadr recitation forgiveness
+    if (averagePhonemeDuration < 0.08 && strictness != 'easy') {
+      costDel = 0.75;
+    }
+
+    return AlignmentConfig(
+      threshold: threshold,
+      costDel: costDel,
+      costIns: costIns,
+      requireStableTail: isTajweed,
+    );
+  }
+}
+
+/// Complete output payload returned by the forward DP matcher.
+class AlignmentResult {
+  final int bestI;
+  final int bestJ;
+  final int bestStartI;
+  final int bestStartJ;
+  final double bestScore;
+  final double pureAcousticScore;
+  final List<PhonemeGroupAlignment> trace;
+
+  const AlignmentResult({
+    required this.bestI,
+    required this.bestJ,
+    required this.bestStartI,
+    required this.bestStartJ,
+    required this.bestScore,
+    required this.pureAcousticScore,
+    required this.trace,
+  });
+
+  @override
+  String toString() =>
+      'AlignmentResult(score: ${bestScore.toStringAsFixed(3)}, asr: [$bestStartI..$bestI], ref: [$bestStartJ..$bestJ])';
+}
 
 /// ────────────────────────────────────────────────────────────────────────────
 /// [ForwardDictationMatcher] - The Mathematical Brain
@@ -29,323 +114,238 @@ class ForwardDictationMatcher {
 
   /// Performs monotonic phonetic alignment of the incoming ASR stream against the target word.
   AlignmentResult? align({
-    /// Incoming phonetic tokens from the speech recognizer.
     required List<String> currentAsrChunks,
-
-    /// Target reference phonemes for the expected word.
     required List<String> targetWindow,
-
-    /// The active Word ID being evaluated.
     required int expectedWord,
-
-    /// Tuning parameters, thresholds, and penalty weights.
     required AlignmentConfig config,
-
-    /// Optional pre-encoded integer IDs for the target window (skips encoding string phonemes in hot loop).
     Int32List? targetEncodedIds,
-
-    /// Optional acoustic log probabilities for ASR fault mitigation.
     List<double>? asrYsProbs,
-
-    /// Callback for diagnostic isolate logging.
     void Function(String)? debugLog,
   }) {
     final double threshold = config.threshold;
     final double costDel = config.costDel;
     final double costIns = config.costIns;
     final bool requireStableTail = config.requireStableTail;
-    // -------------------------------------------------------------------------
-    // Dimension Setup
-    // m = Length of ASR string.
-    // n = Length of Reference string (current expected word).
-    // The DP matrix will theoretically be (m) rows by (n) columns.
-    // -------------------------------------------------------------------------
-    int m = currentAsrChunks.length;
-    int n = targetWindow.length;
 
-    // -------------------------------------------------------------------------
-    // Reusable Scratchpad Buffer Management (Zero Allocations)
-    // -------------------------------------------------------------------------
-    if (_prevCost.length <= n + 1) {
-      int newSize = max(n + 10, _prevCost.length * 2);
-      _prevCost = Float64List(newSize);
-      _currCost = Float64List(newSize);
-      _prevStartI = Int32List(newSize);
-      _prevStartJ = Int32List(newSize);
-      _currStartI = Int32List(newSize);
-      _currStartJ = Int32List(newSize);
-    }
-    if (_pIds.length <= m) {
-      _pIds = Int32List(max(m + 10, _pIds.length * 2));
-    }
-    int opSize = (m + 1) * (n + 1);
-    if (_op.length < opSize) {
-      _op = Uint8List(max(opSize + 100, _op.length * 2));
+    final int m = currentAsrChunks.length;
+    final int n = targetWindow.length;
+
+    if (m == 0 || n == 0) return null;
+
+    final int requiredN = n + 1;
+    if (_prevCost.length < requiredN) {
+      int newCap = max(requiredN, _prevCost.length * 2);
+      _prevCost = Float64List(newCap);
+      _currCost = Float64List(newCap);
+      _prevStartI = Int32List(newCap);
+      _prevStartJ = Int32List(newCap);
+      _currStartI = Int32List(newCap);
+      _currStartJ = Int32List(newCap);
     }
 
-    // -------------------------------------------------------------------------
-    // Instant Integer Encoding
-    // -------------------------------------------------------------------------
-    Int32List pIds = _pIds;
+    final int requiredOp = (m + 1) * (n + 1);
+    if (_op.length < requiredOp) {
+      int newCap = max(requiredOp, _op.length * 2);
+      _op = Uint8List(newCap);
+    }
+
+    if (_pIds.length < m) {
+      _pIds = Int32List(max(m, _pIds.length * 2));
+    }
+    final Int32List pIds = _pIds;
     for (int i = 0; i < m; i++) {
       pIds[i] = PhonemeMatrix.encode(currentAsrChunks[i]);
     }
 
-    Int32List rIds;
-    if (targetEncodedIds != null) {
+    final Int32List rIds;
+    if (targetEncodedIds != null && targetEncodedIds.length == n) {
       rIds = targetEncodedIds;
     } else {
-      if (_rIds.length <= n) {
-        _rIds = Int32List(max(n + 10, _rIds.length * 2));
+      if (_rIds.length < n) {
+        _rIds = Int32List(max(n, _rIds.length * 2));
+      }
+      for (int j = 0; j < n; j++) {
+        _rIds[j] = PhonemeMatrix.encode(targetWindow[j]);
       }
       rIds = _rIds;
-      for (int j = 0; j < n; j++) {
-        rIds[j] = PhonemeMatrix.encode(targetWindow[j]);
-      }
     }
 
-    Float64List prevCost = _prevCost;
-    Float64List currCost = _currCost;
-    Int32List prevStartI = _prevStartI;
-    Int32List prevStartJ = _prevStartJ;
-    Int32List currStartI = _currStartI;
-    Int32List currStartJ = _currStartJ;
-    Uint8List op = _op;
+    final Float64List prevCost = _prevCost;
+    final Float64List currCost = _currCost;
+    final Int32List prevStartI = _prevStartI;
+    final Int32List prevStartJ = _prevStartJ;
+    final Int32List currStartI = _currStartI;
+    final Int32List currStartJ = _currStartJ;
+    final Uint8List op = _op;
+    final int opStride = n + 1;
 
-    // -------------------------------------------------------------------------
-    // Initialization: Row 0
-    // -------------------------------------------------------------------------
-    // Top-left origin starts at 0.0 cost.
-    prevCost[0] = 0.0;
-    prevStartI[0] = 0;
-    prevStartJ[0] = 0;
-
-    for (int j = 1; j <= n; j++) {
-      // Allow horizontal moves (Insertions / user dropped leading phoneme)
-      if (prevCost[j - 1] < double.infinity) {
-        prevCost[j] = prevCost[j - 1] + costIns;
-        prevStartI[j] = prevStartI[j - 1];
-        prevStartJ[j] = prevStartJ[j - 1];
-        op[j] = 2; // Insertion
-      } else {
-        prevCost[j] = double.infinity;
-        prevStartI[j] = -1;
-        prevStartJ[j] = -1;
-      }
+    for (int j = 0; j <= n; j++) {
+      prevCost[j] = j * costDel;
+      prevStartI[j] = 0;
+      prevStartJ[j] = 0;
     }
 
-    // Trackers for the absolute best path found in the entire matrix.
+    double bestNormDist = double.infinity;
     int bestI = -1;
     int bestJ = -1;
-    int bestStartI = -1;
-    int bestStartJ = -1;
-    double bestScore = double.infinity;
-    double bestNormDist = double.infinity;
+    int bestStartI = 0;
+    int bestStartJ = 0;
 
-    // -------------------------------------------------------------------------
-    // THE CORE DP LOOP
-    // -------------------------------------------------------------------------
-    // We iterate over every incoming ASR chunk (i).
     for (int i = 1; i <= m; i++) {
-      // Initialize the first column: allow matching to start at any incoming ASR audio chunk,
-      // naturally skipping any preceding background noise or speech.
       currCost[0] = 0.0;
       currStartI[0] = i;
       currStartJ[0] = 0;
 
-      // Grab the Integer ID of the current ASR phoneme.
-      int pId = pIds[i - 1];
+      final int pId = pIds[i - 1];
 
-      // Inner loop: Iterate over every reference chunk (j).
       for (int j = 1; j <= n; j++) {
-        int rId = rIds[j - 1];
-        double matchCost = PhonemeMatrix.getCost(pId, rId);
+        final int rId = rIds[j - 1];
 
-        // Path 1: Substitution / Match
-        double subCost = prevCost[j - 1] + matchCost;
-        int subStartI = prevStartI[j - 1];
-        int subStartJ = prevStartJ[j - 1];
+        final double delCost = prevCost[j] + costIns;
+        final double insCost = currCost[j - 1] + costDel;
 
-        // Fresh word start at ASR chunk (i-1)
-        if (j == 1 && matchCost < subCost) {
-          subCost = matchCost;
-          subStartI = i - 1;
-          subStartJ = 0;
+        final double matchCost = PhonemeMatrix.getCost(pId, rId);
+        final double replCost = prevCost[j - 1] + matchCost;
+
+        double minVal = replCost;
+        int choice = AlignmentOp.replace.index;
+        int sI = prevStartI[j - 1];
+        int sJ = prevStartJ[j - 1];
+
+        if (delCost < minVal) {
+          minVal = delCost;
+          choice = AlignmentOp.insert.index;
+          sI = prevStartI[j];
+          sJ = prevStartJ[j];
         }
 
-        // Path 2: Deletion (ASR hallucinated an extra sound)
-        double delCost = prevCost[j] + costDel;
-        int delStartI = prevStartI[j];
-        int delStartJ = prevStartJ[j];
-
-        // Path 3: Insertion (ASR missed a reference sound)
-        double insCost = currCost[j - 1] + costIns;
-        int insStartI = currStartI[j - 1];
-        int insStartJ = currStartJ[j - 1];
-
-        if (j == 1 && costIns < insCost) {
-          insCost = costIns;
-          insStartI = i;
-          insStartJ = 0;
+        if (insCost < minVal) {
+          minVal = insCost;
+          choice = AlignmentOp.delete.index;
+          sI = currStartI[j - 1];
+          sJ = currStartJ[j - 1];
         }
 
-        // Decision Making: Pick the cheapest path
-        if (subCost <= delCost && subCost <= insCost) {
-          currCost[j] = subCost;
-          currStartI[j] = subStartI;
-          currStartJ[j] = subStartJ;
-          op[i * (n + 1) + j] = 0;
-        } else if (delCost <= insCost) {
-          currCost[j] = delCost;
-          currStartI[j] = delStartI;
-          currStartJ[j] = delStartJ;
-          op[i * (n + 1) + j] = 1;
-        } else {
-          currCost[j] = insCost;
-          currStartI[j] = insStartI;
-          currStartJ[j] = insStartJ;
-          op[i * (n + 1) + j] = 2;
-        }
-      }
+        currCost[j] = minVal;
+        currStartI[j] = sI;
+        currStartJ[j] = sJ;
+        op[i * opStride + j] = choice;
 
-      // -----------------------------------------------------------------------
-      // End-of-Row Scoring Evaluation (Strict Word End at j = n)
-      // -----------------------------------------------------------------------
-      if (currCost[n] < double.infinity) {
-        int stI = currStartI[n];
-        int stJ = currStartJ[n];
+        if (j == n) {
+          final int lengthRef = j - sJ;
+          final int lengthAsr = i - sI;
+          final int denom = max(lengthRef, lengthAsr);
 
-        if (stI >= 0 && stJ == 0) {
-          int refLen = n - stJ;
-          int asrLen = i - stI;
-
-          if (refLen > 0) {
-            int denom = max(asrLen, max(refLen, 1));
-            if (denom < 4) denom = 4;
-
-            double normDist = currCost[n] / denom;
-
-            if (normDist <= threshold) {
-              // [EDGE-BOUND TAIL STABILITY RULE]
-              bool isStable = true;
-              if (requireStableTail && i == m && op[i * (n + 1) + n] == 2) {
-                isStable = false;
-              }
-
-              if (isStable && (bestI == -1 || normDist < bestScore)) {
-                bestScore = normDist;
-                bestNormDist = normDist;
-                bestI = i;
-                bestJ = n;
-                bestStartI = stI;
-                bestStartJ = stJ;
-              }
+          if (denom > 0) {
+            final double normDist = minVal / denom;
+            if (normDist <= bestNormDist) {
+              bestNormDist = normDist;
+              bestI = i;
+              bestJ = j;
+              bestStartI = sI;
+              bestStartJ = sJ;
             }
           }
         }
       }
 
-      // -----------------------------------------------------------------------
-      // Row Swapping (O(n) Memory)
-      // -----------------------------------------------------------------------
-      final tmpC = prevCost;
-      prevCost = currCost;
-      currCost = tmpC;
-
-      final tmpSI = prevStartI;
-      prevStartI = currStartI;
-      currStartI = tmpSI;
-
-      final tmpSJ = prevStartJ;
-      prevStartJ = currStartJ;
-      currStartJ = tmpSJ;
+      for (int k = 0; k <= n; k++) {
+        prevCost[k] = currCost[k];
+        prevStartI[k] = currStartI[k];
+        prevStartJ[k] = currStartJ[k];
+      }
     }
 
-    // -------------------------------------------------------------------------
-    // Matrix Finished. Traceback Extraction.
-    // -------------------------------------------------------------------------
-    if (bestI != -1) {
-      if (debugLog != null) {
-        String matchedAsr = currentAsrChunks.sublist(bestStartI, bestI).join('');
-        String matchedRef = targetWindow.sublist(bestStartJ, bestJ).join('');
-        debugLog(
-          '✅ [DP SUCCESS] Matched: "$matchedAsr" ➔ "$matchedRef" | Score: ${bestScore.toStringAsFixed(3)} <= $threshold',
-        );
-      }
-
-      List<PhonemeGroupAlignment> trace = [];
+    if (bestI != -1 && bestNormDist <= (threshold + 0.35)) {
       int currI = bestI;
       int currJ = bestJ;
+      final List<PhonemeGroupAlignment> trace = [];
+      final List<double> wordConfs = [];
 
-      // Traceback from the 1-byte array
       while (currI > bestStartI || currJ > bestStartJ) {
-        int opType = op[currI * (n + 1) + currJ];
-
-        if (currI > bestStartI && currJ > bestStartJ && opType == 0) {
-          double sc = PhonemeMatrix.getCost(pIds[currI - 1], rIds[currJ - 1]);
-          trace.add(
-            PhonemeGroupAlignment(
-              opType: sc <= 0.25 ? 'equal' : 'replace',
-              refIdx: (currJ - 1) - bestStartJ,
-              predIdx: (currI - 1) - bestStartI,
-            ),
-          );
-          currI--;
-          currJ--;
-        } else if (currI > bestStartI && opType == 1) {
-          trace.add(
-            PhonemeGroupAlignment(
-              opType: 'insert',
-              refIdx: currJ > bestStartJ ? (currJ - 1) - bestStartJ : -1,
-              predIdx: (currI - 1) - bestStartI,
-            ),
-          );
-          currI--;
-        } else if (currJ > bestStartJ) {
+        if (currI == bestStartI) {
           trace.add(
             PhonemeGroupAlignment(
               opType: 'delete',
-              refIdx: (currJ - 1) - bestStartJ,
-              predIdx: currI > bestStartI ? (currI - 1) - bestStartI : -1,
+              refIdx: currJ - 1,
+              predIdx: -1,
+            ),
+          );
+          currJ--;
+          continue;
+        }
+        if (currJ == bestStartJ) {
+          trace.add(
+            PhonemeGroupAlignment(
+              opType: 'insert',
+              refIdx: -1,
+              predIdx: currI - 1,
+            ),
+          );
+          currI--;
+          continue;
+        }
+
+        final int actionVal = op[currI * opStride + currJ];
+        final AlignmentOp action = AlignmentOp.values[actionVal];
+
+        if (action == AlignmentOp.insert) {
+          trace.add(
+            PhonemeGroupAlignment(
+              opType: 'insert',
+              refIdx: -1,
+              predIdx: currI - 1,
+            ),
+          );
+          currI--;
+        } else if (action == AlignmentOp.delete) {
+          trace.add(
+            PhonemeGroupAlignment(
+              opType: 'delete',
+              refIdx: currJ - 1,
+              predIdx: -1,
             ),
           );
           currJ--;
         } else {
-          break;
+          final double sc = PhonemeMatrix.getCost(
+            pIds[currI - 1],
+            rIds[currJ - 1],
+          );
+          final String opName = sc == 0.0 ? 'match' : 'replace';
+
+          if (asrYsProbs != null && currI - 1 < asrYsProbs.length) {
+            wordConfs.add(exp(asrYsProbs[currI - 1]));
+          }
+
+          trace.add(
+            PhonemeGroupAlignment(
+              opType: opName,
+              refIdx: currJ - 1,
+              predIdx: currI - 1,
+            ),
+          );
+          currI--;
+          currJ--;
         }
       }
 
-      List<PhonemeGroupAlignment> finalTrace = trace.reversed.toList();
+      final List<PhonemeGroupAlignment> finalTrace = trace.reversed.map((a) {
+        return PhonemeGroupAlignment(
+          opType: a.opType,
+          refIdx: a.refIdx >= 0 ? a.refIdx - bestStartJ : -1,
+          predIdx: a.predIdx >= 0 ? a.predIdx - bestStartI : -1,
+        );
+      }).toList();
 
-      String pathStr = finalTrace
-          .map((a) {
-            if (a.opType == 'equal') return 'M';
-            if (a.opType == 'replace') return 'S';
-            if (a.opType == 'insert') return 'I';
-            if (a.opType == 'delete') return 'D';
-            return '?';
-          })
-          .join('-');
-      debugLog?.call('🗺️ [DP PATH] $pathStr');
-
-      // ═════════════════════════════════════════════════════════════════════════
-      // [POST-PROCESSING] ZERO-ALLOCATION SCALAR WORD EVALUATION
-      // ═════════════════════════════════════════════════════════════════════════
+      double totalPenalty = 0.0;
       int asrLen = 0;
       int refLen = 0;
-      double totalPenalty = 0.0;
-      double wordTailCost = 1.0;
       String heardWordStr = '';
-      List<double> wordConfs = [];
+      double wordTailCost = 0.0;
 
-      for (var align in finalTrace) {
-        if (align.predIdx >= 0 &&
-            asrYsProbs != null &&
-            (bestStartI + align.predIdx) < asrYsProbs.length) {
-          int globalIndex = bestStartI + align.predIdx;
-          double confidencePercentage = exp(asrYsProbs[globalIndex]);
-          wordConfs.add(confidencePercentage);
-        }
+      for (int aIdx = 0; aIdx < finalTrace.length; aIdx++) {
+        final align = finalTrace[aIdx];
 
         if (align.opType == 'delete') {
           wordTailCost = costDel;
@@ -369,7 +369,7 @@ class ForwardDictationMatcher {
         } else if (align.opType == 'delete') {
           totalPenalty += costDel;
         } else if (align.opType == 'replace') {
-          double exactCost = PhonemeMatrix.getCost(
+          final double exactCost = PhonemeMatrix.getCost(
             pIds[bestStartI + align.predIdx],
             rIds[bestStartJ + align.refIdx],
           );
@@ -379,9 +379,10 @@ class ForwardDictationMatcher {
 
       int denom = max(asrLen, max(refLen, 1));
       if (denom < 4) denom = 4;
-      double wordScore = totalPenalty / denom;
-      bool passesTailAnchor = !requireStableTail || wordTailCost == 0.0;
-      String refWordStr = targetWindow.join('');
+      final double wordScore = totalPenalty / denom;
+      final bool passesTailAnchor =
+          !requireStableTail || wordTailCost == 0.0;
+      final String refWordStr = targetWindow.join('');
 
       if (wordScore <= threshold && passesTailAnchor) {
         debugLog?.call(
@@ -395,12 +396,10 @@ class ForwardDictationMatcher {
           bestScore: wordScore,
           pureAcousticScore: bestNormDist,
           trace: finalTrace,
-          words: [WordMatch(wordId: expectedWord, score: wordScore)],
-          shieldedWords: const [],
         );
       }
 
-      // [CASE 2 ACOUSTIC SHIELDING]
+      // Acoustic Shielding
       if (wordScore <= 0.65) {
         double minConf = 1.0;
         if (wordConfs.isNotEmpty) {
@@ -420,13 +419,11 @@ class ForwardDictationMatcher {
             bestScore: wordScore,
             pureAcousticScore: bestNormDist,
             trace: finalTrace,
-            words: [WordMatch(wordId: expectedWord, score: wordScore)],
-            shieldedWords: const [],
           );
         }
       }
 
-      String reason = wordScore > threshold
+      final String reason = wordScore > threshold
           ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
           : '(Failed Tail Anchor: TailCost=$wordTailCost)';
       debugLog?.call(

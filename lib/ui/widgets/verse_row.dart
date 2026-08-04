@@ -147,9 +147,6 @@ class _VerseRowState extends State<VerseRow> {
 
     int hash = isActive ? 1 : 0;
     hash = hash * 31 + (isCompleted ? 1 : 0);
-    if (isActive) {
-      hash = hash * 31 + (ctrl.activeWordIndex ?? -1);
-    }
 
     final wordCount = widget.verse.uthmaniWords.length;
     for (int i = 0; i < wordCount; i++) {

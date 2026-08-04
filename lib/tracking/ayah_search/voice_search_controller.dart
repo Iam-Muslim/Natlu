@@ -15,7 +15,7 @@
 //
 // See also: docs/voice_navigation.md
 
-import 'package:the_great_quran/tracking/word/quran_normalizer.dart';
+import '../common/quran_normalizer.dart';
 import '../../engine/sherpa_engine.dart';
 import 'phonetic_search.dart';
 import '../../utils/debug_logger.dart';

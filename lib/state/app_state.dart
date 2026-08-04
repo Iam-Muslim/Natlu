@@ -1,7 +1,7 @@
 // Global application state singleton.
 //
 // Manages all user-configurable settings (language, theme, font size,
-// mistake level, lookahead, blur mode) and exposes the active [ThemeColors]
+// tracking strictness, blur mode, auto-scroll) and exposes the active [ThemeColors]
 // palette. All UI widgets listen to this via [ChangeNotifier].
 //
 // Design: Zero-persistence — settings reset on app restart.
@@ -82,8 +82,7 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('blurMode', isBlurMode);
   }
 
-
-
+  // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
 
   int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
 
