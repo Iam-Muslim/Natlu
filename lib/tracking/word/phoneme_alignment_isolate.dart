@@ -265,29 +265,39 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
       return;
     }
 
-    switch (command) {
-      case SetupMatrixCommand(:final tokens):
-        PhonemeMatrix.preheat(tokens);
+    try {
+      switch (command) {
+        case SetupMatrixCommand(:final tokens):
+          PhonemeMatrix.preheat(tokens);
 
-      case SetSurahReferenceCommand():
-        sequencer.setSurahReference(command);
+        case SetSurahReferenceCommand():
+          sequencer.setSurahReference(command);
 
-      case SyncStreamCommand():
-        sequencer.syncStream(command);
+        case SyncStreamCommand():
+          sequencer.syncStream(command);
 
-      case JumpToWordCommand():
-        sequencer.jumpToWord(command);
+        case JumpToWordCommand():
+          sequencer.jumpToWord(command);
 
-      case SetTajweedModeCommand(:final isTajweed):
-        sequencer.isTajweed = isTajweed;
+        case SetTajweedModeCommand(:final isTajweed):
+          sequencer.isTajweed = isTajweed;
 
-      case SetTrackingStrictnessCommand(:final strictness):
-        sequencer.trackingStrictness = strictness;
+        case SetTrackingStrictnessCommand(:final strictness):
+          sequencer.trackingStrictness = strictness;
 
-      case StopIsolateCommand():
-        Isolate.current.kill();
+        case StopIsolateCommand():
+          Isolate.current.kill();
+      }
+    } catch (e, stack) {
+      mainSendPort.send(
+        DebugLogEvent(
+          message: '⚠️ [ISOLATE ERROR] Handled exception: $e\n$stack',
+          asrBuffer: sequencer.currentSegmentAsr,
+        ).toMap(),
+      );
     }
   });
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

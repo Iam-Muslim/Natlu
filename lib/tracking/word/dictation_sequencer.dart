@@ -70,43 +70,36 @@ class DictationSequencer {
 
   /// Sets up a new continuous Surah reference in the background thread.
   void setSurahReference(SetSurahReferenceCommand cmd) {
+    PhonemeMatrix.reset();
     currentSurahNumber = cmd.surahNumber;
     final String expectedPhonemes = cmd.fullPhonemes.replaceAll(' ', '');
     wordBoundaries = cmd.boundaries;
     isTajweed = cmd.isTajweed;
     trackingStrictness = cmd.trackingStrictness;
 
-    refChunks = QuranNormalizer.chunkPhonemes(expectedPhonemes);
+    final int wordCount = max(0, wordBoundaries.length - 1);
+    refChunks = [];
     chunkToWordMap = [];
-
-    int charCursor = 0;
-    for (final chunk in refChunks) {
-      int wIdx = 0;
-      for (int i = 0; i < wordBoundaries.length - 1; i++) {
-        if (charCursor >= wordBoundaries[i] &&
-            charCursor < wordBoundaries[i + 1]) {
-          wIdx = i;
-          break;
-        }
-      }
-      chunkToWordMap.add(wIdx);
-      charCursor += chunk.length;
-    }
-
-    final int wordCount = wordBoundaries.length - 1;
     wordStartChunk = List.filled(wordCount, 0);
     wordEndChunk = List.filled(wordCount, 0);
 
-    for (int j = 0; j < refChunks.length; j++) {
-      final int w = chunkToWordMap[j];
-      if (w < wordCount) {
-        if (j == 0 || chunkToWordMap[j - 1] != w) {
-          wordStartChunk[w] = j;
-        }
-        wordEndChunk[w] = j + 1;
+    for (int w = 0; w < wordCount; w++) {
+      final int startChar = wordBoundaries[w];
+      final int endChar = (w + 1 < wordBoundaries.length) ? wordBoundaries[w + 1] : expectedPhonemes.length;
+      if (startChar >= expectedPhonemes.length) break;
+      final int safeEnd = min(endChar, expectedPhonemes.length);
+      final String wordStr = expectedPhonemes.substring(startChar, safeEnd);
+      final List<String> wChunks = QuranNormalizer.chunkPhonemes(wordStr);
+
+      wordStartChunk[w] = refChunks.length;
+      for (final ch in wChunks) {
+        chunkToWordMap.add(w);
+        refChunks.add(ch);
       }
+      wordEndChunk[w] = refChunks.length;
     }
 
+    PhonemeMatrix.preheat(refChunks);
     refEncodedIds = Int32List(refChunks.length);
     for (int i = 0; i < refChunks.length; i++) {
       refEncodedIds[i] = PhonemeMatrix.encode(refChunks[i]);
@@ -153,7 +146,7 @@ class DictationSequencer {
 
   /// Ingests streaming ASR audio data and triggers monotonic sequence evaluation.
   void syncStream(SyncStreamCommand cmd) {
-    if (cmd.isNewSegment) {
+    if (cmd.isNewSegment || cmd.asrText.length < currentSegmentAsr.length) {
       asrConsumedTokenCount = 0;
       debugLog(
         '🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.',
@@ -230,171 +223,344 @@ class DictationSequencer {
         winEndChunk,
       );
 
-      // Dynamic recitation strictness
-      double averagePhonemeDuration = 0.15;
-      final int unconsumedCharStart = _getCharIndexForToken(
-        cleanTokens,
-        asrConsumedTokenCount,
-      );
-      if (unconsumedCharStart < currentSegmentTimestamps.length) {
-        double totalDur = 0;
-        int durCount = 0;
-        for (
-          int c = unconsumedCharStart;
-          c < currentSegmentTimestamps.length;
-          c++
-        ) {
-          totalDur += currentSegmentTimestamps[c];
-          durCount++;
-        }
-        if (durCount > 0) {
-          averagePhonemeDuration = totalDur / durCount;
-        }
-      }
-
       final alignmentConfig = AlignmentConfig.fromStrictness(
         trackingStrictness,
         isTajweed: isTajweed,
-        averagePhonemeDuration: averagePhonemeDuration,
       );
 
       final List<String> unconsumedStrings =
           unconsumedTokens.map((t) => t.text).toList();
+      final List<double> unconsumedYsProbs =
+          _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount);
 
-      final AlignmentResult? result = _matcher.align(
-        currentAsrChunks: unconsumedStrings,
-        targetWindow: targetWindow,
+      // ── TIER 1: Standard Sequential Match (Word W) ─────────────────────────
+      AlignmentResult? result = _alignWindow(
+        asrStrings: unconsumedStrings,
+        asrYsProbs: unconsumedYsProbs,
+        startChunk: winStartChunk,
+        endChunk: winEndChunk,
         expectedWord: targetWordCursor,
         config: alignmentConfig,
-        targetEncodedIds: Int32List.sublistView(
-          refEncodedIds,
-          winStartChunk,
-          winEndChunk,
-        ),
-        asrYsProbs: _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount),
-        debugLog: debugLog,
       );
 
       if (result != null) {
         _commitMatch(
-          result,
-          unconsumedTokens,
-          cleanTokens,
-          targetWindow,
-          winStartChunk,
+          result: result,
+          unconsumedTokens: unconsumedTokens,
+          fullCleanTokens: cleanTokens,
+          targetWindow: targetWindow,
+          winStartChunk: winStartChunk,
+          startWordId: targetWordCursor,
         );
         matchedSomething = true;
+        continue;
+      }
+
+      // ── TIER 2: Forward Lookahead Skip (W -> W + 1) ────────────────────────
+      if (alignmentConfig.enableLookahead && targetWordCursor + 1 < wordCount) {
+        final int nextW = targetWordCursor + 1;
+        final int nextStart = wordStartChunk[nextW];
+        final int nextEnd = wordEndChunk[nextW];
+
+        if (nextStart < nextEnd) {
+          final nextRes = _alignWindow(
+            asrStrings: unconsumedStrings,
+            asrYsProbs: unconsumedYsProbs,
+            startChunk: nextStart,
+            endChunk: nextEnd,
+            expectedWord: nextW,
+            config: alignmentConfig.copyWith(
+              threshold: alignmentConfig.threshold *
+                  alignmentConfig.lookaheadThresholdFactor,
+            ),
+          );
+
+          if (nextRes != null) {
+            bool acceptSkip = true;
+
+            final bool hasOverlap = _hasPhoneticOverlap(targetWordCursor, nextW);
+            if (hasOverlap) {
+              final wRes = _alignWindow(
+                asrStrings: unconsumedStrings,
+                asrYsProbs: unconsumedYsProbs,
+                startChunk: winStartChunk,
+                endChunk: winEndChunk,
+                expectedWord: targetWordCursor,
+                config: alignmentConfig,
+              );
+              if (wRes != null &&
+                  nextRes.bestScore >
+                      wRes.bestScore -
+                          alignmentConfig.lookaheadMarginDifferential) {
+                acceptSkip = false;
+              }
+            }
+
+            if (acceptSkip) {
+              _emitSkippedWord(targetWordCursor);
+              _commitMatch(
+                result: nextRes,
+                unconsumedTokens: unconsumedTokens,
+                fullCleanTokens: cleanTokens,
+                targetWindow: refChunks.sublist(nextStart, nextEnd),
+                winStartChunk: nextStart,
+                startWordId: nextW,
+              );
+              matchedSomething = true;
+              continue;
+            }
+          }
+        }
+      }
+
+      // ── TIER 3: Multi-Word Span Fallback (W + W+1 Continuous Wasl) ─────────
+      if (alignmentConfig.enableSpanFallback &&
+          targetWordCursor + 1 < wordCount &&
+          unconsumedStrings.length >= alignmentConfig.minSpanBufferChunks) {
+        final int spanEnd = wordEndChunk[targetWordCursor + 1];
+        if (winStartChunk < spanEnd) {
+          final spanRes = _alignWindow(
+            asrStrings: unconsumedStrings,
+            asrYsProbs: unconsumedYsProbs,
+            startChunk: winStartChunk,
+            endChunk: spanEnd,
+            expectedWord: targetWordCursor,
+            config: alignmentConfig.copyWith(
+              threshold: alignmentConfig.threshold *
+                  alignmentConfig.spanThresholdFactor,
+            ),
+          );
+
+          if (spanRes != null) {
+            _commitMatch(
+              result: spanRes,
+              unconsumedTokens: unconsumedTokens,
+              fullCleanTokens: cleanTokens,
+              targetWindow: refChunks.sublist(winStartChunk, spanEnd),
+              winStartChunk: winStartChunk,
+              startWordId: targetWordCursor,
+              endWordId: targetWordCursor + 2,
+            );
+            matchedSomething = true;
+            continue;
+          }
+        }
+      }
+
+      // ── TIER 4: Stalled Buffer Recovery (Local Forward Resync) ─────────────
+      if (unconsumedStrings.length >=
+              alignmentConfig.stalledRecoveryBufferChunks &&
+          targetWordCursor + 2 < wordCount) {
+        final int maxScan = min(
+          targetWordCursor + 1 + alignmentConfig.stalledRecoveryMaxWords,
+          wordCount,
+        );
+        for (int scanW = targetWordCursor + 2; scanW < maxScan; scanW++) {
+          final int sStart = wordStartChunk[scanW];
+          final int sEnd = wordEndChunk[scanW];
+          if (sStart >= sEnd) continue;
+
+          final sRes = _alignWindow(
+            asrStrings: unconsumedStrings,
+            asrYsProbs: unconsumedYsProbs,
+            startChunk: sStart,
+            endChunk: sEnd,
+            expectedWord: scanW,
+            config: alignmentConfig,
+          );
+
+          if (sRes != null) {
+            for (int skipped = targetWordCursor; skipped < scanW; skipped++) {
+              _emitSkippedWord(skipped);
+            }
+            _commitMatch(
+              result: sRes,
+              unconsumedTokens: unconsumedTokens,
+              fullCleanTokens: cleanTokens,
+              targetWindow: refChunks.sublist(sStart, sEnd),
+              winStartChunk: sStart,
+              startWordId: scanW,
+            );
+            matchedSomething = true;
+            break;
+          }
+        }
       }
     } while (matchedSomething);
   }
 
-  void _commitMatch(
-    AlignmentResult result,
-    List<PhonemeToken> unconsumedTokens,
-    List<PhonemeToken> fullCleanTokens,
-    List<String> targetWindow,
-    int winStartChunk,
-  ) {
-    final int w = targetWordCursor;
+  /// Checks if Word [w2] is a substring, sub-phoneme, or heavily overlapping with Word [w1].
+  bool _hasPhoneticOverlap(int w1, int w2) {
+    if (w1 >= wordStartChunk.length || w2 >= wordStartChunk.length) return false;
+    final int s1 = wordStartChunk[w1], e1 = wordEndChunk[w1];
+    final int s2 = wordStartChunk[w2], e2 = wordEndChunk[w2];
+    if (s1 >= e1 || s2 >= e2) return false;
 
+    final String str1 = refChunks.sublist(s1, e1).join('');
+    final String str2 = refChunks.sublist(s2, e2).join('');
+
+    // Identical, substring, or short word particle (<= 2 chunks like 'لا', 'ما', 'و', 'ف')
+    if (str1 == str2 || str1.contains(str2) || str2.contains(str1) || (e2 - s2) <= 2) {
+      return true;
+    }
+
+    int shared = 0;
+    for (int i = s2; i < e2; i++) {
+      for (int j = s1; j < e1; j++) {
+        if (refChunks[i] == refChunks[j]) {
+          shared++;
+          break;
+        }
+      }
+    }
+    return (shared / (e2 - s2)) >= 0.50;
+  }
+
+  /// Evaluates alignment for a specific reference window slice.
+  AlignmentResult? _alignWindow({
+    required List<String> asrStrings,
+    required List<double> asrYsProbs,
+    required int startChunk,
+    required int endChunk,
+    required int expectedWord,
+    required AlignmentConfig config,
+  }) {
+    return _matcher.align(
+      currentAsrChunks: asrStrings,
+      targetWindow: refChunks.sublist(startChunk, endChunk),
+      expectedWord: expectedWord,
+      config: config,
+      targetEncodedIds:
+          Int32List.sublistView(refEncodedIds, startChunk, endChunk),
+      asrYsProbs: asrYsProbs,
+      debugLog: debugLog,
+    );
+  }
+
+  /// Emits a skipped (RED) word event to the UI thread.
+  void _emitSkippedWord(int wordId) {
+    mainSendPort.send(
+      WordMatchedEvent(
+        wordId: wordId,
+        cleanAsr: '',
+        tajweedErrors: null,
+        isRed: true,
+      ).toMap(),
+    );
+  }
+
+  void _commitMatch({
+    required AlignmentResult result,
+    required List<PhonemeToken> unconsumedTokens,
+    required List<PhonemeToken> fullCleanTokens,
+    required List<String> targetWindow,
+    required int winStartChunk,
+    required int startWordId,
+    int? endWordId,
+  }) {
+    final int endW = endWordId ?? (startWordId + 1);
+
+    final int safeStartI = result.bestStartI.clamp(0, unconsumedTokens.length);
+    final int safeEndI = result.bestI.clamp(safeStartI, unconsumedTokens.length);
     final List<String> matchedAsrSlice = unconsumedTokens
-        .sublist(result.bestStartI, result.bestI)
+        .sublist(safeStartI, safeEndI)
         .map((t) => t.text)
         .toList();
+
+    final int safeStartJ = result.bestStartJ.clamp(0, targetWindow.length);
+    final int safeEndJ = result.bestJ.clamp(safeStartJ, targetWindow.length);
     final List<String> matchedRefSlice = targetWindow.sublist(
-      result.bestStartJ,
-      result.bestJ,
+      safeStartJ,
+      safeEndJ,
     );
 
     final List<PhonemeGroupAlignment> localAlignments = result.trace;
 
-    final List<PhonemeGroupAlignment> globalAlignments = localAlignments.map((
-      a,
-    ) {
-      return PhonemeGroupAlignment(
-        opType: a.opType,
-        refIdx: a.refIdx >= 0
-            ? winStartChunk + result.bestStartJ + a.refIdx
-            : -1,
-        predIdx: a.predIdx >= 0 ? a.predIdx : -1,
-      );
-    }).toList();
+    for (int w = startWordId; w < endW; w++) {
+      String wordPredStr = '';
+      final List<double> wordPredTs = [];
 
-    String wordPredStr = '';
-    final List<double> wordPredTs = [];
+      for (final align in localAlignments) {
+        if (align.refIdx < 0 || align.predIdx < 0) continue;
+        final int absRefIdx = winStartChunk + safeStartJ + align.refIdx;
+        if (absRefIdx >= chunkToWordMap.length) continue;
 
-    for (final align in localAlignments) {
-      if (align.refIdx < 0 || align.predIdx < 0) continue;
-      final int absRefIdx = winStartChunk + result.bestStartJ + align.refIdx;
-      if (absRefIdx >= chunkToWordMap.length) continue;
+        final int wId = chunkToWordMap[absRefIdx];
+        if (wId != w) continue;
 
-      final int wId = chunkToWordMap[absRefIdx];
-      if (wId != w) continue;
+        final int absPredIdx = safeStartI + align.predIdx;
+        if (absPredIdx >= unconsumedTokens.length) continue;
 
-      final int absPredIdx = result.bestStartI + align.predIdx;
-      final String chunk = unconsumedTokens[absPredIdx].text;
-      wordPredStr += chunk;
+        final String chunk = unconsumedTokens[absPredIdx].text;
+        wordPredStr += chunk;
 
-      final int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
-      final int charStart = _getCharIndexForToken(
-        fullCleanTokens,
-        globalTokenIdx,
-      );
+        final int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
+        final int charStart = _getCharIndexForToken(
+          fullCleanTokens,
+          globalTokenIdx,
+        );
 
-      for (int c = 0; c < chunk.length; c++) {
-        if (charStart + c < currentSegmentTimestamps.length) {
-          wordPredTs.add(currentSegmentTimestamps[charStart + c]);
+        for (int c = 0; c < chunk.length; c++) {
+          if (charStart + c < currentSegmentTimestamps.length) {
+            wordPredTs.add(currentSegmentTimestamps[charStart + c]);
+          }
         }
+      }
+
+      if (w < acceptedWordsAsr.length) {
+        acceptedWordsAsr[w] = wordPredStr;
+      }
+      if (w < acceptedWordsTimestamps.length) {
+        acceptedWordsTimestamps[w] = wordPredTs;
       }
     }
 
-    acceptedWordsAsr[w] = wordPredStr;
-    acceptedWordsTimestamps[w] = wordPredTs;
-
     Map<int, List<ReciterError>>? tajweedErrors;
     if (isTajweed) {
-      final int globalStartIdx = asrConsumedTokenCount + result.bestStartI;
+      final int globalStartIdx = asrConsumedTokenCount + safeStartI;
       final int charStart = _getCharIndexForToken(
         fullCleanTokens,
         globalStartIdx,
       );
-      final int safeStartIdx = min(
+      final int safeCharIdx = min(
         charStart,
         currentSegmentTimestamps.length,
       );
 
       tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
-        alignments: globalAlignments,
+        alignments: localAlignments,
         globalRefChunks: refChunks,
         refChunkToWordMap: chunkToWordMap,
         currentAsrChunks: matchedAsrSlice,
-        trackingTimestamps: currentSegmentTimestamps.sublist(safeStartIdx),
+        trackingTimestamps: currentSegmentTimestamps.sublist(safeCharIdx),
         bestAsrStartIdx: 0,
-        targetChunkCursor: 0,
-        startWordId: w,
-        nextWordId: w + 1,
-        totalAyahWords: wordBoundaries.length - 1,
+        targetChunkCursor: winStartChunk + safeStartJ,
+        startWordId: startWordId,
+        nextWordId: endW,
+        totalAyahWords: max(1, wordBoundaries.length - 1),
         matchScore: result.pureAcousticScore,
         previousWordTail: lastMatchedPhoneme,
         trackingStrictness: trackingStrictness,
       );
     }
 
-    List<Map<String, dynamic>>? serializedErrors;
-    if (tajweedErrors != null && tajweedErrors.containsKey(w)) {
-      serializedErrors = tajweedErrors[w]!.map((e) => e.toMap()).toList();
+    for (int w = startWordId; w < endW; w++) {
+      List<Map<String, dynamic>>? serializedErrors;
+      if (tajweedErrors != null && tajweedErrors.containsKey(w)) {
+        serializedErrors = tajweedErrors[w]!.map((e) => e.toMap()).toList();
+      }
+
+      mainSendPort.send(
+        WordMatchedEvent(
+          wordId: w,
+          cleanAsr: w < acceptedWordsAsr.length ? acceptedWordsAsr[w] : '',
+          tajweedErrors: serializedErrors,
+          isRed: false,
+        ).toMap(),
+      );
     }
 
-    mainSendPort.send(
-      WordMatchedEvent(
-        wordId: w,
-        cleanAsr: acceptedWordsAsr[w],
-        tajweedErrors: serializedErrors,
-        isRed: false,
-      ).toMap(),
-    );
-
-    targetWordCursor++;
+    targetWordCursor = endW;
     asrConsumedTokenCount += result.bestI;
 
     if (matchedRefSlice.isNotEmpty) {
@@ -411,10 +577,14 @@ class DictationSequencer {
     List<PhonemeToken> cleanTokens,
     int consumedCount,
   ) {
-    final int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
+    final int charStart = min(
+      _getCharIndexForToken(cleanTokens, consumedCount),
+      currentSegmentYsProbs.length,
+    );
     if (charStart < currentSegmentYsProbs.length) {
       return currentSegmentYsProbs.sublist(charStart);
     }
     return const [];
   }
+
 }

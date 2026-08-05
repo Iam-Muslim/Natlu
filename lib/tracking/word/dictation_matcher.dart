@@ -19,7 +19,7 @@ enum AlignmentOp {
   delete,
 }
 
-/// Parameters configuring the strictness of the DP alignment engine.
+/// Parameters configuring the strictness and multi-tier search behavior of the DP alignment engine.
 class AlignmentConfig {
   /// Maximum normalized penalty threshold allowed for a valid match.
   final double threshold;
@@ -30,39 +30,125 @@ class AlignmentConfig {
   /// Penalty cost for hallucinating an extra phoneme (Insertions).
   final double costIns;
 
-  /// When true, enforces that the final reference phoneme has 0.0 penalty.
-  final bool requireStableTail;
+  /// Whether forward lookahead (word skip detection) is enabled (Tier 2).
+  /// Note: Explicitly disabled in easy mode.
+  final bool enableLookahead;
+
+  /// Maximum words ahead to search for a skip in Tier 2 (typically 1, i.e., W+1).
+  final int maxLookaheadWords;
+
+  /// Relative threshold multiplier for lookahead acceptance (e.g. 0.95).
+  final double lookaheadThresholdFactor;
+
+  /// Whether multi-word span fallback (Tier 3) is enabled.
+  /// Note: Explicitly disabled in easy mode.
+  final bool enableSpanFallback;
+
+  /// Relative threshold multiplier for span fallback (e.g. 1.15).
+  final double spanThresholdFactor;
+
+  /// Minimum unconsumed chunks required in buffer before attempting span fallback.
+  final int minSpanBufferChunks;
+
+  /// Unconsumed chunks threshold to trigger stalled recovery scan (Tier 4).
+  final int stalledRecoveryBufferChunks;
+
+  /// Max words to search ahead during stalled recovery scan.
+  final int stalledRecoveryMaxWords;
+
+  /// Score margin differential required for lookahead when chained confirmation is not available.
+  final double lookaheadMarginDifferential;
+
+  /// Minimum phonetic chunks of word W+2 required for chained confirmation window.
+  final int chainedConfirmationPrefixChunks;
 
   const AlignmentConfig({
     required this.threshold,
     this.costDel = 1.0,
     this.costIns = 1.0,
-    this.requireStableTail = false,
+    this.enableLookahead = true,
+    this.maxLookaheadWords = 1,
+    this.lookaheadThresholdFactor = 0.95,
+    this.enableSpanFallback = true,
+    this.spanThresholdFactor = 1.15,
+    this.minSpanBufferChunks = 3,
+    this.stalledRecoveryBufferChunks = 15,
+    this.stalledRecoveryMaxWords = 3,
+    this.lookaheadMarginDifferential = 0.10,
+    this.chainedConfirmationPrefixChunks = 2,
   });
 
   /// Factory helper for standard reciting strictness modes.
   factory AlignmentConfig.fromStrictness(
     String strictness, {
     bool isTajweed = false,
-    double averagePhonemeDuration = 0.15,
   }) {
-    double threshold = strictness == 'easy'
+    final bool isEasy = strictness == 'easy';
+    final bool isStrict = strictness == 'strict';
+
+    final double threshold = isEasy
         ? 0.35
-        : (strictness == 'strict' ? 0.15 : 0.25);
+        : (isStrict ? 0.15 : 0.25);
 
-    double costDel = strictness == 'easy' ? 0.65 : 1.0;
-    double costIns = strictness == 'easy' ? 0.65 : 1.0;
+    final double costDel = isEasy ? 0.65 : 1.0;
+    final double costIns = isEasy ? 0.65 : 1.0;
 
-    // Fast Hadr recitation forgiveness
-    if (averagePhonemeDuration < 0.08 && strictness != 'easy') {
-      costDel = 0.75;
-    }
+    // Easy mode has NO lookahead or span fallback (moves strictly sequentially)
+    final bool enableLookahead = !isEasy;
+    final bool enableSpanFallback = !isEasy;
 
     return AlignmentConfig(
       threshold: threshold,
       costDel: costDel,
       costIns: costIns,
-      requireStableTail: isTajweed,
+      enableLookahead: enableLookahead,
+      maxLookaheadWords: 1,
+      lookaheadThresholdFactor: isStrict ? 0.85 : 0.95,
+      enableSpanFallback: enableSpanFallback,
+      spanThresholdFactor: isStrict ? 1.05 : 1.15,
+      minSpanBufferChunks: 3,
+      stalledRecoveryBufferChunks: 15,
+      stalledRecoveryMaxWords: isStrict ? 2 : 3,
+      lookaheadMarginDifferential: isStrict ? 0.15 : 0.10,
+      chainedConfirmationPrefixChunks: 2,
+    );
+  }
+
+  /// Creates a copy of this config with updated fields.
+  AlignmentConfig copyWith({
+    double? threshold,
+    double? costDel,
+    double? costIns,
+    bool? enableLookahead,
+    int? maxLookaheadWords,
+    double? lookaheadThresholdFactor,
+    bool? enableSpanFallback,
+    double? spanThresholdFactor,
+    int? minSpanBufferChunks,
+    int? stalledRecoveryBufferChunks,
+    int? stalledRecoveryMaxWords,
+    double? lookaheadMarginDifferential,
+    int? chainedConfirmationPrefixChunks,
+  }) {
+    return AlignmentConfig(
+      threshold: threshold ?? this.threshold,
+      costDel: costDel ?? this.costDel,
+      costIns: costIns ?? this.costIns,
+      enableLookahead: enableLookahead ?? this.enableLookahead,
+      maxLookaheadWords: maxLookaheadWords ?? this.maxLookaheadWords,
+      lookaheadThresholdFactor:
+          lookaheadThresholdFactor ?? this.lookaheadThresholdFactor,
+      enableSpanFallback: enableSpanFallback ?? this.enableSpanFallback,
+      spanThresholdFactor: spanThresholdFactor ?? this.spanThresholdFactor,
+      minSpanBufferChunks: minSpanBufferChunks ?? this.minSpanBufferChunks,
+      stalledRecoveryBufferChunks:
+          stalledRecoveryBufferChunks ?? this.stalledRecoveryBufferChunks,
+      stalledRecoveryMaxWords:
+          stalledRecoveryMaxWords ?? this.stalledRecoveryMaxWords,
+      lookaheadMarginDifferential:
+          lookaheadMarginDifferential ?? this.lookaheadMarginDifferential,
+      chainedConfirmationPrefixChunks:
+          chainedConfirmationPrefixChunks ?? this.chainedConfirmationPrefixChunks,
     );
   }
 }
@@ -105,9 +191,7 @@ class ForwardDictationMatcher {
   Float64List _prevCost = Float64List(256);
   Float64List _currCost = Float64List(256);
   Int32List _prevStartI = Int32List(256);
-  Int32List _prevStartJ = Int32List(256);
   Int32List _currStartI = Int32List(256);
-  Int32List _currStartJ = Int32List(256);
   Uint8List _op = Uint8List(256 * 256);
   Int32List _pIds = Int32List(256);
   Int32List _rIds = Int32List(256);
@@ -125,7 +209,6 @@ class ForwardDictationMatcher {
     final double threshold = config.threshold;
     final double costDel = config.costDel;
     final double costIns = config.costIns;
-    final bool requireStableTail = config.requireStableTail;
 
     final int m = currentAsrChunks.length;
     final int n = targetWindow.length;
@@ -138,9 +221,7 @@ class ForwardDictationMatcher {
       _prevCost = Float64List(newCap);
       _currCost = Float64List(newCap);
       _prevStartI = Int32List(newCap);
-      _prevStartJ = Int32List(newCap);
       _currStartI = Int32List(newCap);
-      _currStartJ = Int32List(newCap);
     }
 
     final int requiredOp = (m + 1) * (n + 1);
@@ -148,6 +229,7 @@ class ForwardDictationMatcher {
       int newCap = max(requiredOp, _op.length * 2);
       _op = Uint8List(newCap);
     }
+    _op.fillRange(0, requiredOp, 0);
 
     if (_pIds.length < m) {
       _pIds = Int32List(max(m, _pIds.length * 2));
@@ -173,28 +255,22 @@ class ForwardDictationMatcher {
     final Float64List prevCost = _prevCost;
     final Float64List currCost = _currCost;
     final Int32List prevStartI = _prevStartI;
-    final Int32List prevStartJ = _prevStartJ;
     final Int32List currStartI = _currStartI;
-    final Int32List currStartJ = _currStartJ;
     final Uint8List op = _op;
     final int opStride = n + 1;
 
     for (int j = 0; j <= n; j++) {
       prevCost[j] = j * costDel;
       prevStartI[j] = 0;
-      prevStartJ[j] = 0;
     }
 
     double bestNormDist = double.infinity;
     int bestI = -1;
-    int bestJ = -1;
     int bestStartI = 0;
-    int bestStartJ = 0;
 
     for (int i = 1; i <= m; i++) {
       currCost[0] = 0.0;
       currStartI[0] = i;
-      currStartJ[0] = 0;
 
       final int pId = pIds[i - 1];
 
@@ -210,59 +286,49 @@ class ForwardDictationMatcher {
         double minVal = replCost;
         int choice = AlignmentOp.replace.index;
         int sI = prevStartI[j - 1];
-        int sJ = prevStartJ[j - 1];
 
         if (delCost < minVal) {
           minVal = delCost;
           choice = AlignmentOp.insert.index;
           sI = prevStartI[j];
-          sJ = prevStartJ[j];
         }
 
         if (insCost < minVal) {
           minVal = insCost;
           choice = AlignmentOp.delete.index;
           sI = currStartI[j - 1];
-          sJ = currStartJ[j - 1];
         }
 
         currCost[j] = minVal;
         currStartI[j] = sI;
-        currStartJ[j] = sJ;
         op[i * opStride + j] = choice;
 
         if (j == n) {
-          final int lengthRef = j - sJ;
           final int lengthAsr = i - sI;
-          final int denom = max(lengthRef, lengthAsr);
+          final int denom = max(n, lengthAsr);
 
           if (denom > 0) {
             final double normDist = minVal / denom;
             if (normDist <= bestNormDist) {
               bestNormDist = normDist;
               bestI = i;
-              bestJ = j;
               bestStartI = sI;
-              bestStartJ = sJ;
             }
           }
         }
       }
 
-      for (int k = 0; k <= n; k++) {
-        prevCost[k] = currCost[k];
-        prevStartI[k] = currStartI[k];
-        prevStartJ[k] = currStartJ[k];
-      }
+      // Fast block transfer from curr to prev
+      prevCost.setRange(0, n + 1, currCost);
+      prevStartI.setRange(0, n + 1, currStartI);
     }
 
-    if (bestI != -1 && bestNormDist <= (threshold + 0.35)) {
+    if (bestI != -1 && bestNormDist <= threshold) {
       int currI = bestI;
-      int currJ = bestJ;
+      int currJ = n;
       final List<PhonemeGroupAlignment> trace = [];
-      final List<double> wordConfs = [];
 
-      while (currI > bestStartI || currJ > bestStartJ) {
+      while (currI > bestStartI || currJ > 0) {
         if (currI == bestStartI) {
           trace.add(
             PhonemeGroupAlignment(
@@ -274,7 +340,7 @@ class ForwardDictationMatcher {
           currJ--;
           continue;
         }
-        if (currJ == bestStartJ) {
+        if (currJ == 0) {
           trace.add(
             PhonemeGroupAlignment(
               opType: 'insert',
@@ -314,10 +380,6 @@ class ForwardDictationMatcher {
           );
           final String opName = sc == 0.0 ? 'match' : 'replace';
 
-          if (asrYsProbs != null && currI - 1 < asrYsProbs.length) {
-            wordConfs.add(exp(asrYsProbs[currI - 1]));
-          }
-
           trace.add(
             PhonemeGroupAlignment(
               opType: opName,
@@ -333,35 +395,27 @@ class ForwardDictationMatcher {
       final List<PhonemeGroupAlignment> finalTrace = trace.reversed.map((a) {
         return PhonemeGroupAlignment(
           opType: a.opType,
-          refIdx: a.refIdx >= 0 ? a.refIdx - bestStartJ : -1,
+          refIdx: a.refIdx >= 0 ? a.refIdx : -1,
           predIdx: a.predIdx >= 0 ? a.predIdx - bestStartI : -1,
         );
       }).toList();
 
       double totalPenalty = 0.0;
       int asrLen = 0;
-      int refLen = 0;
       String heardWordStr = '';
-      double wordTailCost = 0.0;
+      int matchedRefChunks = 0;
 
       for (int aIdx = 0; aIdx < finalTrace.length; aIdx++) {
         final align = finalTrace[aIdx];
-
-        if (align.opType == 'delete') {
-          wordTailCost = costDel;
-        } else if (align.predIdx >= 0 && align.opType != 'insert') {
-          wordTailCost = PhonemeMatrix.getCost(
-            pIds[bestStartI + align.predIdx],
-            rIds[bestStartJ + align.refIdx],
-          );
-        }
 
         if (align.predIdx >= 0) {
           asrLen++;
           heardWordStr += currentAsrChunks[bestStartI + align.predIdx];
         }
         if (align.refIdx >= 0) {
-          refLen++;
+          if (align.opType == 'match' || align.opType == 'replace') {
+            matchedRefChunks++;
+          }
         }
 
         if (align.opType == 'insert') {
@@ -371,65 +425,46 @@ class ForwardDictationMatcher {
         } else if (align.opType == 'replace') {
           final double exactCost = PhonemeMatrix.getCost(
             pIds[bestStartI + align.predIdx],
-            rIds[bestStartJ + align.refIdx],
+            rIds[align.refIdx],
           );
           totalPenalty += exactCost;
         }
       }
 
-      int denom = max(asrLen, max(refLen, 1));
-      if (denom < 4) denom = 4;
+      final int denom = max(asrLen, max(n, 1));
       final double wordScore = totalPenalty / denom;
-      final bool passesTailAnchor =
-          !requireStableTail || wordTailCost == 0.0;
+      
+      final double coverage = n > 0 ? (matchedRefChunks / n) : 0.0;
+      final bool hasSufficientCoverage = n <= 1
+          ? (matchedRefChunks >= 1)
+          : (n == 2 ? matchedRefChunks >= 2 : coverage >= 0.60);
+
       final String refWordStr = targetWindow.join('');
 
-      if (wordScore <= threshold && passesTailAnchor) {
+      if (wordScore <= threshold && hasSufficientCoverage) {
         debugLog?.call(
-          '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Threshold)',
+          '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Coverage: ${(coverage * 100).toInt()}%)',
         );
         return AlignmentResult(
           bestI: bestI,
-          bestJ: bestJ,
+          bestJ: n,
           bestStartI: bestStartI,
-          bestStartJ: bestStartJ,
+          bestStartJ: 0,
           bestScore: wordScore,
           pureAcousticScore: bestNormDist,
           trace: finalTrace,
         );
       }
 
-      // Acoustic Shielding
-      if (wordScore <= 0.65) {
-        double minConf = 1.0;
-        if (wordConfs.isNotEmpty) {
-          minConf = wordConfs.reduce((a, b) => a < b ? a : b);
-        }
-
-        if (minConf < 0.80 && wordScore <= 0.45 && passesTailAnchor) {
-          debugLog?.call(
-            '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardWordStr" | '
-            'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf * 100).toStringAsFixed(1)}%) → GREEN',
-          );
-          return AlignmentResult(
-            bestI: bestI,
-            bestJ: bestJ,
-            bestStartI: bestStartI,
-            bestStartJ: bestStartJ,
-            bestScore: wordScore,
-            pureAcousticScore: bestNormDist,
-            trace: finalTrace,
-          );
-        }
-      }
-
       final String reason = wordScore > threshold
           ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
-          : '(Failed Tail Anchor: TailCost=$wordTailCost)';
+          : (!hasSufficientCoverage
+              ? '(Insufficient Coverage: matched=$matchedRefChunks/$n)'
+              : '(Failed Threshold)');
+
       debugLog?.call(
-        '❌ REFUSE: ref word is "$refWordStr", heard word is "$heardWordStr" | $reason',
+        '⏳ PENDING: ref word is "$refWordStr", heard word is "$heardWordStr" $reason',
       );
-      return null;
     }
 
     return null;
