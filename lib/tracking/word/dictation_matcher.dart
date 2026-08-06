@@ -59,6 +59,9 @@ class AlignmentConfig {
   /// Score margin differential required for lookahead when chained confirmation is not available.
   final double lookaheadMarginDifferential;
 
+  /// Penalty added per skipped ASR chunk during Lookahead (Tier 2).
+  final double lookaheadJumpPenalty;
+
   /// Minimum phonetic chunks of word W+2 required for chained confirmation window.
   final int chainedConfirmationPrefixChunks;
 
@@ -72,9 +75,10 @@ class AlignmentConfig {
     this.enableSpanFallback = true,
     this.spanThresholdFactor = 1.15,
     this.minSpanBufferChunks = 3,
-    this.stalledRecoveryBufferChunks = 15,
+    this.stalledRecoveryBufferChunks = 8,
     this.stalledRecoveryMaxWords = 3,
     this.lookaheadMarginDifferential = 0.10,
+    this.lookaheadJumpPenalty = 0.015,
     this.chainedConfirmationPrefixChunks = 2,
   });
 
@@ -107,9 +111,10 @@ class AlignmentConfig {
       enableSpanFallback: enableSpanFallback,
       spanThresholdFactor: isStrict ? 1.05 : 1.15,
       minSpanBufferChunks: 3,
-      stalledRecoveryBufferChunks: 15,
+      stalledRecoveryBufferChunks: isStrict ? 10 : 8,
       stalledRecoveryMaxWords: isStrict ? 2 : 3,
       lookaheadMarginDifferential: isStrict ? 0.15 : 0.10,
+      lookaheadJumpPenalty: isStrict ? 0.025 : 0.015,
       chainedConfirmationPrefixChunks: 2,
     );
   }
@@ -128,6 +133,7 @@ class AlignmentConfig {
     int? stalledRecoveryBufferChunks,
     int? stalledRecoveryMaxWords,
     double? lookaheadMarginDifferential,
+    double? lookaheadJumpPenalty,
     int? chainedConfirmationPrefixChunks,
   }) {
     return AlignmentConfig(
@@ -147,6 +153,7 @@ class AlignmentConfig {
           stalledRecoveryMaxWords ?? this.stalledRecoveryMaxWords,
       lookaheadMarginDifferential:
           lookaheadMarginDifferential ?? this.lookaheadMarginDifferential,
+      lookaheadJumpPenalty: lookaheadJumpPenalty ?? this.lookaheadJumpPenalty,
       chainedConfirmationPrefixChunks:
           chainedConfirmationPrefixChunks ?? this.chainedConfirmationPrefixChunks,
     );

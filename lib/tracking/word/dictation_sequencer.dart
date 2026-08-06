@@ -312,8 +312,17 @@ class DictationSequencer {
           if (nextRes != null) {
             bool acceptSkip = true;
 
+            // Apply Distance Penalty for skips
+            final double distancePenalty = nextRes.bestStartI * alignmentConfig.lookaheadJumpPenalty;
+            final double adjustedScore = nextRes.bestScore + distancePenalty;
+            final double allowedThreshold = alignmentConfig.threshold * alignmentConfig.lookaheadThresholdFactor;
+
+            if (adjustedScore > allowedThreshold) {
+              acceptSkip = false;
+            }
+
             final bool hasOverlap = _hasPhoneticOverlap(targetWordCursor, nextW);
-            if (hasOverlap) {
+            if (hasOverlap && acceptSkip) {
               final wRes = _alignWindow(
                 asrStrings: unconsumedStrings,
                 asrYsProbs: unconsumedYsProbs,
