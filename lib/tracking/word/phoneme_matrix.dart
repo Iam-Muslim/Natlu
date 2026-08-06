@@ -457,26 +457,26 @@ class SubCostTable {
     // ── Rule 5: Distinct Base Consonants (Articulatory Distance + Harakat Check) ──
     final double rawArticulatory = computeArticulatoryDistance(base1, base2);
 
-    // If consonants are close phonetic neighbors (e.g. س/ص, ت/ط, ذ/ظ)
-    if (rawArticulatory <= 0.35) {
-      bool harakatMatch = false;
-      if (c1.length == c2.length) {
-        harakatMatch = true;
-        for (int i = 1; i < c1.length; i++) {
-          if (c1.codeUnitAt(i) != c2.codeUnitAt(i)) {
-            harakatMatch = false;
-            break;
-          }
+    bool harakatMatch = false;
+    if (c1.length == c2.length) {
+      harakatMatch = true;
+      for (int i = 1; i < c1.length; i++) {
+        if (c1.codeUnitAt(i) != c2.codeUnitAt(i)) {
+          harakatMatch = false;
+          break;
         }
       }
+    }
 
-      if (harakatMatch) {
-        // Articulatory neighbor + identical vowel
-        return (rawArticulatory * 0.8).clamp(0.15, 0.28);
-      } else {
-        // Articulatory neighbor but conflicting vowel
-        return (rawArticulatory + 0.35).clamp(0.45, 0.70);
-      }
+    if (!harakatMatch) {
+      // Conflicting vowel/tashkeel -> always apply heavy penalty
+      return (rawArticulatory + 0.35).clamp(0.45, 1.0);
+    }
+
+    // If consonants are close phonetic neighbors (e.g. س/ص, ت/ط, ذ/ظ) with same harakat
+    if (rawArticulatory <= 0.35) {
+      // Articulatory neighbor + identical vowel
+      return (rawArticulatory * 0.8).clamp(0.15, 0.28);
     }
 
     // Completely dissimilar sounds (e.g. ب vs ش)

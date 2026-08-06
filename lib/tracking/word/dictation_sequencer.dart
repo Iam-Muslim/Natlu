@@ -256,6 +256,40 @@ class DictationSequencer {
         continue;
       }
 
+      // ── TIER 3: Multi-Word Span Fallback (W + W+1 Continuous Wasl) ─────────
+      if (alignmentConfig.enableSpanFallback &&
+          targetWordCursor + 1 < wordCount &&
+          unconsumedStrings.length >= alignmentConfig.minSpanBufferChunks) {
+        final int spanEnd = wordEndChunk[targetWordCursor + 1];
+        if (winStartChunk < spanEnd) {
+          final spanRes = _alignWindow(
+            asrStrings: unconsumedStrings,
+            asrYsProbs: unconsumedYsProbs,
+            startChunk: winStartChunk,
+            endChunk: spanEnd,
+            expectedWord: targetWordCursor,
+            config: alignmentConfig.copyWith(
+              threshold: alignmentConfig.threshold *
+                  alignmentConfig.spanThresholdFactor,
+            ),
+          );
+
+          if (spanRes != null) {
+            _commitMatch(
+              result: spanRes,
+              unconsumedTokens: unconsumedTokens,
+              fullCleanTokens: cleanTokens,
+              targetWindow: refChunks.sublist(winStartChunk, spanEnd),
+              winStartChunk: winStartChunk,
+              startWordId: targetWordCursor,
+              endWordId: targetWordCursor + 2,
+            );
+            matchedSomething = true;
+            continue;
+          }
+        }
+      }
+
       // ── TIER 2: Forward Lookahead Skip (W -> W + 1) ────────────────────────
       if (alignmentConfig.enableLookahead && targetWordCursor + 1 < wordCount) {
         final int nextW = targetWordCursor + 1;
@@ -309,40 +343,6 @@ class DictationSequencer {
               matchedSomething = true;
               continue;
             }
-          }
-        }
-      }
-
-      // ── TIER 3: Multi-Word Span Fallback (W + W+1 Continuous Wasl) ─────────
-      if (alignmentConfig.enableSpanFallback &&
-          targetWordCursor + 1 < wordCount &&
-          unconsumedStrings.length >= alignmentConfig.minSpanBufferChunks) {
-        final int spanEnd = wordEndChunk[targetWordCursor + 1];
-        if (winStartChunk < spanEnd) {
-          final spanRes = _alignWindow(
-            asrStrings: unconsumedStrings,
-            asrYsProbs: unconsumedYsProbs,
-            startChunk: winStartChunk,
-            endChunk: spanEnd,
-            expectedWord: targetWordCursor,
-            config: alignmentConfig.copyWith(
-              threshold: alignmentConfig.threshold *
-                  alignmentConfig.spanThresholdFactor,
-            ),
-          );
-
-          if (spanRes != null) {
-            _commitMatch(
-              result: spanRes,
-              unconsumedTokens: unconsumedTokens,
-              fullCleanTokens: cleanTokens,
-              targetWindow: refChunks.sublist(winStartChunk, spanEnd),
-              winStartChunk: winStartChunk,
-              startWordId: targetWordCursor,
-              endWordId: targetWordCursor + 2,
-            );
-            matchedSomething = true;
-            continue;
           }
         }
       }
