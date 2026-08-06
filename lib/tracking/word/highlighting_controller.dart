@@ -57,20 +57,59 @@ class ProcessedAudioStream {
 class AsrTokenProcessor {
   static const double lookaheadDelay = 0.320;
 
-  static ProcessedAudioStream process(TranscriptionResult result) {
-    final List<double> charDurations = [];
-    final List<double> charYsProbs = [];
-    final StringBuffer asrTextBuffer = StringBuffer();
+  List<String> _lastRawTokens = [];
 
-    final List<String> rawTokens = [];
-    final List<double> rawSpikeTimes = [];
-    final List<double> rawLastBlanks = [];
-    final List<double> rawTokenProbs = [];
-    double lastBlankTs = -1.0;
+  final List<String> _filteredTokens = [];
+  final List<double> _filteredSpikeTimes = [];
+  final List<double> _filteredLastBlanks = [];
+  final List<double> _filteredTokenProbs = [];
 
+  final StringBuffer _asrTextBuffer = StringBuffer();
+  final List<double> _charDurations = [];
+  final List<double> _charYsProbs = [];
+
+  void reset() {
+    _lastRawTokens.clear();
+    _filteredTokens.clear();
+    _filteredSpikeTimes.clear();
+    _filteredLastBlanks.clear();
+    _filteredTokenProbs.clear();
+    _asrTextBuffer.clear();
+    _charDurations.clear();
+    _charYsProbs.clear();
+  }
+
+  ProcessedAudioStream process(TranscriptionResult result) {
     final int maxCount = min(result.tokens.length, result.timestamps.length);
 
-    for (int i = 0; i < maxCount; i++) {
+    int commonLen = 0;
+    final int minLen = min(_lastRawTokens.length, maxCount);
+    for (int i = 0; i < minLen; i++) {
+      if (_lastRawTokens[i] == result.tokens[i]) {
+        commonLen++;
+      } else {
+        break;
+      }
+    }
+
+    if (commonLen < _lastRawTokens.length) {
+      reset();
+      commonLen = 0;
+    }
+
+    _lastRawTokens = result.tokens.sublist(0, maxCount);
+
+    if (commonLen == maxCount) {
+      return ProcessedAudioStream(
+        asrText: _asrTextBuffer.toString(),
+        charDurations: _charDurations,
+        charYsProbs: _charYsProbs,
+      );
+    }
+
+    double lastBlankTs = _filteredLastBlanks.isNotEmpty ? _filteredLastBlanks.last : -1.0;
+
+    for (int i = commonLen; i < maxCount; i++) {
       final String tok = result.tokens[i].replaceAll(' ', '');
       final double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
 
@@ -86,25 +125,22 @@ class AsrTokenProcessor {
       double prob = 0.0;
       if (result.ysProbs.length > i) {
         prob = result.ysProbs[i];
-        if (prob < -2.0) {
-          continue;
-        }
+        if (prob < -2.0) continue;
       }
 
-      rawTokens.add(tok);
-      rawSpikeTimes.add(realTs);
-      rawLastBlanks.add(lastBlankTs);
-      rawTokenProbs.add(prob);
-    }
+      _filteredTokens.add(tok);
+      _filteredSpikeTimes.add(realTs);
+      _filteredLastBlanks.add(lastBlankTs);
+      _filteredTokenProbs.add(prob);
 
-    for (int i = 0; i < rawTokens.length; i++) {
-      final String token = rawTokens[i];
-      final double spikeTime = rawSpikeTimes[i];
-      final double lastBlankBefore = rawLastBlanks[i];
-      final double prob = rawTokenProbs[i];
+      final int fIdx = _filteredTokens.length - 1;
+      final String token = _filteredTokens[fIdx];
+      final double spikeTime = _filteredSpikeTimes[fIdx];
+      final double lastBlankBefore = _filteredLastBlanks[fIdx];
+      final double probVal = _filteredTokenProbs[fIdx];
 
       double prevSpikeTime =
-          (i == 0) ? max(0.0, spikeTime - 0.15) : rawSpikeTimes[i - 1];
+          (fIdx == 0) ? max(0.0, spikeTime - 0.15) : _filteredSpikeTimes[fIdx - 1];
 
       if (lastBlankBefore > prevSpikeTime) {
         prevSpikeTime = lastBlankBefore;
@@ -153,17 +189,17 @@ class AsrTokenProcessor {
       }
 
       for (int j = 0; j < token.length; j++) {
-        asrTextBuffer.write(token[j]);
+        _asrTextBuffer.write(token[j]);
         final double charDur = tokenDur * (charWeights[j] / totalWeight);
-        charDurations.add(charDur);
-        charYsProbs.add(prob);
+        _charDurations.add(charDur);
+        _charYsProbs.add(probVal);
       }
     }
 
     return ProcessedAudioStream(
-      asrText: asrTextBuffer.toString(),
-      charDurations: charDurations,
-      charYsProbs: charYsProbs,
+      asrText: _asrTextBuffer.toString(),
+      charDurations: _charDurations,
+      charYsProbs: _charYsProbs,
     );
   }
 }
@@ -200,6 +236,9 @@ class HighlightingController extends ChangeNotifier {
   // Isolate Pipeline
   final PhonemeAlignmentIsolate _alignmentIsolate = PhonemeAlignmentIsolate();
   bool _isolateStarted = false;
+
+  // ASR State
+  final AsrTokenProcessor _tokenProcessor = AsrTokenProcessor();
 
   StreamSubscription? _engineSub;
   StreamSubscription<WordMatchedEvent>? _wordSub;
@@ -490,6 +529,7 @@ class HighlightingController extends ChangeNotifier {
       _setSurahReference(forceClear: true, startGlobalWord: 0);
     }
     _engine.resetBuffer();
+    _tokenProcessor.reset();
     _lastProcessedText = '';
     _expectingNewSegment = false;
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
@@ -500,6 +540,7 @@ class HighlightingController extends ChangeNotifier {
   void finalize() {
     _state = TrackerState.discovery;
     _engine.resetBuffer();
+    _tokenProcessor.reset();
     notifyListeners();
   }
 
@@ -522,6 +563,7 @@ class HighlightingController extends ChangeNotifier {
     }
 
     _engine.resetBuffer();
+    _tokenProcessor.reset();
     _lastProcessedText = '';
     _expectingNewSegment = true;
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
@@ -564,12 +606,13 @@ class HighlightingController extends ChangeNotifier {
       return;
     }
 
-    final ProcessedAudioStream stream = AsrTokenProcessor.process(result);
+    final ProcessedAudioStream stream = _tokenProcessor.process(result);
     final String asrText = stream.asrText;
     debugRecognizedText.value = asrText;
 
     if (asrText.length > 8000) {
       _engine.resetBuffer();
+      _tokenProcessor.reset();
       _lastProcessedText = '';
       return;
     }

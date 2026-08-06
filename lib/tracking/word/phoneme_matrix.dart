@@ -490,12 +490,14 @@ class SubCostTable {
 class PhonemeMatrix {
   static final Map<String, int> _phonemeToId = {};
   static int _numPhonemes = 0;
+  static int _matrixDim = 0;
   static Float64List _subMatrix = Float64List(0);
 
   /// Resets the static matrix cache to prevent unbounded memory leaks across sessions.
   static void reset() {
     _phonemeToId.clear();
     _numPhonemes = 0;
+    _matrixDim = 0;
     _subMatrix = Float64List(0);
   }
 
@@ -503,7 +505,8 @@ class PhonemeMatrix {
   static int encode(String p) {
     if (!_phonemeToId.containsKey(p)) {
       _phonemeToId[p] = _numPhonemes++;
-      _rebuildMatrix();
+      // We explicitly DO NOT rebuild the matrix during live tracking here.
+      // Unseen noise tokens will just be assigned an ID > _matrixDim and return cost 1.0.
     }
     return _phonemeToId[p]!;
   }
@@ -524,7 +527,8 @@ class PhonemeMatrix {
   }
 
   static void _rebuildMatrix() {
-    int size = _numPhonemes;
+    _matrixDim = _numPhonemes;
+    int size = _matrixDim;
     Float64List newMat = Float64List(size * size);
     newMat.fillRange(0, size * size, 1.0);
 
@@ -552,8 +556,8 @@ class PhonemeMatrix {
   /// O(1) instant memory lookup between two phoneme IDs.
   static double getCost(int aid, int bid) {
     if (aid == bid) return 0.0;
-    if (aid < _numPhonemes && bid < _numPhonemes) {
-      return _subMatrix[aid * _numPhonemes + bid];
+    if (aid < _matrixDim && bid < _matrixDim) {
+      return _subMatrix[aid * _matrixDim + bid];
     }
     return 1.0;
   }

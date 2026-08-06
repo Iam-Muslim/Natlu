@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../utils/debug_logger.dart';
-import 'dictation_sequencer.dart';
 import 'phoneme_matrix.dart';
+import 'dictation_sequencer.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ISOLATE PROTOCOL (Commands: Main UI ➔ Isolate | Events: Isolate ➔ Main UI)
