@@ -14,7 +14,7 @@ class ThemeSelectionDialog extends StatelessWidget {
       builder: (context, _) {
         final c = app.colors;
         final isAr = app.isArabic;
-        
+
         return Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -41,11 +41,7 @@ class ThemeSelectionDialog extends StatelessWidget {
                     color: c.gold.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.palette_rounded,
-                    color: c.gold,
-                    size: 24,
-                  ),
+                  child: Icon(Icons.palette_rounded, color: c.gold, size: 24),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -59,14 +55,11 @@ class ThemeSelectionDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  isAr 
-                    ? 'يمكنك تغيير المظهر لاحقاً من الإعدادات'
-                    : 'You can change this later in settings',
+                  isAr
+                      ? 'يمكنك تغيير المظهر لاحقاً من الإعدادات'
+                      : 'You can change this later in settings',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: c.muted,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: c.muted, fontSize: 14),
                 ),
                 const SizedBox(height: 32),
                 Row(
@@ -138,7 +131,7 @@ class _ThemeOption extends StatelessWidget {
               color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
-            )
+            ),
           ],
         ),
         alignment: Alignment.center,
