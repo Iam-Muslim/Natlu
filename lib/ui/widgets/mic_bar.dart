@@ -115,57 +115,57 @@ class _BottomActionBarState extends State<BottomActionBar>
     final app = AppState.instance;
     final c = widget.c;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: baseColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: baseColor.withValues(alpha: 0.25),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: baseColor.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: baseColor.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: baseColor.withValues(alpha: 0.25),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: baseColor.withValues(alpha: 0.05),
+              blurRadius: 10,
+              spreadRadius: 0,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            isLoading
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(baseColor),
+                    ),
+                  )
+                : (icon != null
+                    ? Icon(icon, color: baseColor, size: 28)
+                    : const SizedBox.shrink()),
+            Positioned(
+              bottom: 2,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: app.isArabic ? 'HafsSmart' : null,
+                  color: c.text,
+                  fontSize: app.isArabic ? 13 : 10,
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
+              ),
             ),
-            child: Center(
-              child: isLoading
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(baseColor),
-                      ),
-                    )
-                  : (icon != null
-                      ? Icon(icon, color: baseColor, size: 28)
-                      : const SizedBox.shrink()),
-            ),
-          ),
+          ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: app.isArabic ? 'HafsSmart' : null,
-            color: c.text,
-            fontSize: app.isArabic ? 15 : 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
