@@ -34,19 +34,28 @@ class _FontSliderTileState extends State<FontSliderTile> {
     final isAr = widget.isAr;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(Icons.format_size_rounded, color: c.gold, size: 20),
-          const SizedBox(width: 12),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: c.gold.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.format_size_rounded, color: c.gold, size: 18),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             flex: 2,
             child: Text(
               isAr ? 'حجم الخط' : 'Font Size',
               style: TextStyle(
                 color: c.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2,
               ),
             ),
           ),

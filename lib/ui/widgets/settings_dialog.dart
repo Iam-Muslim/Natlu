@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../state/app_state.dart';
@@ -24,7 +25,7 @@ class SettingsDialog extends StatelessWidget {
           textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
           child: Container(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
+              maxHeight: MediaQuery.of(context).size.height * 0.75,
             ),
             decoration: BoxDecoration(
               color: c.surface,
@@ -92,111 +93,120 @@ class SettingsDialog extends StatelessWidget {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+                              const Spacer(),
+                              // Reset Button
+                              // Reset Button
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () async {
+                                    final prefs = await SharedPreferences.getInstance();
+                                    await prefs.clear();
+                                    if (context.mounted) {
+                                      await app.load();
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              isAr 
+                                                ? 'تمت إعادة التعيين بنجاح.'
+                                                : 'Settings reset successfully.'
+                                            ),
+                                            backgroundColor: c.gold,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    child: Text(
+                                      isAr ? 'إعادة تعيين' : 'Reset',
+                                      style: TextStyle(
+                                        color: c.text.withValues(alpha: 0.6),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 12), // Reduced from 20
 
-                        // ── Settings Card ──
+                        // ── Application Preferences Card ──
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Container(
                             decoration: BoxDecoration(
                               color: c.surfaceHigh,
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: c.border.withValues(alpha: 0.3),
-                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                // 1. Language
+                                PremiumSettingTile(
+                                  icon: Icons.language_rounded,
+                                  title: isAr ? 'اللغة' : 'Language',
+                                  c: c,
+                                  child: PremiumPillSelector(
+                                    labels: const ['عربي', 'English'],
+                                    selected: isAr ? 0 : 1,
+                                    c: c,
+                                    onSelected: (i) {
+                                      if ((i == 0 && !isAr) || (i == 1 && isAr)) {
+                                        app.toggleLanguage();
+                                      }
+                                    },
+                                  ),
+                                ),
+                                PremiumSettingDivider(c: c),
+
+                                // 2. Theme
+                                PremiumSettingTile(
+                                  icon: Icons.palette_rounded,
+                                  title: isAr ? 'المظهر' : 'Theme',
+                                  c: c,
+                                  child: PremiumPillSelector(
+                                    labels: isAr ? ['أبيض', 'أسود'] : ['White', 'Black'],
+                                    selected: app.theme.index,
+                                    c: c,
+                                    onSelected: (i) => app.setTheme(AppTheme.values[i]),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // ── Reading Preferences Card ──
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: c.surfaceHigh,
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Column(
                               children: [
                                 // 1. Font Size
                                 FontSliderTile(c: c, app: app, isAr: isAr),
-                                SettingDivider(c: c),
+                                PremiumSettingDivider(c: c),
 
                                 // 2. AutoScroll Speed
                                 AutoScrollSliderTile(c: c, app: app, isAr: isAr),
-                                SettingDivider(c: c),
+                                PremiumSettingDivider(c: c),
 
                                 // 3. Tracking Strictness
                                 TrackingStrictnessTile(
                                   c: c,
                                   app: app,
                                   isAr: isAr,
-                                ),
-                                SettingDivider(c: c),
-
-                                // 4. Language
-                                SettingTile(
-                                  icon: Icons.language_rounded,
-                                  title: isAr ? 'اللغة' : 'Language',
-                                  c: c,
-                                  child: PillSelector(
-                                    labels: const ['عربي', 'English'],
-                                    selected: isAr ? 0 : 1,
-                                    c: c,
-                                    onSelected: (i) {
-                                      if ((i == 0 && !isAr) ||
-                                          (i == 1 && isAr)) {
-                                        app.toggleLanguage();
-                                      }
-                                    },
-                                  ),
-                                ),
-                                SettingDivider(c: c),
-
-                                // 5. Theme
-                                SettingTile(
-                                  icon: Icons.palette_rounded,
-                                  title: isAr ? 'المظهر' : 'Theme',
-                                  c: c,
-                                  child: PillSelector(
-                                    labels: isAr
-                                        ? ['أبيض', 'أسود']
-                                        : ['White', 'Black'],
-                                    selected: app.theme.index,
-                                    c: c,
-                                    onSelected: (i) =>
-                                        app.setTheme(AppTheme.values[i]),
-                                  ),
-                                ),
-                                SettingDivider(c: c),
-
-                                // 6. Reset Dialog Preferences (for testing)
-                                SettingTile(
-                                  icon: Icons.restore_rounded,
-                                  title: isAr ? 'إعادة تعيين الإعدادات' : 'Reset Setting',
-                                  c: c,
-                                  child: TextButton(
-                                    onPressed: () async {
-                                      final prefs = await SharedPreferences.getInstance();
-                                      await prefs.clear();
-                                      
-                                      if (context.mounted) {
-                                        // Reload the app state to apply defaults immediately
-                                        await app.load();
-                                        
-                                        if (context.mounted) {
-                                          Navigator.of(context).pop();
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                isAr 
-                                                  ? 'تمت إعادة التعيين بنجاح. أعد تشغيل التطبيق لترى النوافذ.'
-                                                  : 'Reset successful. Restart app to see the dialogs again.'
-                                              ),
-                                              backgroundColor: c.gold,
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: c.gold,
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    ),
-                                    child: Text(isAr ? 'إعادة تعيين' : 'Reset'),
-                                  ),
                                 ),
                               ],
                             ),

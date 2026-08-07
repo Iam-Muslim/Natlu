@@ -64,28 +64,6 @@ class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Icon Header
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          c.gold.withValues(alpha: 0.2),
-                          c.gold.withValues(alpha: 0.05),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: c.gold.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Icon(Icons.palette_rounded, color: c.gold, size: 24),
-                  ),
-                  const SizedBox(height: 16),
                   Text(
                     isAr ? 'اختر مظهر التطبيق' : 'Choose App Theme',
                     textAlign: TextAlign.center,

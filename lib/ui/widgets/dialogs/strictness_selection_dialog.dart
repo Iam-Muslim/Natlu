@@ -64,31 +64,6 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          c.gold.withValues(alpha: 0.2),
-                          c.gold.withValues(alpha: 0.05),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: c.gold.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.tune_rounded,
-                      color: c.gold,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Text(
                     isAr ? 'دقة التتبع' : 'Tracking Strictness',
                     textAlign: TextAlign.center,
@@ -122,32 +97,48 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
                   const SizedBox(height: 20),
                   
                   _StrictnessOption(
-                    title: isAr ? 'طبيعي' : 'Normal',
+                    title: isAr ? 'سهل' : 'Easy',
                     subtitle: isAr 
-                        ? 'تتبع متوازن. يظهر جميع الأخطاء وأحكام التجويد.'
-                        : 'Balanced matching. Shows all errors and Tajweed rules.',
-                    isRecommended: true,
+                        ? 'يتجاهل أخطاء الحروف البسيطة والمدود الزائدة.'
+                        : 'Hides basic letter errors & extra elongations.',
+                    isRecommended: false,
                     isSelected: _selectedIndex == 0,
                     c: c,
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 0);
+                      app.setTrackingStrictness(TrackingStrictness.easy);
+                      Future.delayed(const Duration(milliseconds: 300), widget.onStrictnessSelected);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _StrictnessOption(
+                    title: isAr ? 'عادي' : 'Normal',
+                    subtitle: isAr 
+                        ? 'تطابق متوازن. يظهر جميع الأخطاء وأحكام التجويد.'
+                        : 'Balanced matching. Shows all errors and Tajweed rules.',
+                    isRecommended: true,
+                    isSelected: _selectedIndex == 1,
+                    c: c,
+                    isAr: isAr,
+                    onTap: () {
+                      setState(() => _selectedIndex = 1);
                       app.setTrackingStrictness(TrackingStrictness.normal);
                       Future.delayed(const Duration(milliseconds: 300), widget.onStrictnessSelected);
                     },
                   ),
                   const SizedBox(height: 10),
                   _StrictnessOption(
-                    title: isAr ? 'صارم' : 'Strict',
+                    title: isAr ? 'صعب' : 'Hard',
                     subtitle: isAr 
-                        ? 'تتبع دقيق جداً. يتطلب نطقاً خالياً من أي شوائب.'
-                        : 'Highly sensitive. Requires pristine pronunciation.',
+                        ? 'تطابق دقيق جداً وحساس لأي خطأ في النطق.'
+                        : 'Very strict matching. Sensitive to exact pronunciation.',
                     isRecommended: false,
-                    isSelected: _selectedIndex == 1,
+                    isSelected: _selectedIndex == 2,
                     c: c,
                     isAr: isAr,
                     onTap: () {
-                      setState(() => _selectedIndex = 1);
+                      setState(() => _selectedIndex = 2);
                       app.setTrackingStrictness(TrackingStrictness.strict);
                       Future.delayed(const Duration(milliseconds: 300), widget.onStrictnessSelected);
                     },

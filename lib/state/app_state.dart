@@ -50,7 +50,8 @@ class AppState extends ChangeNotifier {
   // ── Mode ───────────────────────────────────────────────────────────────────
 
   AppMode currentMode = AppMode.wordChecker;
-  bool hasClickedTajweedWord = false;
+  int tajweedClickCount = 0;
+  bool get hasClickedTajweedWord => tajweedClickCount >= 10;
 
   void setMode(AppMode mode) {
     if (currentMode != mode) {
@@ -60,11 +61,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markTajweedWordClicked() async {
-    if (!hasClickedTajweedWord) {
-      hasClickedTajweedWord = true;
+    if (tajweedClickCount < 10) {
+      tajweedClickCount++;
       notifyListeners();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_clicked_tajweed_word', true);
+      await prefs.setInt('tajweed_click_count', tajweedClickCount);
     }
   }
 
@@ -188,7 +189,6 @@ class AppState extends ChangeNotifier {
 
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
-      fontSize = prefs.getDouble('fontSize') ?? 28.0;
 
       if (prefs.containsKey('trackingStrictness')) {
         final s = prefs.getString('trackingStrictness');
@@ -196,10 +196,20 @@ class AppState extends ChangeNotifier {
         else if (s == 'strict') trackingStrictness = TrackingStrictness.strict;
         else trackingStrictness = TrackingStrictness.normal;
       }
+      
+      if (prefs.containsKey('fontSize')) {
+        fontSize = prefs.getDouble('fontSize') ?? 28.0;
+      }
+      
+      tajweedClickCount = prefs.getInt('tajweed_click_count') ?? 0;
+      // Migrate old boolean value if present
+      if (tajweedClickCount == 0 && (prefs.getBool('has_clicked_tajweed_word') ?? false)) {
+        tajweedClickCount = 10;
+      }
 
       notifyListeners();
     } catch (e) {
-      DebugLogger.logSimple('AppState', 'Failed to load settings: $e');
+      DebugLogger.logSimple('AppState', "Error loading settings: $e");
     }
   }
 }

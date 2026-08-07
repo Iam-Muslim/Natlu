@@ -65,16 +65,19 @@ class VerseSpanBuilder {
         };
       recognizersSink.add(recognizer);
 
+      final style = TextStyle(
+        fontFamily: 'HafsSmart',
+        fontSize: app.fontSize,
+        height: 2.6,
+        wordSpacing: 5.0,
+        color: color,
+      );
+
+      // ALWAYS add the word as a standard TextSpan!
       spans.add(
         TextSpan(
           text: word,
-          style: TextStyle(
-            fontFamily: 'HafsSmart',
-            fontSize: app.fontSize,
-            height: 2.6,
-            wordSpacing: 5.0,
-            color: color,
-          ),
+          style: style,
           recognizer: recognizer,
         ),
       );

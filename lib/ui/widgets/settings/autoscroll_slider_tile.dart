@@ -36,23 +36,30 @@ class _AutoScrollSliderTileState extends State<AutoScrollSliderTile> {
     const labels = ['0.25x', '0.5x', '1x', '1.5x', '2x', '2.5x', '3x'];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.speed_rounded, color: c.gold, size: 20),
-              const SizedBox(width: 12),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: c.gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.speed_rounded, color: c.gold, size: 18),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  isAr
-                      ? 'سرعة التمرير التلقائي (وضع القراءة)'
-                      : 'Auto-Scroll Speed (Read Mode)',
+                  isAr ? 'سرعة التمرير التلقائي' : 'Auto-Scroll Speed',
                   style: TextStyle(
                     color: c.text,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ),

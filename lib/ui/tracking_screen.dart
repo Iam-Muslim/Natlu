@@ -474,42 +474,46 @@ class _TrackingScreenState extends State<TrackingScreen>
                       color: c.gold.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Builder(
-                            builder: (context) {
-                              final displayVerses = widget.controller.repository
-                                  .getSurah(widget.controller.targetSurah);
-                              return FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: app.isArabic
-                                    ? Alignment.centerRight
-                                    : Alignment.centerLeft,
-                                child: Text(
-                                  app.isArabic
-                                      ? displayVerses.first.surahName
-                                      : displayVerses.first.surahNameEn,
-                                  style: TextStyle(
-                                    fontFamily: app.isArabic
-                                        ? 'HafsSmart'
-                                        : null,
-                                    color: c.gold,
-                                    fontSize: app.isArabic ? 18 : 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: c.gold,
-                          size: 20,
-                        ),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: Builder(
+                                builder: (context) {
+                                  final displayVerses = widget.controller.repository
+                                      .getSurah(widget.controller.targetSurah);
+                                  return FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: app.isArabic
+                                        ? Alignment.centerRight
+                                        : Alignment.centerLeft,
+                                    child: Text(
+                                      app.isArabic
+                                          ? displayVerses.first.surahName
+                                          : displayVerses.first.surahNameEn,
+                                      style: TextStyle(
+                                        fontFamily: app.isArabic ? 'HafsSmart' : null,
+                                        color: c.gold,
+                                        fontSize: app.isArabic ? 18 : 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            if (constraints.maxWidth > 40) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: c.gold,
+                                size: 20,
+                              ),
+                            ],
+                          ],
+                        );
+                      }
                     ),
                   ),
                 ),
@@ -698,9 +702,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                 onTap: () {
                   widget.controller.setManualAyah(v.surah, v.ayah);
                 },
-                onWordErrorTap: () {
-                  _markTajweedWordClicked();
-                },
+                onWordErrorTap: null,
               ),
             );
           },

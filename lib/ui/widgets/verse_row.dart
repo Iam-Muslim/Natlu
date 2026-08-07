@@ -5,6 +5,7 @@ import '../../state/app_state.dart';
 import '../../tracking/word/highlighting_controller.dart';
 import 'dialogs/error_detail_dialog.dart';
 import 'helpers/verse_span_builder.dart';
+import 'tajweed_tutorial_word.dart';
 
 /// Displays a single Quranic verse (Ayah) with word-by-word highlighting.
 ///
@@ -161,10 +162,12 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + (app.isBlurMode && widget.isAutoScrolling ? 1 : 0);
     hash = hash * 31 + app.fontSize.hashCode;
     hash = hash * 31 + app.theme.index;
+    hash = hash * 31 + (app.hasClickedTajweedWord ? 1 : 0);
     return hash;
   }
 
   void _handleWordErrorTap(int ayah, int wordIdx, String word) {
+    AppState.instance.markTajweedWordClicked();
     final errors = widget.controller.getWordErrors(ayah, wordIdx);
     if (errors != null && errors.isNotEmpty) {
       ErrorDetailDialog.show(context, word: word, errors: errors);
@@ -229,10 +232,21 @@ class _VerseRowState extends State<VerseRow> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── Verse Text ──
-            RichText(
-              textAlign: TextAlign.justify,
-              textDirection: TextDirection.rtl,
-              text: TextSpan(children: _cachedSpans),
+            CustomPaint(
+              foregroundPainter: _cachedSpans != null
+                  ? TajweedTooltipPainter(
+                      words: words,
+                      ayah: widget.verse.ayah,
+                      controller: widget.controller,
+                      app: app,
+                      cachedSpans: _cachedSpans!,
+                    )
+                  : null,
+              child: RichText(
+                textAlign: TextAlign.justify,
+                textDirection: TextDirection.rtl,
+                text: TextSpan(children: _cachedSpans),
+              ),
             ),
 
             // ── Ayah Number Badge ──

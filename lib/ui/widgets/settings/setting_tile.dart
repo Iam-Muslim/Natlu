@@ -1,29 +1,29 @@
 import 'package:flutter/material.dart';
 import '../../../state/app_state.dart';
 
-/// Thin separator line between settings.
-class SettingDivider extends StatelessWidget {
+/// Thin flush separator line for grouped lists.
+class PremiumSettingDivider extends StatelessWidget {
   final ThemeColors c;
-  const SettingDivider({super.key, required this.c});
+  const PremiumSettingDivider({super.key, required this.c});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      color: c.border.withValues(alpha: 0.2),
+      margin: const EdgeInsets.only(left: 56, right: 16), // Flush with text, not icon
+      color: c.border.withValues(alpha: 0.15),
     );
   }
 }
 
-/// A single setting row with icon, title, and control widget.
-class SettingTile extends StatelessWidget {
+/// A premium iOS-style setting row with rounded colored icon.
+class PremiumSettingTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final ThemeColors c;
   final Widget child;
 
-  const SettingTile({
+  const PremiumSettingTile({
     super.key,
     required this.icon,
     required this.title,
@@ -34,19 +34,29 @@ class SettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(icon, color: c.gold, size: 20),
-          const SizedBox(width: 12),
+          // Ultra-minimal monochrome icon
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: c.gold.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: c.gold, size: 18),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             flex: 2,
             child: Text(
               title,
               style: TextStyle(
                 color: c.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2,
               ),
             ),
           ),
@@ -58,14 +68,14 @@ class SettingTile extends StatelessWidget {
   }
 }
 
-/// Modern pill-shaped segmented selector.
-class PillSelector extends StatelessWidget {
+/// Ultra-smooth premium segmented selector with drop shadows.
+class PremiumPillSelector extends StatelessWidget {
   final List<String> labels;
   final int selected;
   final ThemeColors c;
   final ValueChanged<int> onSelected;
 
-  const PillSelector({
+  const PremiumPillSelector({
     super.key,
     required this.labels,
     required this.selected,
@@ -76,52 +86,69 @@ class PillSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 38,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: c.bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border.withValues(alpha: 0.3)),
+        color: c.border.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        children: List.generate(labels.length, (i) {
-          final isSel = i == selected;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onSelected(i),
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSel ? c.gold : Colors.transparent,
-                  borderRadius: BorderRadius.circular(11),
-                  boxShadow: isSel
-                      ? [
-                          BoxShadow(
-                            color: c.gold.withValues(alpha: 0.25),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : [],
-                ),
-                child: Center(
-                  child: Text(
-                    labels[i],
-                    style: TextStyle(
-                      color: isSel
-                          ? Colors.white
-                          : c.text.withValues(alpha: 0.65),
-                      fontSize: 13,
-                      fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final pillWidth = constraints.maxWidth / labels.length;
+          
+          return Stack(
+            children: [
+              // Animated Background Pill
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutBack,
+                left: Directionality.of(context) == TextDirection.ltr
+                    ? selected * pillWidth
+                    : (labels.length - 1 - selected) * pillWidth,
+                top: 0,
+                bottom: 0,
+                width: pillWidth,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
+              // Text Labels
+              Row(
+                children: List.generate(labels.length, (i) {
+                  final isSel = i == selected;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => onSelected(i),
+                      behavior: HitTestBehavior.opaque,
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            color: isSel ? c.text : c.text.withValues(alpha: 0.5),
+                            fontSize: 14,
+                            fontWeight: isSel ? FontWeight.w600 : FontWeight.w500,
+                            fontFamily: 'sans-serif',
+                          ),
+                          child: Text(labels[i]),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
           );
-        }),
+        }
       ),
     );
   }

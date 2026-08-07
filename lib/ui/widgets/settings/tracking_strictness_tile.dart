@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../state/app_state.dart';
 import 'setting_tile.dart';
 
-/// Interactive tracking strictness selector with live explanatory descriptions.
 class TrackingStrictnessTile extends StatelessWidget {
   final ThemeColors c;
   final AppState app;
@@ -33,28 +32,37 @@ class TrackingStrictnessTile extends StatelessWidget {
     final int sel = app.trackingStrictness.index;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.track_changes_rounded, color: c.gold, size: 20),
-              const SizedBox(width: 12),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: c.gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.track_changes_rounded, color: c.gold, size: 18),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   isAr ? 'مستوى التصحيح' : 'Correction Level',
                   style: TextStyle(
                     color: c.text,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          PillSelector(
+          PremiumPillSelector(
             labels: titles,
             selected: sel,
             c: c,
@@ -62,7 +70,8 @@ class TrackingStrictnessTile extends StatelessWidget {
               app.setTrackingStrictness(TrackingStrictness.values[i]);
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          // Restored explanation labels for each level
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
             transitionBuilder: (child, animation) {
@@ -82,9 +91,9 @@ class TrackingStrictnessTile extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: c.gold.withValues(alpha: 0.08),
+                color: c.surface.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: c.gold.withValues(alpha: 0.2)),
+                border: Border.all(color: c.border.withValues(alpha: 0.1)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,7 +102,7 @@ class TrackingStrictnessTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Icon(
                       Icons.info_outline_rounded,
-                      color: c.gold,
+                      color: c.text.withValues(alpha: 0.5),
                       size: 16,
                     ),
                   ),
@@ -102,9 +111,9 @@ class TrackingStrictnessTile extends StatelessWidget {
                     child: Text(
                       descs[sel],
                       style: TextStyle(
-                        color: c.text.withValues(alpha: 0.85),
+                        color: c.text.withValues(alpha: 0.7),
                         fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                         height: 1.4,
                       ),
                     ),
