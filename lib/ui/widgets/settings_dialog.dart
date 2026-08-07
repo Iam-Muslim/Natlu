@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../state/app_state.dart';
@@ -112,7 +111,8 @@ class SettingsDialog extends StatelessWidget {
                                             content: Text(
                                               isAr 
                                                 ? 'تمت إعادة التعيين بنجاح.'
-                                                : 'Settings reset successfully.'
+                                                : 'Settings reset successfully.',
+                                              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
                                             ),
                                             backgroundColor: c.gold,
                                           ),
@@ -149,11 +149,11 @@ class SettingsDialog extends StatelessWidget {
                             child: Column(
                               children: [
                                 // 1. Language
-                                PremiumSettingTile(
+                                SettingTile(
                                   icon: Icons.language_rounded,
                                   title: isAr ? 'اللغة' : 'Language',
                                   c: c,
-                                  child: PremiumPillSelector(
+                                  trailing: PremiumPillSelector(
                                     labels: const ['عربي', 'English'],
                                     selected: isAr ? 0 : 1,
                                     c: c,
@@ -167,11 +167,11 @@ class SettingsDialog extends StatelessWidget {
                                 PremiumSettingDivider(c: c),
 
                                 // 2. Theme
-                                PremiumSettingTile(
+                                SettingTile(
                                   icon: Icons.palette_rounded,
                                   title: isAr ? 'المظهر' : 'Theme',
                                   c: c,
-                                  child: PremiumPillSelector(
+                                  trailing: PremiumPillSelector(
                                     labels: isAr ? ['أبيض', 'أسود'] : ['White', 'Black'],
                                     selected: app.theme.index,
                                     c: c,

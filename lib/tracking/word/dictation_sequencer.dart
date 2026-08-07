@@ -357,8 +357,20 @@ class DictationSequencer {
       }
 
       // ── TIER 4: Stalled Buffer Recovery (Local Forward Resync) ─────────────
-      if (unconsumedStrings.length >=
-              alignmentConfig.stalledRecoveryBufferChunks &&
+      int currentWordLen = wordEndChunk[targetWordCursor] - wordStartChunk[targetWordCursor];
+      int nextWordLen = 0;
+      if (targetWordCursor + 1 < wordCount) {
+        nextWordLen = wordEndChunk[targetWordCursor + 1] - wordStartChunk[targetWordCursor + 1];
+      }
+      
+      // Dynamic threshold: 1.5x combined length of W and W+1, safely bounded by a strict minimum floor.
+      int dynamicThreshold = ((currentWordLen + nextWordLen) * 1.5).ceil();
+      int effectiveRecoveryThreshold = max(
+        alignmentConfig.stalledRecoveryBufferChunks,
+        dynamicThreshold,
+      );
+
+      if (unconsumedStrings.length >= effectiveRecoveryThreshold &&
           targetWordCursor + 2 < wordCount) {
         final int maxScan = min(
           targetWordCursor + 1 + alignmentConfig.stalledRecoveryMaxWords,

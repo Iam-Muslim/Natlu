@@ -433,6 +433,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       : 'Tajweed Enabled. Tap on yellow words to see error details.',
                   style: TextStyle(color: c.text, height: 1.4, fontWeight: FontWeight.w600, fontSize: 12),
                   textAlign: TextAlign.center,
+                  textDirection: app.isArabic ? TextDirection.rtl : TextDirection.ltr,
                 ),
               ),
             ),
@@ -580,7 +581,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       onLongPress: () async {
                         try {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Preparing logs...')),
+                            const SnackBar(content: Text('Preparing logs...', textDirection: TextDirection.ltr)),
                           );
                           String allLogs = globalSessionLogs.join('\n');
                           final directory = await getTemporaryDirectory();

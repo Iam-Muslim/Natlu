@@ -31,37 +31,12 @@ class TrackingStrictnessTile extends StatelessWidget {
 
     final int sel = app.trackingStrictness.index;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return SettingTile(
+      icon: Icons.track_changes_rounded,
+      title: isAr ? 'مستوى التصحيح' : 'Correction Level',
+      c: c,
+      bottom: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: c.gold.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.track_changes_rounded, color: c.gold, size: 18),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  isAr ? 'مستوى التصحيح' : 'Correction Level',
-                  style: TextStyle(
-                    color: c.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
           PremiumPillSelector(
             labels: titles,
             selected: sel,

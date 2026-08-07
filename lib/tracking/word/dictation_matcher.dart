@@ -109,7 +109,7 @@ class AlignmentConfig {
       enableSpanFallback: enableSpanFallback,
       spanThresholdFactor: isStrict ? 1.05 : 1.15,
       minSpanBufferChunks: 3,
-      stalledRecoveryBufferChunks: isStrict ? 10 : 8,
+      stalledRecoveryBufferChunks: isStrict ? 16 : 12,
       stalledRecoveryMaxWords: isStrict ? 2 : 3,
       lookaheadMarginDifferential: isStrict ? 0.15 : 0.10,
       lookaheadJumpPenalty: isStrict ? 0.025 : 0.015,

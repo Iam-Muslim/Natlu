@@ -16,52 +16,64 @@ class PremiumSettingDivider extends StatelessWidget {
   }
 }
 
-/// A premium iOS-style setting row with rounded colored icon.
-class PremiumSettingTile extends StatelessWidget {
+/// A unified minimalist setting tile that handles both row-based and column-based layouts.
+class SettingTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final ThemeColors c;
-  final Widget child;
+  final Widget? trailing;
+  final Widget? bottom;
 
-  const PremiumSettingTile({
+  const SettingTile({
     super.key,
     required this.icon,
     required this.title,
     required this.c,
-    required this.child,
+    this.trailing,
+    this.bottom,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ultra-minimal monochrome icon
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: c.gold.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: c.gold, size: 18),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            flex: 2,
-            child: Text(
-              title,
-              style: TextStyle(
-                color: c.text,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.2,
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: c.gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: c.gold, size: 18),
               ),
-            ),
+              const SizedBox(width: 14),
+              Expanded(
+                flex: trailing != null ? 2 : 1,
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: c.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                Expanded(flex: 3, child: trailing!),
+              ],
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(flex: 3, child: child),
+          if (bottom != null) ...[
+            const SizedBox(height: 14),
+            bottom!,
+          ],
         ],
       ),
     );
