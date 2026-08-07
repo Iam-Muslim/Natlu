@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/quran_data.dart';
 import '../../state/app_state.dart';
 import '../../tracking/word/highlighting_controller.dart';
@@ -34,12 +35,32 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   late final List<QuranVerse> _surahs;
   late final List<String> _normalizedNames;
   bool _scrolled = false;
+  final ScrollController _scrollCtrl = ScrollController();
+  bool _hasUsedVoiceSearch = false;
 
   @override
   void initState() {
     super.initState();
     _surahs = widget.controller.repository.surahMetadata;
     _normalizedNames = _surahs.map((s) => s.surahName).toList();
+    _checkVoiceSearchHint();
+  }
+
+  Future<void> _checkVoiceSearchHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _hasUsedVoiceSearch = prefs.getBool('has_used_voice_search') ?? false;
+    });
+  }
+
+  Future<void> _markVoiceSearchUsed() async {
+    if (!_hasUsedVoiceSearch) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_used_voice_search', true);
+      setState(() {
+        _hasUsedVoiceSearch = true;
+      });
+    }
   }
 
   String _normalizeArabic(String text) {
@@ -69,35 +90,31 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
       }
     }
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.8,
-      maxChildSize: 0.9,
-      minChildSize: 0.4,
-      expand: false,
-      builder: (_, ctrl) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!_scrolled && ctrl.hasClients && _query.isEmpty) {
-            _scrolled = true;
-            double offset = (widget.current - 1) * 72.0;
-            if (offset > ctrl.position.maxScrollExtent) {
-              offset = ctrl.position.maxScrollExtent;
-            }
-            ctrl.jumpTo(offset);
-          }
-        });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrolled && _scrollCtrl.hasClients && _query.isEmpty) {
+        _scrolled = true;
+        double offset = (widget.current - 1) * 72.0;
+        if (offset > _scrollCtrl.position.maxScrollExtent) {
+          offset = _scrollCtrl.position.maxScrollExtent;
+        }
+        _scrollCtrl.jumpTo(offset);
+      }
+    });
 
-        return Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            boxShadow: [
-              BoxShadow(
-                color: c.gold.withValues(alpha: 0.06),
-                blurRadius: 40,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.75,
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: c.gold.withValues(alpha: 0.06),
+              blurRadius: 40,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
           child: Directionality(
             textDirection: app.isArabic
                 ? TextDirection.rtl
@@ -159,13 +176,30 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                       const SizedBox(width: 12),
 
                       // Voice Search Button
-                      GestureDetector(
-                        onTap: () {
-                          if (Navigator.of(context).canPop()) {
-                            Navigator.pop(context);
-                          }
-                          widget.onVoiceSearchToggle();
-                        },
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!_hasUsedVoiceSearch)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: c.gold,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                app.isArabic ? 'اضغط للبحث بالصوت' : 'Tap to voice search',
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          GestureDetector(
+                            onTap: () {
+                              _markVoiceSearchUsed();
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.pop(context);
+                              }
+                              widget.onVoiceSearchToggle();
+                            },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -225,7 +259,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                 // ── Surah List ──
                 Expanded(
                   child: ListView.builder(
-                    controller: ctrl,
+                    controller: _scrollCtrl,
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.only(bottom: 32, top: 4),
                     itemCount: items.length,
@@ -247,8 +281,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
               ],
             ),
           ),
-        );
-      },
-    );
+        ),
+      );
   }
 }

@@ -42,9 +42,9 @@ class SettingsDialog extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
-              child: Scaffold(
-                backgroundColor: Colors.transparent,
-                body: SafeArea(
+              child: Material(
+                color: Colors.transparent,
+                child: SafeArea(
                   top: false,
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),

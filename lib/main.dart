@@ -35,8 +35,11 @@ import 'tracking/word/highlighting_controller.dart';
 import 'audio/audio_processor.dart';
 import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
+import 'ui/widgets/dialogs/theme_selection_dialog.dart';
+import 'ui/widgets/dialogs/strictness_selection_dialog.dart';
 import 'tracking/ayah_search/voice_search_controller.dart';
 import 'utils/debug_logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // //logs
 List<String> globalSessionLogs = [];
@@ -257,6 +260,23 @@ class _OrchestratorState extends State<_Orchestrator> {
       await WakelockPlus.enable();
 
       if (mounted) setState(() => _isInit = false);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final prefs = await SharedPreferences.getInstance();
+        final hasChosenTheme = prefs.getBool('has_chosen_theme') ?? false;
+        if (!hasChosenTheme && mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => ThemeSelectionDialog(
+              onThemeSelected: () {
+                prefs.setBool('has_chosen_theme', true);
+                Navigator.of(ctx).pop();
+              },
+            ),
+          );
+        }
+      });
     } catch (e) {
       DebugLogger.logSimple('INIT', '❌ Error: $e');
       if (mounted) setState(() => _initStatus = 'Error: $e');
@@ -269,6 +289,26 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
+      if (!_isRecording) {
+        final prefs = await SharedPreferences.getInstance();
+        final hasChosenStrictness = prefs.getBool('has_chosen_strictness') ?? false;
+        if (!hasChosenStrictness && mounted) {
+          _isToggling = false; // Allow toggle again after dialog closes
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => StrictnessSelectionDialog(
+              onStrictnessSelected: () {
+                prefs.setBool('has_chosen_strictness', true);
+                Navigator.of(ctx).pop();
+                _toggleRecord(); // Start recording after selection
+              },
+            ),
+          );
+          return;
+        }
+      }
+
       if (_isRecording) {
         // Get any remaining audio in the pipeline
         await _audio.stop();

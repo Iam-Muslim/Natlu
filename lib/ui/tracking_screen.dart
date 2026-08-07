@@ -15,6 +15,7 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
 /// Manages scrolling, distraction-free reading headers, and mode switches.
@@ -51,10 +52,14 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _lastAyah;
   int? _lastSurah;
   bool _isAutoScrolling = false;
+  
+  bool _hasClickedTajweedWord = true;
+  bool _showTajweedHint = false;
 
   @override
   void initState() {
     super.initState();
+    _checkTajweedHint();
     WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
     widget.controller.addListener(_onControllerUpdate);
@@ -131,6 +136,52 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (_scroll.hasClients) {
         _scroll.jumpTo(0);
       }
+    }
+    
+    // Check for yellow words to show hint
+    if (!_hasClickedTajweedWord && !_showTajweedHint && widget.isRecording) {
+      // We check if any yellow word exists using a workaround since _yellowWordsByVerse is private
+      bool hasYellow = false;
+      try {
+        // Just checking if we can find any yellow word in the current ayah
+        final active = widget.controller.activeAyah.value;
+        if (active != null) {
+          final verses = widget.controller.repository.getSurah(widget.controller.targetSurah);
+          final verse = verses.firstWhere((v) => v.ayah == active);
+          for (int i = 0; i < verse.uthmaniWords.length; i++) {
+            if (widget.controller.isWordYellow(active, i)) {
+              hasYellow = true;
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore
+      }
+      
+      if (hasYellow && mounted) {
+        setState(() {
+          _showTajweedHint = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkTajweedHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _hasClickedTajweedWord = prefs.getBool('has_clicked_tajweed_word') ?? false;
+    });
+  }
+
+  Future<void> _markTajweedWordClicked() async {
+    if (!_hasClickedTajweedWord) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_clicked_tajweed_word', true);
+      setState(() {
+        _hasClickedTajweedWord = true;
+        _showTajweedHint = false;
+      });
     }
   }
 
@@ -347,6 +398,46 @@ class _TrackingScreenState extends State<TrackingScreen>
                     ),
                   ),
                 ),
+
+                // Tajweed Hint Overlay
+                if (_showTajweedHint && app.currentMode == AppMode.tajweed)
+                  Positioned(
+                    bottom: 120,
+                    left: 24,
+                    right: 24,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: c.gold,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: c.gold.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              app.isArabic 
+                                  ? 'اضغط على الكلمة الصفراء لمعرفة خطأ التجويد!'
+                                  : 'Tap on the yellow word to see the Tajweed error!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -633,6 +724,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                 isAutoScrolling: _isAutoScrolling,
                 onTap: () {
                   widget.controller.setManualAyah(v.surah, v.ayah);
+                },
+                onWordErrorTap: () {
+                  _markTajweedWordClicked();
                 },
               ),
             );

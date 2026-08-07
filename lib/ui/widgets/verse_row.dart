@@ -18,6 +18,7 @@ class VerseRow extends StatefulWidget {
   final HighlightingController controller;
   final bool isAutoScrolling;
   final VoidCallback? onTap;
+  final VoidCallback? onWordErrorTap;
 
   const VerseRow({
     super.key,
@@ -25,6 +26,7 @@ class VerseRow extends StatefulWidget {
     required this.controller,
     required this.isAutoScrolling,
     this.onTap,
+    this.onWordErrorTap,
   });
 
   @override
@@ -166,6 +168,7 @@ class _VerseRowState extends State<VerseRow> {
     final errors = widget.controller.getWordErrors(ayah, wordIdx);
     if (errors != null && errors.isNotEmpty) {
       ErrorDetailDialog.show(context, word: word, errors: errors);
+      widget.onWordErrorTap?.call();
     }
   }
 

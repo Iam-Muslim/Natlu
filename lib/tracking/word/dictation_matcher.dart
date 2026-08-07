@@ -90,9 +90,7 @@ class AlignmentConfig {
     final bool isEasy = strictness == 'easy';
     final bool isStrict = strictness == 'strict';
 
-    final double threshold = isEasy
-        ? 0.35
-        : (isStrict ? 0.15 : 0.25);
+    final double threshold = isEasy ? 0.30 : (isStrict ? 0.15 : 0.25);
 
     final double costDel = isEasy ? 0.65 : 1.0;
     final double costIns = isEasy ? 0.65 : 1.0;
@@ -155,7 +153,8 @@ class AlignmentConfig {
           lookaheadMarginDifferential ?? this.lookaheadMarginDifferential,
       lookaheadJumpPenalty: lookaheadJumpPenalty ?? this.lookaheadJumpPenalty,
       chainedConfirmationPrefixChunks:
-          chainedConfirmationPrefixChunks ?? this.chainedConfirmationPrefixChunks,
+          chainedConfirmationPrefixChunks ??
+          this.chainedConfirmationPrefixChunks,
     );
   }
 }
@@ -440,7 +439,7 @@ class ForwardDictationMatcher {
 
       final int denom = max(asrLen, max(n, 1));
       final double wordScore = totalPenalty / denom;
-      
+
       final double coverage = n > 0 ? (matchedRefChunks / n) : 0.0;
       final bool hasSufficientCoverage = n <= 1
           ? (matchedRefChunks >= 1)
@@ -466,8 +465,8 @@ class ForwardDictationMatcher {
       final String reason = wordScore > threshold
           ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
           : (!hasSufficientCoverage
-              ? '(Insufficient Coverage: matched=$matchedRefChunks/$n)'
-              : '(Failed Threshold)');
+                ? '(Insufficient Coverage: matched=$matchedRefChunks/$n)'
+                : '(Failed Threshold)');
 
       debugLog?.call(
         '⏳ PENDING: ref word is "$refWordStr", heard word is "$heardWordStr" $reason',

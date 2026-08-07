@@ -322,6 +322,8 @@ class ErrorExplainer {
         if (trackingStrictness == 'easy') {
           return e.errorType == ErrorCategory.normal ||
               e.durationStatus == TajweedDurationStatus.surplus;
+        } else if (trackingStrictness == 'normal') {
+          return e.errorType == ErrorCategory.normal;
         }
         return false;
       });
@@ -574,7 +576,7 @@ class ErrorExplainer {
             predictedPh: predChunk,
           ),
         );
-      } else if (align.opType != 'equal' || refChunk != predChunk) {
+      } else if (align.opType != 'match' || refChunk != predChunk) {
         chunkErrors.add(
           ReciterError(
             errorType: ErrorCategory.tashkeel,
