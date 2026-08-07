@@ -253,8 +253,10 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 12),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
 
                 // ── Surah List ──
                 Expanded(

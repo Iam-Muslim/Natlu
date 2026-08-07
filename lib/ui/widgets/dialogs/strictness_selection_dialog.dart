@@ -75,10 +75,10 @@ class StrictnessSelectionDialog extends StatelessWidget {
                   subtitle: isAr 
                       ? 'تتبع متوازن. يظهر جميع الأخطاء وأحكام التجويد.'
                       : 'Balanced matching. Shows all errors and Tajweed rules.',
-                  isSelected: app.trackingStrictness == 'normal',
+                  isSelected: app.trackingStrictness == TrackingStrictness.normal,
                   c: c,
                   onTap: () {
-                    app.setTrackingStrictness('normal');
+                    app.setTrackingStrictness(TrackingStrictness.normal);
                     onStrictnessSelected();
                   },
                 ),
@@ -88,10 +88,10 @@ class StrictnessSelectionDialog extends StatelessWidget {
                   subtitle: isAr 
                       ? 'تتبع دقيق جداً. يتطلب نطقاً خالياً من أي شوائب.'
                       : 'Highly sensitive. Requires pristine pronunciation.',
-                  isSelected: app.trackingStrictness == 'strict',
+                  isSelected: app.trackingStrictness == TrackingStrictness.strict,
                   c: c,
                   onTap: () {
-                    app.setTrackingStrictness('strict');
+                    app.setTrackingStrictness(TrackingStrictness.strict);
                     onStrictnessSelected();
                   },
                 ),

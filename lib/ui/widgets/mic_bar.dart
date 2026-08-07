@@ -71,36 +71,24 @@ class _BottomActionBarState extends State<BottomActionBar>
     Widget actionButton;
     if (widget.isAutoScrolling) {
       // ── AutoScroll Pause Button ──
-      actionButton = _buildFloatingButton(
+      actionButton = _buildModernButton(
         onTap: () {
           HapticFeedback.mediumImpact();
           widget.onToggleAutoScroll();
         },
-        gradient: LinearGradient(
-          colors: [c.gold, c.gold.withValues(alpha: 0.85)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        shadowColor: c.gold.withValues(alpha: 0.3),
+        baseColor: c.gold,
         icon: Icons.pause_rounded,
         label: app.isArabic ? 'إيقاف' : 'Pause',
       );
     } else {
       // ── Record / Stop Button ──
       final Color buttonColor = widget.isRecording ? c.red : c.green;
-      actionButton = _buildFloatingButton(
+      actionButton = _buildModernButton(
         onTap: () {
           HapticFeedback.mediumImpact();
           widget.onMic();
         },
-        gradient: LinearGradient(
-          colors: [buttonColor, buttonColor.withValues(alpha: 0.85)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        shadowColor: buttonColor.withValues(alpha: 0.25),
-        shadowBlur: 16,
-        shadowSpread: 2,
+        baseColor: buttonColor,
         icon: widget.isLoadingEngine
             ? null
             : (widget.isRecording ? Icons.stop_rounded : Icons.mic_rounded),
@@ -117,12 +105,9 @@ class _BottomActionBarState extends State<BottomActionBar>
     );
   }
 
-  Widget _buildFloatingButton({
+  Widget _buildModernButton({
     required VoidCallback onTap,
-    required Gradient gradient,
-    required Color shadowColor,
-    double shadowBlur = 16,
-    double shadowSpread = 2,
+    required Color baseColor,
     IconData? icon,
     bool isLoading = false,
     required String label,
@@ -139,29 +124,33 @@ class _BottomActionBarState extends State<BottomActionBar>
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              gradient: gradient,
-              shape: BoxShape.circle,
+              color: baseColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: baseColor.withValues(alpha: 0.25),
+                width: 1.5,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: shadowColor,
-                  blurRadius: shadowBlur,
-                  spreadRadius: shadowSpread,
+                  color: baseColor.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  spreadRadius: 0,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: Center(
               child: isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(baseColor),
                       ),
                     )
                   : (icon != null
-                      ? Icon(icon, color: Colors.white, size: 30)
+                      ? Icon(icon, color: baseColor, size: 28)
                       : const SizedBox.shrink()),
             ),
           ),
