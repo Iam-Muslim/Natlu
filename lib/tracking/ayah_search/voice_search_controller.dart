@@ -100,7 +100,7 @@ class VoiceSearchController {
         if (results.isNotEmpty) {
           final uniqueAyahs = <String>{};
           for (var r in results) {
-            uniqueAyahs.add('${r.start.surahIdx}-${r.start.ayahIdx}');
+            uniqueAyahs.add('${r.mid.surahIdx}-${r.mid.ayahIdx}');
           }
 
           if (uniqueAyahs.length == 1) {
@@ -108,11 +108,11 @@ class VoiceSearchController {
             results.sort((a, b) => a.distance.compareTo(b.distance));
             final bestMatch = results.first;
             
-            DebugLogger.log('VoiceSearch', '⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
+            DebugLogger.log('VoiceSearch', '⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.mid.surahIdx}, Ayah ${bestMatch.mid.ayahIdx}');
             
             finalResult = AnchorResult(
-              surah: bestMatch.start.surahIdx,
-              ayah: bestMatch.start.ayahIdx,
+              surah: bestMatch.mid.surahIdx,
+              ayah: bestMatch.mid.ayahIdx,
             );
             break;
           }
@@ -171,9 +171,10 @@ class VoiceSearchController {
     final bestMatch = results.first;
 
     // Surah and Ayah indices from Python are already 1-based.
+    // Using `mid` ensures we don't fall into the previous ayah due to boundary matching jitter.
     final result = AnchorResult(
-      surah: bestMatch.start.surahIdx,
-      ayah: bestMatch.start.ayahIdx,
+      surah: bestMatch.mid.surahIdx,
+      ayah: bestMatch.mid.ayahIdx,
     );
 
     DebugLogger.log('VoiceSearch', 'Result: Surah ${result.surah}, Ayah ${result.ayah}');

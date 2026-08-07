@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math';
-
-import '../lib/tracking/word/dictation_sequencer.dart';
-import '../lib/tracking/word/phoneme_alignment_isolate.dart';
+import 'package:the_great_quran/tracking/word/dictation_sequencer.dart';
+import 'package:the_great_quran/tracking/word/phoneme_alignment_isolate.dart';
 
 Future<void> main() async {
   final file = File('assets/model/ordered_quran_phonemes.json');
@@ -56,7 +54,7 @@ Future<void> main() async {
 
     // Scenario C: Noisy word (add junk to every word)
     await runScenario(sink, 'SCENARIO_C_NOISY', surahNum, ayahNum, ayaPhoneme, words, boundaries, (String w) {
-      return w + 'ا';
+      return '$wا';
     });
 
     totalAyahsProcessed++;
@@ -118,7 +116,7 @@ Future<void> runScenario(
     // Simulate real ASR behavior by sending chunks of the new word
     for (int j = 1; j <= mutatedWord.length; j++) {
       String chunk = mutatedWord.substring(0, j);
-      String fullAsrChunk = asrBuffer.isEmpty ? chunk : asrBuffer + ' ' + chunk;
+      String fullAsrChunk = asrBuffer.isEmpty ? chunk : '$asrBuffer $chunk';
       
       sequencer.syncStream(SyncStreamCommand(
         asrText: fullAsrChunk,
@@ -150,7 +148,7 @@ Future<void> runScenario(
     }
     
     // Finalize the word buffer
-    asrBuffer = asrBuffer.isEmpty ? mutatedWord : asrBuffer + ' ' + mutatedWord;
+    asrBuffer = asrBuffer.isEmpty ? mutatedWord : '$asrBuffer $mutatedWord';
   }
 
   // Check if stuck

@@ -41,17 +41,19 @@ class PhonemesSearchSpan {
 class PhonemesSearchResult {
   final PhonemesSearchSpan start;
   final PhonemesSearchSpan end;
+  final PhonemesSearchSpan mid;
   final int distance;
 
   PhonemesSearchResult({
     required this.start,
     required this.end,
+    required this.mid,
     required this.distance,
   });
 
   @override
   String toString() {
-    return 'PhonemesSearchResult(start: $start, end: $end)';
+    return 'PhonemesSearchResult(start: $start, mid: $mid, end: $end)';
   }
 }
 
@@ -244,6 +246,7 @@ class PhoneticSearch {
         PhonemesSearchResult(
           start: _refIdxToSpan(out.start, isEnd: false),
           end: _refIdxToSpan(out.end - 1, isEnd: true),
+          mid: _refIdxToSpan((out.start + out.end - 1) ~/ 2, isEnd: false),
           distance: out.dist,
         ),
       );
@@ -279,6 +282,7 @@ class PhoneticSearch {
         PhonemesSearchResult(
           start: _refIdxToSpan(out.start, isEnd: false),
           end: _refIdxToSpan(out.end - 1, isEnd: true),
+          mid: _refIdxToSpan((out.start + out.end - 1) ~/ 2, isEnd: false),
           distance: out.dist,
         ),
       );

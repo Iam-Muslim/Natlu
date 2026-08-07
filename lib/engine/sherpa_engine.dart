@@ -269,8 +269,8 @@ class SherpaEngine {
                   ),
                   enableEndpoint: true,
                   rule1MinTrailingSilence: 10.0,
-                  rule2MinTrailingSilence: 2.2,
-                  rule3MinUtteranceLength: 30.0,
+                  rule2MinTrailingSilence: 4.0, // Increased to 4s for Voice Search
+                  rule3MinUtteranceLength: 9999.0, // Effectively disabled max utterance length
                 ),
               );
             }

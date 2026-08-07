@@ -161,12 +161,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
 
-  // ── Voice search silence timer ─────────────────────────────────────────────
-  // Tracks the timestamp of the last non-empty ASR partial during voice search.
-  // A Timer.periodic checks every 100ms: if silence > 2500ms after recitation,
-  // voice search is auto-stopped.
-  int _lastVoiceActivityMs = 0;
-  Timer? _voiceSearchSilenceTimer;
+  // Timer logic removed, we now rely on Sherpa's VAD endpoint with 4s silence
 
   @override
   void initState() {
@@ -180,21 +175,16 @@ class _OrchestratorState extends State<_Orchestrator> {
           _voiceSearchAsrText = res.text;
         });
 
-        // Track voice activity for the 2.5s silence timer
-        if (res.text.trim().isNotEmpty) {
-          _lastVoiceActivityMs = DateTime.now().millisecondsSinceEpoch;
-        }
-
         // REAL-TIME SEARCH EVALUATION
         _voiceSearchCtrl.processRealtime(res.text).then((rtResult) {
           if (rtResult != null) {
             // Unique match found! Bypass VAD and jump immediately.
             _stopVoiceSearch(precalculatedResult: rtResult);
+          } else if (res.isFinal) {
+            // Sherpa's VAD detected 4s of silence
+            DebugLogger.log('VoiceSearch', 'Auto-stopping on VAD endpoint (4s silence)');
+            _stopVoiceSearch();
           }
-          // Note: we no longer auto-stop on res.isFinal here.
-          // The 2.5s silence timer (started in _startVoiceSearch) handles
-          // post-recitation auto-stop independently of Sherpa's VAD endpoint.
-          // This prevents mid-ayah breath pauses from prematurely stopping search.
         });
       }
     });
@@ -399,34 +389,8 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      // Reset silence tracking
-      _lastVoiceActivityMs = 0;
-
-      // Start the 2.5s post-recitation silence auto-stop timer.
-      // Polls every 100ms. Fires _stopVoiceSearch() once the user has been
-      // silent for 2500ms AFTER reciting at least something.
-      _voiceSearchSilenceTimer?.cancel();
-      _voiceSearchSilenceTimer = Timer.periodic(
-        const Duration(milliseconds: 100),
-        (timer) {
-          if (!_isVoiceSearching) {
-            timer.cancel();
-            return;
-          }
-          final int now = DateTime.now().millisecondsSinceEpoch;
-          // Only fire if the user actually recited something (_lastVoiceActivityMs > 0)
-          // and has been silent for more than 2500ms since last activity.
-          if (_lastVoiceActivityMs > 0 &&
-              (now - _lastVoiceActivityMs) >= 2500 &&
-              _voiceSearchAsrText.trim().isNotEmpty) {
-            DebugLogger.log(
-              'VoiceSearch',
-              'Auto-stopping: 2.5s of silence after recitation detected',
-            );
-            _stopVoiceSearch();
-          }
-        },
-      );
+      // We rely entirely on Sherpa's VAD for endpointing (configured for 4.0s).
+      // No custom timers needed anymore.
 
       _audio
           .start(
@@ -452,9 +416,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     if (!_isVoiceSearching || _isToggling) return;
     _isToggling = true;
 
-    // Cancel the silence timer immediately so it doesn't re-trigger
-    _voiceSearchSilenceTimer?.cancel();
-    _voiceSearchSilenceTimer = null;
+    // (Old silence timer was removed, relying on Sherpa VAD instead)
 
     try {
       await _audio.stop();

@@ -128,15 +128,22 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _onControllerUpdate() {
     if (widget.controller.targetSurah != _lastSurah) {
-      _lastSurah = widget.controller.targetSurah;
-      _keys.clear();
-      _lastAyah = null;
+      if (mounted) {
+        setState(() {
+          _lastSurah = widget.controller.targetSurah;
+          _keys.clear();
+          _lastAyah = null;
+        });
+      } else {
+        _lastSurah = widget.controller.targetSurah;
+        _keys.clear();
+        _lastAyah = null;
+      }
 
       if (_scroll.hasClients) {
         _scroll.jumpTo(0);
       }
     }
-    // Check for yellow words to show hint logic was removed here
   }
 
   void _onActiveAyahChanged() {
@@ -157,6 +164,16 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _forceScrollToAyah(int ayah) {
     if (!_scroll.hasClients) return;
+
+    if (ayah == 1) {
+      _scroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
     _scroll.scrollToIndex(
       ayah,
       duration: const Duration(milliseconds: 100),
