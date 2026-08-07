@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../state/app_state.dart';
 import 'settings/autoscroll_slider_tile.dart';
 import 'settings/font_slider_tile.dart';
@@ -157,6 +158,44 @@ class SettingsDialog extends StatelessWidget {
                                     c: c,
                                     onSelected: (i) =>
                                         app.setTheme(AppTheme.values[i]),
+                                  ),
+                                ),
+                                SettingDivider(c: c),
+
+                                // 6. Reset Dialog Preferences (for testing)
+                                SettingTile(
+                                  icon: Icons.restore_rounded,
+                                  title: isAr ? 'إعادة تعيين الإعدادات' : 'Reset Setting',
+                                  c: c,
+                                  child: TextButton(
+                                    onPressed: () async {
+                                      final prefs = await SharedPreferences.getInstance();
+                                      await prefs.clear();
+                                      
+                                      if (context.mounted) {
+                                        // Reload the app state to apply defaults immediately
+                                        await app.load();
+                                        
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                isAr 
+                                                  ? 'تمت إعادة التعيين بنجاح. أعد تشغيل التطبيق لترى النوافذ.'
+                                                  : 'Reset successful. Restart app to see the dialogs again.'
+                                              ),
+                                              backgroundColor: c.gold,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: c.gold,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    ),
+                                    child: Text(isAr ? 'إعادة تعيين' : 'Reset'),
                                   ),
                                 ),
                               ],

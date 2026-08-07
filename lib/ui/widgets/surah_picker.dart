@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/quran_data.dart';
 import '../../state/app_state.dart';
 import '../../tracking/word/highlighting_controller.dart';
@@ -36,31 +35,12 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   late final List<String> _normalizedNames;
   bool _scrolled = false;
   final ScrollController _scrollCtrl = ScrollController();
-  bool _hasUsedVoiceSearch = false;
 
   @override
   void initState() {
     super.initState();
     _surahs = widget.controller.repository.surahMetadata;
     _normalizedNames = _surahs.map((s) => s.surahName).toList();
-    _checkVoiceSearchHint();
-  }
-
-  Future<void> _checkVoiceSearchHint() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _hasUsedVoiceSearch = prefs.getBool('has_used_voice_search') ?? false;
-    });
-  }
-
-  Future<void> _markVoiceSearchUsed() async {
-    if (!_hasUsedVoiceSearch) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_used_voice_search', true);
-      setState(() {
-        _hasUsedVoiceSearch = true;
-      });
-    }
   }
 
   String _normalizeArabic(String text) {
@@ -93,7 +73,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrolled && _scrollCtrl.hasClients && _query.isEmpty) {
         _scrolled = true;
-        double offset = (widget.current - 1) * 72.0;
+        double offset = (widget.current - 1) * 90.0;
         if (offset > _scrollCtrl.position.maxScrollExtent) {
           offset = _scrollCtrl.position.maxScrollExtent;
         }
@@ -176,12 +156,71 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                       const SizedBox(width: 12),
 
                       // Voice Search Button
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
                         children: [
-                          if (!_hasUsedVoiceSearch)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 4),
+                          GestureDetector(
+                            onTap: () {
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.pop(context);
+                              }
+                              widget.onVoiceSearchToggle();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: widget.isVoiceSearching
+                                    ? c.gold
+                                    : c.surfaceHigh.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: widget.isVoiceSearching
+                                      ? c.gold
+                                      : c.border.withValues(alpha: 0.3),
+                                ),
+                                boxShadow: widget.isVoiceSearching
+                                    ? [
+                                        BoxShadow(
+                                          color: c.gold.withValues(alpha: 0.3),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ]
+                                    : [],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    widget.isVoiceSearching
+                                        ? Icons.stop_rounded
+                                        : Icons.mic_rounded,
+                                    color: widget.isVoiceSearching
+                                        ? Colors.white
+                                        : c.gold,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    app.isArabic ? 'بحث بالصوت' : 'Voice Search',
+                                    style: TextStyle(
+                                      color: widget.isVoiceSearching
+                                          ? Colors.white
+                                          : c.text,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: -24,
+                            child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: c.gold,
@@ -192,69 +231,11 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                 style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                               ),
                             ),
-                          GestureDetector(
-                            onTap: () {
-                              _markVoiceSearchUsed();
-                              if (Navigator.of(context).canPop()) {
-                                Navigator.pop(context);
-                              }
-                              widget.onVoiceSearchToggle();
-                            },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: widget.isVoiceSearching
-                                ? c.gold
-                                : c.surfaceHigh.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: widget.isVoiceSearching
-                                  ? c.gold
-                                  : c.border.withValues(alpha: 0.3),
-                            ),
-                            boxShadow: widget.isVoiceSearching
-                                ? [
-                                    BoxShadow(
-                                      color: c.gold.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ]
-                                : [],
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                widget.isVoiceSearching
-                                    ? Icons.stop_rounded
-                                    : Icons.mic_rounded,
-                                color: widget.isVoiceSearching
-                                    ? Colors.white
-                                    : c.gold,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                app.isArabic ? 'بحث بالصوت' : 'Voice Search',
-                                style: TextStyle(
-                                  color: widget.isVoiceSearching
-                                      ? Colors.white
-                                      : c.text,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
             ),
             const SizedBox(height: 12),
 
@@ -262,6 +243,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                 Expanded(
                   child: ListView.builder(
                     controller: _scrollCtrl,
+                    itemExtent: 90.0,
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.only(bottom: 32, top: 4),
                     itemCount: items.length,

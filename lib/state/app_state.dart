@@ -50,11 +50,21 @@ class AppState extends ChangeNotifier {
   // ── Mode ───────────────────────────────────────────────────────────────────
 
   AppMode currentMode = AppMode.wordChecker;
+  bool hasClickedTajweedWord = false;
 
   void setMode(AppMode mode) {
     if (currentMode != mode) {
       currentMode = mode;
       notifyListeners();
+    }
+  }
+
+  Future<void> markTajweedWordClicked() async {
+    if (!hasClickedTajweedWord) {
+      hasClickedTajweedWord = true;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_clicked_tajweed_word', true);
     }
   }
 
@@ -169,6 +179,9 @@ class AppState extends ChangeNotifier {
         _theme = prefs.getString('theme') == 'dark'
             ? AppTheme.dark
             : AppTheme.light;
+      } else {
+        final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+        _theme = brightness == Brightness.dark ? AppTheme.dark : AppTheme.light;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
 

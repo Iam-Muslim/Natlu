@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import '../../../state/app_state.dart';
 
-class StrictnessSelectionDialog extends StatefulWidget {
-  final VoidCallback onStrictnessSelected;
+class SpeedSelectionDialog extends StatefulWidget {
+  final VoidCallback onSpeedSelected;
 
-  const StrictnessSelectionDialog({super.key, required this.onStrictnessSelected});
+  const SpeedSelectionDialog({super.key, required this.onSpeedSelected});
 
   @override
-  State<StrictnessSelectionDialog> createState() => _StrictnessSelectionDialogState();
+  State<SpeedSelectionDialog> createState() => _SpeedSelectionDialogState();
 }
 
-class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
+class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
   int? _selectedIndex;
 
   @override
@@ -83,14 +83,14 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
                       ),
                     ),
                     child: Icon(
-                      Icons.tune_rounded,
+                      Icons.speed_rounded,
                       color: c.gold,
                       size: 24,
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    isAr ? 'دقة التتبع' : 'Tracking Strictness',
+                    isAr ? 'سرعة التلاوة' : 'Recitation Speed',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: c.text,
@@ -108,7 +108,7 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
                     ),
                     child: Text(
                       isAr 
-                        ? 'يمكنك تغيير مستوى الدقة لاحقاً من الإعدادات'
+                        ? 'يمكنك تغيير السرعة لاحقاً من الإعدادات'
                         : 'You can change this later in settings',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -121,35 +121,51 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
                   ),
                   const SizedBox(height: 20),
                   
-                  _StrictnessOption(
-                    title: isAr ? 'طبيعي' : 'Normal',
+                  _SpeedOption(
+                    title: isAr ? 'بطيء' : 'Slow',
                     subtitle: isAr 
-                        ? 'تتبع متوازن. يظهر جميع الأخطاء وأحكام التجويد.'
-                        : 'Balanced matching. Shows all errors and Tajweed rules.',
-                    isRecommended: true,
+                        ? 'مناسب للمبتدئين وللتلاوة الهادئة.'
+                        : 'Perfect for beginners and calm reading.',
+                    isRecommended: false,
                     isSelected: _selectedIndex == 0,
                     c: c,
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 0);
-                      app.setTrackingStrictness(TrackingStrictness.normal);
-                      Future.delayed(const Duration(milliseconds: 300), widget.onStrictnessSelected);
+                      app.setAutoScrollSpeed(1); // 0.5x
+                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
                     },
                   ),
                   const SizedBox(height: 10),
-                  _StrictnessOption(
-                    title: isAr ? 'صارم' : 'Strict',
+                  _SpeedOption(
+                    title: isAr ? 'عادي' : 'Normal',
                     subtitle: isAr 
-                        ? 'تتبع دقيق جداً. يتطلب نطقاً خالياً من أي شوائب.'
-                        : 'Highly sensitive. Requires pristine pronunciation.',
-                    isRecommended: false,
+                        ? 'السرعة القياسية للتلاوة.'
+                        : 'The standard reading speed.',
+                    isRecommended: true,
                     isSelected: _selectedIndex == 1,
                     c: c,
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 1);
-                      app.setTrackingStrictness(TrackingStrictness.strict);
-                      Future.delayed(const Duration(milliseconds: 300), widget.onStrictnessSelected);
+                      app.setAutoScrollSpeed(2); // 1.0x
+                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _SpeedOption(
+                    title: isAr ? 'سريع' : 'Fast',
+                    subtitle: isAr 
+                        ? 'للمراجعة والقراءة السريعة (الحدر).'
+                        : 'For quick review and Hadr recitation.',
+                    isRecommended: false,
+                    isSelected: _selectedIndex == 2,
+                    c: c,
+                    isAr: isAr,
+                    onTap: () {
+                      setState(() => _selectedIndex = 2);
+                      app.setAutoScrollSpeed(4); // 2.0x
+                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
                     },
                   ),
                 ],
@@ -162,7 +178,7 @@ class _StrictnessSelectionDialogState extends State<StrictnessSelectionDialog> {
   }
 }
 
-class _StrictnessOption extends StatefulWidget {
+class _SpeedOption extends StatefulWidget {
   final String title;
   final String subtitle;
   final bool isRecommended;
@@ -171,7 +187,7 @@ class _StrictnessOption extends StatefulWidget {
   final bool isAr;
   final VoidCallback onTap;
 
-  const _StrictnessOption({
+  const _SpeedOption({
     required this.title,
     required this.subtitle,
     required this.isRecommended,
@@ -182,10 +198,10 @@ class _StrictnessOption extends StatefulWidget {
   });
 
   @override
-  State<_StrictnessOption> createState() => _StrictnessOptionState();
+  State<_SpeedOption> createState() => _SpeedOptionState();
 }
 
-class _StrictnessOptionState extends State<_StrictnessOption> with SingleTickerProviderStateMixin {
+class _SpeedOptionState extends State<_SpeedOption> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 

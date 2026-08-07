@@ -291,6 +291,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     try {
       if (!_isRecording) {
         final prefs = await SharedPreferences.getInstance();
+        
         final hasChosenStrictness = prefs.getBool('has_chosen_strictness') ?? false;
         if (!hasChosenStrictness && mounted) {
           _isToggling = false; // Allow toggle again after dialog closes

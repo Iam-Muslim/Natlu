@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import '../../../state/app_state.dart';
 
-class ThemeSelectionDialog extends StatelessWidget {
+class ThemeSelectionDialog extends StatefulWidget {
   final VoidCallback onThemeSelected;
 
   const ThemeSelectionDialog({super.key, required this.onThemeSelected});
+
+  @override
+  State<ThemeSelectionDialog> createState() => _ThemeSelectionDialogState();
+}
+
+class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
+  int? _selectedIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -17,82 +24,129 @@ class ThemeSelectionDialog extends StatelessWidget {
 
         return Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: c.gold.withValues(alpha: 0.1),
-                  blurRadius: 40,
-                  offset: const Offset(0, 10),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutBack,
+            builder: (context, value, child) {
+              return Transform.scale(
+                scale: value,
+                child: Opacity(
+                  opacity: value.clamp(0.0, 1.0),
+                  child: child,
                 ),
-              ],
-            ),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: c.gold.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
+              );
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: c.gold.withValues(alpha: 0.15),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: c.gold.withValues(alpha: 0.15),
+                    blurRadius: 40,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 15),
                   ),
-                  child: Icon(Icons.palette_rounded, color: c.gold, size: 24),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isAr ? 'اختر مظهر التطبيق' : 'Choose App Theme',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: c.text,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 15,
+                    offset: const Offset(0, 10),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isAr
-                      ? 'يمكنك تغيير المظهر لاحقاً من الإعدادات'
-                      : 'You can change this later in settings',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: c.muted, fontSize: 14),
-                ),
-                const SizedBox(height: 32),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ThemeOption(
-                        title: isAr ? 'أبيض' : 'White',
-                        color: const Color(0xFFF9FAFB),
-                        textColor: const Color(0xFF1E293B),
-                        borderColor: const Color(0xFFE2E8F0),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon Header
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          c.gold.withValues(alpha: 0.2),
+                          c.gold.withValues(alpha: 0.05),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: c.gold.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Icon(Icons.palette_rounded, color: c.gold, size: 24),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isAr ? 'اختر مظهر التطبيق' : 'Choose App Theme',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: c.text,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: c.gold.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      isAr
+                          ? 'يمكنك تغيير المظهر لاحقاً من الإعدادات'
+                          : 'You can change this later in settings',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: c.gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _ThemeSwatch(
+                        title: isAr ? 'أبيض' : 'Light',
+                        color: const Color(0xFFFAF6F0),
+                        isSelected: _selectedIndex == 0,
+                        c: c,
                         onTap: () {
+                          setState(() => _selectedIndex = 0);
                           app.setTheme(AppTheme.light);
-                          onThemeSelected();
+                          Future.delayed(const Duration(milliseconds: 300), widget.onThemeSelected);
                         },
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _ThemeOption(
-                        title: isAr ? 'أسود' : 'Black',
-                        color: const Color(0xFF0F172A),
-                        textColor: const Color(0xFFF8FAFC),
-                        borderColor: const Color(0xFF334155),
+                      const SizedBox(width: 32),
+                      _ThemeSwatch(
+                        title: isAr ? 'أسود' : 'Dark',
+                        color: const Color(0xFF1E1A16),
+                        isSelected: _selectedIndex == 1,
+                        c: c,
                         onTap: () {
+                          setState(() => _selectedIndex = 1);
                           app.setTheme(AppTheme.dark);
-                          onThemeSelected();
+                          Future.delayed(const Duration(milliseconds: 300), widget.onThemeSelected);
                         },
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -101,48 +155,117 @@ class ThemeSelectionDialog extends StatelessWidget {
   }
 }
 
-class _ThemeOption extends StatelessWidget {
+class _ThemeSwatch extends StatefulWidget {
   final String title;
   final Color color;
-  final Color textColor;
-  final Color borderColor;
+  final bool isSelected;
+  final ThemeColors c;
   final VoidCallback onTap;
 
-  const _ThemeOption({
+  const _ThemeSwatch({
     required this.title,
     required this.color,
-    required this.textColor,
-    required this.borderColor,
+    required this.isSelected,
+    required this.c,
     required this.onTap,
   });
 
   @override
+  State<_ThemeSwatch> createState() => _ThemeSwatchState();
+}
+
+class _ThemeSwatchState extends State<_ThemeSwatch> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.9).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 100,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderColor, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) {
+        _controller.reverse();
+        widget.onTap();
+      },
+      onTapCancel: () => _controller.reverse(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ScaleTransition(
+            scale: _scaleAnimation,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: widget.isSelected ? widget.c.gold : widget.c.border,
+                  width: widget.isSelected ? 3 : 1.5,
+                ),
+                boxShadow: widget.isSelected
+                    ? [
+                        BoxShadow(
+                          color: widget.c.gold.withValues(alpha: 0.4),
+                          blurRadius: 15,
+                          offset: const Offset(0, 4),
+                        )
+                      ]
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+              ),
+              child: widget.isSelected
+                  ? Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: widget.c.gold,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          title,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
           ),
-        ),
+          const SizedBox(height: 12),
+          Text(
+            widget.title,
+            style: TextStyle(
+              color: widget.isSelected ? widget.c.gold : widget.c.muted,
+              fontSize: 15,
+              fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

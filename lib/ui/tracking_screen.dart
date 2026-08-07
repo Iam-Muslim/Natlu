@@ -16,6 +16,7 @@ import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'widgets/dialogs/speed_selection_dialog.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
 /// Manages scrolling, distraction-free reading headers, and mode switches.
@@ -53,13 +54,11 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _lastSurah;
   bool _isAutoScrolling = false;
   
-  bool _hasClickedTajweedWord = true;
-  bool _showTajweedHint = false;
+  bool _showTajweedBanner = false;
 
   @override
   void initState() {
     super.initState();
-    _checkTajweedHint();
     WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
     widget.controller.addListener(_onControllerUpdate);
@@ -137,52 +136,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         _scroll.jumpTo(0);
       }
     }
-    
-    // Check for yellow words to show hint
-    if (!_hasClickedTajweedWord && !_showTajweedHint && widget.isRecording) {
-      // We check if any yellow word exists using a workaround since _yellowWordsByVerse is private
-      bool hasYellow = false;
-      try {
-        // Just checking if we can find any yellow word in the current ayah
-        final active = widget.controller.activeAyah.value;
-        if (active != null) {
-          final verses = widget.controller.repository.getSurah(widget.controller.targetSurah);
-          final verse = verses.firstWhere((v) => v.ayah == active);
-          for (int i = 0; i < verse.uthmaniWords.length; i++) {
-            if (widget.controller.isWordYellow(active, i)) {
-              hasYellow = true;
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        // Ignore
-      }
-      
-      if (hasYellow && mounted) {
-        setState(() {
-          _showTajweedHint = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _checkTajweedHint() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _hasClickedTajweedWord = prefs.getBool('has_clicked_tajweed_word') ?? false;
-    });
-  }
-
-  Future<void> _markTajweedWordClicked() async {
-    if (!_hasClickedTajweedWord) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_clicked_tajweed_word', true);
-      setState(() {
-        _hasClickedTajweedWord = true;
-        _showTajweedHint = false;
-      });
-    }
+    // Check for yellow words to show hint logic was removed here
   }
 
   void _onActiveAyahChanged() {
@@ -210,7 +164,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  void _toggleAutoScroll() {
+  void _toggleAutoScroll() async {
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
       if (_scroll.hasClients) {
@@ -218,6 +172,23 @@ class _TrackingScreenState extends State<TrackingScreen>
       }
       WakelockPlus.disable();
     } else {
+      final prefs = await SharedPreferences.getInstance();
+      final hasChosenSpeed = prefs.getBool('has_chosen_speed') ?? false;
+      if (!hasChosenSpeed && mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => SpeedSelectionDialog(
+            onSpeedSelected: () {
+              prefs.setBool('has_chosen_speed', true);
+              Navigator.of(ctx).pop();
+              _toggleAutoScroll();
+            },
+          ),
+        );
+        return;
+      }
+
       widget.controller.clearHighlights();
       widget.controller.finalize();
       setState(() => _isAutoScrolling = true);
@@ -390,54 +361,22 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isVoiceSearching: widget.isVoiceSearching,
                       isAutoScrolling: _isAutoScrolling,
                       c: c,
-                      onMic: widget.isVoiceSearching
-                          ? widget.onVoiceSearchToggle
-                          : widget.onToggleRecord,
-                      onToggleAutoScroll: _toggleAutoScroll,
+                      onMic: () {
+                        if (_showTajweedBanner) setState(() => _showTajweedBanner = false);
+                        if (widget.isVoiceSearching) {
+                          widget.onVoiceSearchToggle();
+                        } else {
+                          widget.onToggleRecord();
+                        }
+                      },
+                      onToggleAutoScroll: () {
+                        if (_showTajweedBanner) setState(() => _showTajweedBanner = false);
+                        _toggleAutoScroll();
+                      },
                       onSettingsTap: _showSettingsDialog,
                     ),
                   ),
                 ),
-
-                // Tajweed Hint Overlay
-                if (_showTajweedHint && app.currentMode == AppMode.tajweed)
-                  Positioned(
-                    bottom: 120,
-                    left: 24,
-                    right: 24,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: c.gold,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: c.gold.withValues(alpha: 0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 24),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              app.isArabic 
-                                  ? 'اضغط على الكلمة الصفراء لمعرفة خطأ التجويد!'
-                                  : 'Tap on the yellow word to see the Tajweed error!',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -454,21 +393,67 @@ class _TrackingScreenState extends State<TrackingScreen>
     return Padding(
       key: const ValueKey('header_main'),
       padding: EdgeInsets.only(top: top + 10, left: 14, right: 14, bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: c.border.withValues(alpha: 0.4)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The Dropdown Banner
+          AnimatedPositioned(
+            duration: Duration(milliseconds: _showTajweedBanner ? 600 : 300),
+            curve: _showTajweedBanner ? Curves.elasticOut : Curves.easeOutCubic,
+            top: _showTajweedBanner ? 50 : 0, // Slides out from beneath the 56px container
+            left: 16,
+            right: 16,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 300),
+              opacity: _showTajweedBanner ? 1.0 : 0.0,
+              child: Container(
+                padding: const EdgeInsets.only(top: 16, bottom: 8, left: 12, right: 12),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
+                  border: Border(
+                    bottom: BorderSide(color: c.gold.withValues(alpha: 0.3)),
+                    left: BorderSide(color: c.gold.withValues(alpha: 0.3)),
+                    right: BorderSide(color: c.gold.withValues(alpha: 0.3)),
+                  ),
+                ),
+                child: Text(
+                  app.isArabic
+                      ? 'تم تفعيل التجويد و يمكنك الضغط على الكلمات باللون الاصفر لمعرفة نوع الخطأ'
+                      : 'Tajweed Enabled. Tap on yellow words to see error details.',
+                  style: TextStyle(color: c.text, height: 1.4, fontWeight: FontWeight.w600, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ),
-          ],
-        ),
-        child: Row(
+          ),
+          
+          // The Actual Header Container
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: c.border.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
           mainAxisSize: MainAxisSize.max,
           children: [
             // Surah Selector
@@ -572,27 +557,13 @@ class _TrackingScreenState extends State<TrackingScreen>
                           newMode == AppMode.tajweed,
                         );
 
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              app.currentMode == AppMode.tajweed
-                                  ? (app.isArabic
-                                        ? 'تم تفعيل وضع التجويد'
-                                        : 'Tajweed Mode Enabled')
-                                  : (app.isArabic
-                                        ? 'تم إيقاف وضع التجويد'
-                                        : 'Tajweed Mode Disabled'),
-                              style: TextStyle(color: c.text),
-                            ),
-                            duration: const Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            backgroundColor: c.surfaceHigh,
-                          ),
-                        );
+                        if (newMode == AppMode.tajweed) {
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          setState(() => _showTajweedBanner = true);
+                          Future.delayed(const Duration(seconds: 2), () {
+                            if (mounted) setState(() => _showTajweedBanner = false);
+                          });
+                        }
                       },
                     ),
                   ),
@@ -631,6 +602,8 @@ class _TrackingScreenState extends State<TrackingScreen>
             ),
           ],
         ),
+      ),
+      ],
       ),
     );
   }
