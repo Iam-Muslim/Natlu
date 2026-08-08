@@ -444,6 +444,11 @@ class HighlightingController extends ChangeNotifier {
     return _yellowWordsByVerse[ayah]?.contains(pIdx) ?? false;
   }
 
+  bool isWordNeutral(int ayah, int wordIndex) {
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
+    return _neutralWordsByVerse[ayah]?.contains(pIdx) ?? false;
+  }
+
   List<ReciterError>? getWordErrors(int ayah, int wordIndex) {
     final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
     return _errorsByVerse[ayah]?[pIdx];

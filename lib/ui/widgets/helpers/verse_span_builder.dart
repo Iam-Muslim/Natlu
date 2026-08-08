@@ -39,7 +39,8 @@ class VerseSpanBuilder {
       final isRead =
           controller.isWordGreen(ayah, i) ||
           controller.isWordRed(ayah, i) ||
-          controller.isWordYellow(ayah, i);
+          controller.isWordYellow(ayah, i) ||
+          controller.isWordNeutral(ayah, i);
 
       // Zero-GPU blur: unrecited words match background (transparent)
       final isHidden = app.isBlurMode && !isRead && !isAutoScrolling;

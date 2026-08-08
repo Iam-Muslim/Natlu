@@ -323,7 +323,8 @@ class ErrorExplainer {
           return e.errorType == ErrorCategory.normal ||
               e.durationStatus == TajweedDurationStatus.surplus;
         } else if (trackingStrictness == 'normal') {
-          return e.errorType == ErrorCategory.normal;
+          return e.errorType == ErrorCategory.normal ||
+              e.durationStatus == TajweedDurationStatus.surplus;
         }
         return false;
       });
