@@ -425,6 +425,13 @@ class SubCostTable {
       isOrthographicVariant = true;
     }
 
+    // ── Rule 3.5: Ghunnah/Ikhfa Equivalence (ں / ن / م) ──
+    const nasals = ['ں', 'ن', 'م'];
+    if (!sameBase && nasals.contains(base1) && nasals.contains(base2)) {
+      sameBase = true;
+      isOrthographicVariant = true;
+    }
+
     // ── Rule 4: Same Base Character (Evaluate Shaddah / Maddah / Tashkeel) ──
     if (sameBase) {
       if (isOrthographicVariant && c1.length == 1 && c2.length == 1) {
@@ -448,6 +455,13 @@ class SubCostTable {
           return 0.15; // Madd length tolerance
         }
         return 0.25; // Shaddah length variation
+      }
+
+      // Tajweed marker vs Sukoon equivalence
+      String c1Strip = c1.replaceAll(RegExp(r'[ڇۜ۾۪]'), 'ْ').replaceAll('ْْ', 'ْ');
+      String c2Strip = c2.replaceAll(RegExp(r'[ڇۜ۾۪]'), 'ْ').replaceAll('ْْ', 'ْ');
+      if (c1Strip == c2Strip) {
+        return 0.10; // Tiny penalty for missing Tajweed marker but preserving the Sukoon
       }
 
       // Tashkeel mismatch on same base
