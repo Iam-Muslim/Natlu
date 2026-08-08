@@ -112,7 +112,7 @@ class AlignmentConfig {
       stalledRecoveryBufferChunks: isStrict ? 16 : 12,
       stalledRecoveryMaxWords: isStrict ? 2 : 3,
       lookaheadMarginDifferential: isStrict ? 0.15 : 0.10,
-      lookaheadJumpPenalty: isStrict ? 0.025 : 0.015,
+      lookaheadJumpPenalty: isStrict ? 0.025 : 0.005,
       chainedConfirmationPrefixChunks: 2,
     );
   }
@@ -449,7 +449,7 @@ class ForwardDictationMatcher {
 
       if (wordScore <= threshold && hasSufficientCoverage) {
         debugLog?.call(
-          '✅ COMMIT: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Coverage: ${(coverage * 100).toInt()}%)',
+          '✅ ALIGN MATCH: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Coverage: ${(coverage * 100).toInt()}%)',
         );
         return AlignmentResult(
           bestI: bestI,

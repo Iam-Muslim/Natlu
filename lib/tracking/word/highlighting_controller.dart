@@ -226,6 +226,7 @@ class HighlightingController extends ChangeNotifier {
   final Map<int, Set<int>> _greenWordsByVerse = {};
   final Map<int, Set<int>> _redWordsByVerse = {};
   final Map<int, Set<int>> _yellowWordsByVerse = {};
+  final Map<int, Set<int>> _neutralWordsByVerse = {};
   final Map<int, Map<int, List<ReciterError>>> _errorsByVerse = {};
   final Set<int> _completedAyahs = {};
 
@@ -356,9 +357,12 @@ class HighlightingController extends ChangeNotifier {
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
-        !(_yellowWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false)) {
+        !(_yellowWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
+        !(_neutralWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false)) {
       if (isRed) {
         (_redWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
+      } else if (event.isNeutral) {
+        (_neutralWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
       } else {
         (_greenWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
       }
@@ -461,6 +465,7 @@ class HighlightingController extends ChangeNotifier {
     _greenWordsByVerse.clear();
     _redWordsByVerse.clear();
     _yellowWordsByVerse.clear();
+    _neutralWordsByVerse.clear();
     _errorsByVerse.clear();
     globalRevision.value++;
     notifyListeners();
@@ -471,6 +476,7 @@ class HighlightingController extends ChangeNotifier {
     _greenWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _redWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _yellowWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
+    _neutralWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _errorsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     globalRevision.value++;
     notifyListeners();

@@ -346,7 +346,7 @@ class DictationSequencer {
             }
 
             if (acceptSkip) {
-              _emitSkippedWord(targetWordCursor);
+              _emitSkippedWord(targetWordCursor, asrStrings: unconsumedStrings, ysProbs: unconsumedYsProbs);
               _commitMatch(
                 result: nextRes,
                 unconsumedTokens: unconsumedTokens,
@@ -398,7 +398,7 @@ class DictationSequencer {
 
           if (sRes != null) {
             for (int skipped = targetWordCursor; skipped < scanW; skipped++) {
-              _emitSkippedWord(skipped);
+              _emitSkippedWord(skipped, asrStrings: unconsumedStrings, ysProbs: unconsumedYsProbs);
             }
             _commitMatch(
               result: sRes,
@@ -458,6 +458,7 @@ class DictationSequencer {
     required int endChunk,
     required int expectedWord,
     required AlignmentConfig config,
+    bool suppressLogs = false,
   }) {
     return _matcher.align(
       currentAsrChunks: asrStrings,
@@ -467,18 +468,52 @@ class DictationSequencer {
       targetEncodedIds:
           Int32List.sublistView(refEncodedIds, startChunk, endChunk),
       asrYsProbs: asrYsProbs,
-      debugLog: debugLog,
+      debugLog: suppressLogs ? null : debugLog,
     );
   }
 
-  /// Emits a skipped (RED) word event to the UI thread.
-  void _emitSkippedWord(int wordId) {
+  /// Emits a skipped (RED) or neutral word event to the UI thread.
+  void _emitSkippedWord(int wordId, {List<String>? asrStrings, List<double>? ysProbs}) {
+    bool isNeutral = false;
+    
+    // Retroactive Forgiveness Check (Only in Normal mode)
+    if (asrStrings != null && trackingStrictness == 'normal') {
+      final int wStart = wordStartChunk[wordId];
+      final int wEnd = wordEndChunk[wordId];
+      if (wStart < wEnd) {
+        final String wordStr = refChunks.sublist(wStart, wEnd).join('');
+        final res = _alignWindow(
+          asrStrings: asrStrings,
+          asrYsProbs: ysProbs ?? [],
+          startChunk: wStart,
+          endChunk: wEnd,
+          expectedWord: wordId,
+          config: AlignmentConfig.fromStrictness('normal').copyWith(threshold: 1.0),
+          suppressLogs: true,
+        );
+        
+        if (res != null) {
+          final int safeStartI = res.bestStartI.clamp(0, asrStrings.length);
+          final int safeEndI = res.bestI.clamp(safeStartI, asrStrings.length);
+          final String heardWordStr = asrStrings.sublist(safeStartI, safeEndI).join('');
+
+          if (res.bestScore <= 0.45) {
+            isNeutral = true;
+            debugLog('🛡️ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | passed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting NEUTRAL.');
+          } else {
+            debugLog('❌ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | failed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting RED.');
+          }
+        }
+      }
+    }
+
     mainSendPort.send(
       WordMatchedEvent(
         wordId: wordId,
         cleanAsr: '',
         tajweedErrors: null,
-        isRed: true,
+        isRed: !isNeutral,
+        isNeutral: isNeutral,
       ).toMap(),
     );
   }
@@ -507,6 +542,10 @@ class DictationSequencer {
       safeStartJ,
       safeEndJ,
     );
+    
+    final String heardStr = matchedAsrSlice.join('');
+    final String refStr = matchedRefSlice.join('');
+    debugLog('✅ COMMITTED (GREEN): ref word is "$refStr", heard word is "$heardStr"');
 
     final List<PhonemeGroupAlignment> localAlignments = result.trace;
 

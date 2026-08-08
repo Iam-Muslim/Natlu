@@ -191,6 +191,7 @@ sealed class IsolateEvent {
               ?.map((e) => (e as Map).cast<String, dynamic>())
               .toList(),
           isRed: map['is_red'] as bool? ?? false,
+          isNeutral: map['is_neutral'] as bool? ?? false,
         );
 
       case 'debug':
@@ -211,6 +212,7 @@ class WordMatchedEvent extends IsolateEvent {
   final String cleanAsr;
   final List<Map<String, dynamic>>? tajweedErrors;
   final bool isRed;
+  final bool isNeutral;
 
   const WordMatchedEvent({
     required this.wordId,
@@ -218,6 +220,7 @@ class WordMatchedEvent extends IsolateEvent {
     required this.cleanAsr,
     this.tajweedErrors,
     this.isRed = false,
+    this.isNeutral = false,
   });
 
   @override
@@ -228,6 +231,7 @@ class WordMatchedEvent extends IsolateEvent {
         'clean_asr': cleanAsr,
         'tajweed_errors': tajweedErrors,
         'is_red': isRed,
+        'is_neutral': isNeutral,
       };
 }
 
