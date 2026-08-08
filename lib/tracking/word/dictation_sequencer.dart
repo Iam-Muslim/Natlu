@@ -331,10 +331,16 @@ class DictationSequencer {
                 expectedWord: targetWordCursor,
                 config: alignmentConfig,
               );
-              if (wRes != null &&
-                  nextRes.bestScore >
-                      wRes.bestScore -
-                          alignmentConfig.lookaheadMarginDifferential) {
+              if (wRes == null) {
+                // If the ASR buffer ONLY contains the phonemes for W+1, it might just be the prefix of W1. Wait.
+                // But if the buffer has EXTRA tokens after matching W+1, it proves the user has moved on!
+                if (unconsumedStrings.length > nextRes.bestI) {
+                  acceptSkip = true;
+                } else {
+                  acceptSkip = false;
+                }
+              } else if (nextRes.bestScore > wRes.bestScore - alignmentConfig.lookaheadMarginDifferential) {
+                // If W1 is a valid partial match, compare scores.
                 acceptSkip = false;
               }
             }
@@ -420,21 +426,28 @@ class DictationSequencer {
     final String str1 = refChunks.sublist(s1, e1).join('');
     final String str2 = refChunks.sublist(s2, e2).join('');
 
-    // Identical, substring, or short word particle (<= 2 chunks like 'لا', 'ما', 'و', 'ف')
-    if (str1 == str2 || str1.contains(str2) || str2.contains(str1) || (e2 - s2) <= 2) {
+    // 1. Identical words or extremely short particles (e.g. 'لا', 'و', 'ب')
+    if (str1 == str2 || (e2 - s2) <= 2) {
       return true;
     }
 
-    int shared = 0;
-    for (int i = s2; i < e2; i++) {
-      for (int j = s1; j < e1; j++) {
-        if (refChunks[i] == refChunks[j]) {
-          shared++;
-          break;
-        }
+    // 2. Strict Prefix Substring: Does one literally start with the other?
+    if (str1.startsWith(str2) || str2.startsWith(str1)) {
+      return true;
+    }
+
+    // 3. Fuzzy Prefix Match: Do they share the same starting sounds?
+    // Just checking the first 2 chunks is enough to detect a dangerous prefix overlap.
+    int minLen = min(e1 - s1, e2 - s2);
+    int prefixMatches = 0;
+    for (int i = 0; i < min(2, minLen); i++) {
+      if (refChunks[s1 + i] == refChunks[s2 + i]) {
+        prefixMatches++;
       }
     }
-    return (shared / (e2 - s2)) >= 0.50;
+    
+    // If they share at least 1 of their starting phonemes, it's a dangerous overlap.
+    return prefixMatches > 0;
   }
 
   /// Evaluates alignment for a specific reference window slice.
