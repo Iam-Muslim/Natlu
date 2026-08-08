@@ -161,13 +161,25 @@ class AsrTokenProcessor {
               token.contains('ں') ||
               token.contains('۾');
 
+      int baseCount = 0;
+      for (int j = 0; j < token.length; j++) {
+        if (!QuranNormalizer.isResidual(token[j])) {
+          baseCount++;
+        }
+      }
+      if (baseCount == 0) baseCount = 1;
+
       final double maxAllowedDur;
       if (isMaddCarrier) {
-        maxAllowedDur = max(0.35, token.length * 1.50);
+        maxAllowedDur = (baseCount * 0.45) + 0.20;
       } else if (isDoubledOrNasal) {
-        maxAllowedDur = max(0.40, token.length * 0.40);
+        if (baseCount >= 3) {
+          maxAllowedDur = 1.10;
+        } else {
+          maxAllowedDur = 0.55;
+        }
       } else {
-        maxAllowedDur = 0.40;
+        maxAllowedDur = 0.35;
       }
 
       final double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
