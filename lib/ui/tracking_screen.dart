@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:scroll_to_index/scroll_to_index.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -46,7 +46,8 @@ class TrackingScreen extends StatefulWidget {
 
 class _TrackingScreenState extends State<TrackingScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  final AutoScrollController _scroll = AutoScrollController();
+  final ScrollController _scroll = ScrollController();
+  final ListController _listController = ListController();
   final Map<int, GlobalKey> _keys = {};
   final ValueNotifier<String> _voiceSearchNotifier = ValueNotifier('');
 
@@ -174,10 +175,10 @@ class _TrackingScreenState extends State<TrackingScreen>
       return;
     }
 
-    _scroll.scrollToIndex(
-      ayah,
-      duration: const Duration(milliseconds: 100),
-      preferPosition: AutoScrollPosition.middle,
+    _listController.jumpToItem(
+      index: ayah,
+      scrollController: _scroll,
+      alignment: 0.5,
     );
   }
 
@@ -682,48 +683,49 @@ class _TrackingScreenState extends State<TrackingScreen>
             : top + 72;
         final bottomPadding = (isMainRec || _isAutoScrolling) ? 140.0 : 200.0;
 
-        return ListView.builder(
+        return CustomScrollView(
           controller: _scroll,
           physics: _isAutoScrolling
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
-          padding: EdgeInsets.zero,
-          itemCount: displayVerses.length + 2,
-          itemBuilder: (_, i) {
-            if (i == 0) {
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                height: topPadding,
-              );
-            }
+          slivers: [
+            SuperSliverList(
+              listController: _listController,
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  if (i == 0) {
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      height: topPadding,
+                    );
+                  }
 
-            if (i == displayVerses.length + 1) {
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                height: bottomPadding,
-              );
-            }
+                  if (i == displayVerses.length + 1) {
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      height: bottomPadding,
+                    );
+                  }
 
-            final v = displayVerses[i - 1];
+                  final v = displayVerses[i - 1];
 
-            return AutoScrollTag(
-              key: ValueKey(v.ayah),
-              controller: _scroll,
-              index: v.ayah,
-              child: VerseRow(
-                key: ValueKey('verse_${v.surah}_${v.ayah}'),
-                verse: v,
-                controller: widget.controller,
-                isAutoScrolling: _isAutoScrolling,
-                onTap: () {
-                  widget.controller.setManualAyah(v.surah, v.ayah);
+                  return VerseRow(
+                    key: ValueKey('verse_${v.surah}_${v.ayah}'),
+                    verse: v,
+                    controller: widget.controller,
+                    isAutoScrolling: _isAutoScrolling,
+                    onTap: () {
+                      widget.controller.setManualAyah(v.surah, v.ayah);
+                    },
+                    onWordErrorTap: null,
+                  );
                 },
-                onWordErrorTap: null,
+                childCount: displayVerses.length + 2,
               ),
-            );
-          },
+            ),
+          ],
         );
       },
     );

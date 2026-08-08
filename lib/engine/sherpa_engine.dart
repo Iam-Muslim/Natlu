@@ -239,7 +239,9 @@ class SherpaEngine {
 
     OnlineRecognizer? recognizer;
     OnlineStream? stream;
-    final Float32List primingBuffer = Float32List(4800); // 300ms pre-roll silence
+    final Float32List primingBuffer = Float32List(
+      4800,
+    ); // 300ms pre-roll silence
     int isolateStreamEpoch = 0;
 
     port.listen((msg) {
@@ -269,8 +271,10 @@ class SherpaEngine {
                   ),
                   enableEndpoint: true,
                   rule1MinTrailingSilence: 10.0,
-                  rule2MinTrailingSilence: 4.0, // Increased to 4s for Voice Search
-                  rule3MinUtteranceLength: 9999.0, // Effectively disabled max utterance length
+                  rule2MinTrailingSilence:
+                      4.0, // Increased to 4s for Voice Search
+                  rule3MinUtteranceLength:
+                      9999.0, // Effectively disabled max utterance length
                 ),
               );
             }
