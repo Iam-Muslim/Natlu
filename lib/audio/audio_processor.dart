@@ -1,7 +1,6 @@
 // لا اله الا الله
 
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:record/record.dart';
 import 'package:audio_session/audio_session.dart';
@@ -20,9 +19,6 @@ class AudioProcessor {
       (recordSampleRate * numChannels * bytesPerSample * chunkMs) ~/ 1000;
 
   Uint8List _frameBuffer = Uint8List(0);
-
-  // AGC State
-  double _currentGain = 1.0;
 
   // ── No VAD ─────────────────────────────────────────────────────────────
   // We stream all audio directly to Sherpa ONNX. This completely eliminates
@@ -110,44 +106,10 @@ class AudioProcessor {
 
         final float32Samples = Float32List(int16samples.length);
 
-        // ── Software AGC (Automatic Gain Control) & Soft Clipping ──
-        double sumSquares = 0.0;
+        // ── Direct Linear Conversion ──
+        // Exactly matches the Python training pipeline: `wav.astype(np.float32) / 32768.0`
         for (int i = 0; i < int16samples.length; i++) {
-          double val = int16samples[i] / 32768.0;
-          sumSquares += val * val;
-        }
-        double rms = math.sqrt(sumSquares / int16samples.length);
-
-        // Target RMS for speech is typically around 0.05 (-26dBFS)
-        double targetRms = 0.05;
-        double desiredGain = rms > 0.001 ? targetRms / rms : _currentGain;
-
-        // Clamp gain to avoid blowing up background noise too much
-        desiredGain = math.max(1.0, math.min(25.0, desiredGain));
-
-        for (int i = 0; i < int16samples.length; i++) {
-          // Smooth gain transition
-          if (desiredGain < _currentGain) {
-            _currentGain =
-                _currentGain * 0.99 + desiredGain * 0.01; // Fast attack
-          } else {
-            _currentGain =
-                _currentGain * 0.999 + desiredGain * 0.001; // Slow release
-          }
-
-          double val = (int16samples[i] / 32768.0) * _currentGain;
-
-          // Soft limiter using tanh approximation to avoid hard clipping distortion
-          if (val > 15.0)
-            val = 1.0;
-          else if (val < -15.0)
-            val = -1.0;
-          else {
-            double e2x = math.exp(2.0 * val);
-            val = (e2x - 1.0) / (e2x + 1.0);
-          }
-
-          float32Samples[i] = val;
+          float32Samples[i] = int16samples[i] / 32768.0;
         }
 
         // Stream all audio directly to Sherpa ASR!
