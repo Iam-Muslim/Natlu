@@ -313,8 +313,8 @@ class ErrorExplainer {
     // Note: The Confidence-Gate (which used to clear errors if matchScore > 0.15)
     // has been removed. We want Tajweed errors (yellow) and Normal errors (red)
     // to always be passed to the UI for accurate highlighting, regardless of score.
-    // ── NORMAL STRICTNESS FILTERING ──
-    // Show all errors (Only Dictation Threshold is affected).
+    // ── ERROR FILTERING ──
+    // Show all errors (Only Dictation Threshold is affected by engine mode).
     errorsByWord.forEach((wIdx, list) {
       list.removeWhere((e) {
         return e.errorType == ErrorCategory.normal ||

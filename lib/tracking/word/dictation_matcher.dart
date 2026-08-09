@@ -31,7 +31,7 @@ class AlignmentConfig {
   final double costIns;
 
   /// Whether forward lookahead (word skip detection) is enabled (Tier 2).
-  /// Note: Explicitly disabled in easy mode.
+  /// (Matches W+1 in isolation using Tier 1 cost parameters).
   final bool enableLookahead;
 
   /// Maximum words ahead to search for a skip in Tier 2 (typically 1, i.e., W+1).
@@ -41,7 +41,7 @@ class AlignmentConfig {
   final double lookaheadThresholdFactor;
 
   /// Whether multi-word span fallback (Tier 3) is enabled.
-  /// Note: Explicitly disabled in easy mode.
+  /// (Matches W+1 using looser cost parameters to recover from phonetic drift).
   final bool enableSpanFallback;
 
   /// Relative threshold multiplier for span fallback (e.g. 1.15).

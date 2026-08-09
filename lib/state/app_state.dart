@@ -1,7 +1,7 @@
 // Global application state singleton.
 //
 // Manages all user-configurable settings (language, theme, font size,
-// tracking strictness, blur mode, auto-scroll) and exposes the active [ThemeColors]
+// blur mode, auto-scroll) and exposes the active [ThemeColors]
 // palette. All UI widgets listen to this via [ChangeNotifier].
 //
 // Design: Zero-persistence — settings reset on app restart.
