@@ -233,7 +233,6 @@ class ErrorExplainer {
     required int totalAyahWords,
     double? matchScore,
     String? previousWordTail,
-    String trackingStrictness = 'normal',
   }) {
     final Map<int, List<ReciterError>> errorsByWord = {};
     final Map<int, List<String>> wordErrorDescMap = {};
@@ -314,19 +313,12 @@ class ErrorExplainer {
     // Note: The Confidence-Gate (which used to clear errors if matchScore > 0.15)
     // has been removed. We want Tajweed errors (yellow) and Normal errors (red)
     // to always be passed to the UI for accurate highlighting, regardless of score.
-    // ── STRICTNESS FILTERING (Easy / Normal / Strict) ──
-    // EASY: Exclude Normal errors and Surplus duration errors.
-    // NORMAL & STRICT: Show all errors (Only Dictation Threshold is affected).
+    // ── NORMAL STRICTNESS FILTERING ──
+    // Show all errors (Only Dictation Threshold is affected).
     errorsByWord.forEach((wIdx, list) {
       list.removeWhere((e) {
-        if (trackingStrictness == 'easy') {
-          return e.errorType == ErrorCategory.normal ||
-              e.durationStatus == TajweedDurationStatus.surplus;
-        } else if (trackingStrictness == 'normal') {
-          return e.errorType == ErrorCategory.normal ||
-              e.durationStatus == TajweedDurationStatus.surplus;
-        }
-        return false;
+        return e.errorType == ErrorCategory.normal ||
+            e.durationStatus == TajweedDurationStatus.surplus;
       });
     });
     errorsByWord.forEach((wIdx, list) {

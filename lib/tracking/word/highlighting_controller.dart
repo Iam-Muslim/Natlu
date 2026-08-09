@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
-import '../../state/app_state.dart';
 import '../../utils/debug_logger.dart';
 import '../common/quran_normalizer.dart';
 import '../tajweed/error_explainer.dart';
@@ -270,7 +269,6 @@ class HighlightingController extends ChangeNotifier {
     this.onAyahChanged,
     this.isTajweed = true,
   }) : _engine = engine {
-    AppState.instance.addListener(_onAppStateChanged);
     _initIsolate();
     _engineSub = _engine.transcriptionStream.listen(_onResult);
     reset();
@@ -285,17 +283,8 @@ class HighlightingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _onAppStateChanged() {
-    if (_isolateStarted) {
-      _alignmentIsolate.setTrackingStrictness(
-        AppState.instance.trackingStrictness.name,
-      );
-    }
-  }
-
   @override
   void dispose() {
-    AppState.instance.removeListener(_onAppStateChanged);
     _engineSub?.cancel();
     _wordSub?.cancel();
     _alignmentIsolate.stop();
@@ -351,7 +340,6 @@ class HighlightingController extends ChangeNotifier {
       _currentSurahBoundaries,
       isTajweed: isTajweed,
       forceClear: forceClear,
-      trackingStrictness: AppState.instance.trackingStrictness.name,
       startGlobalWord: startGlobalWord,
       surahNumber: _targetSurah,
     );

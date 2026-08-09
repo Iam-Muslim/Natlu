@@ -18,8 +18,6 @@ enum AppLanguage { ar, en }
 // Application Mode: Word Checker (Sherpa) vs Tajweed (Muaalem)
 enum AppMode { wordChecker, tajweed }
 
-// Tracking Strictness: Easy (relaxed), Normal (default), Strict (anchor both ends)
-enum TrackingStrictness { easy, normal, strict }
 
 // Available color themes.
 enum AppTheme { light, dark }
@@ -104,19 +102,6 @@ class AppState extends ChangeNotifier {
     await prefs.setInt('autoScrollSpeed', autoScrollSpeed);
   }
 
-  // ── Tracking Strictness ───────────────────────────────────────────────────
-
-  TrackingStrictness trackingStrictness = TrackingStrictness.normal;
-
-  void setTrackingStrictness(TrackingStrictness strictness) async {
-    if (trackingStrictness != strictness) {
-      trackingStrictness = strictness;
-      notifyListeners();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('trackingStrictness', trackingStrictness.name);
-    }
-  }
-
   // ── Font Size ──────────────────────────────────────────────────────────────
 
   double fontSize = 28.0;
@@ -190,12 +175,7 @@ class AppState extends ChangeNotifier {
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
 
-      if (prefs.containsKey('trackingStrictness')) {
-        final s = prefs.getString('trackingStrictness');
-        if (s == 'easy') trackingStrictness = TrackingStrictness.easy;
-        else if (s == 'strict') trackingStrictness = TrackingStrictness.strict;
-        else trackingStrictness = TrackingStrictness.normal;
-      }
+
       
       if (prefs.containsKey('fontSize')) {
         fontSize = prefs.getDouble('fontSize') ?? 28.0;

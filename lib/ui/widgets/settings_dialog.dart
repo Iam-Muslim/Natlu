@@ -4,7 +4,6 @@ import '../../state/app_state.dart';
 import 'settings/autoscroll_slider_tile.dart';
 import 'settings/font_slider_tile.dart';
 import 'settings/setting_tile.dart';
-import 'settings/tracking_strictness_tile.dart';
 
 /// Settings modal bottom sheet with modern styling.
 class SettingsDialog extends StatelessWidget {
@@ -200,14 +199,6 @@ class SettingsDialog extends StatelessWidget {
 
                                 // 2. AutoScroll Speed
                                 AutoScrollSliderTile(c: c, app: app, isAr: isAr),
-                                PremiumSettingDivider(c: c),
-
-                                // 3. Tracking Strictness
-                                TrackingStrictnessTile(
-                                  c: c,
-                                  app: app,
-                                  isAr: isAr,
-                                ),
                               ],
                             ),
                           ),

@@ -19,7 +19,7 @@ enum AlignmentOp {
   delete,
 }
 
-/// Parameters configuring the strictness and multi-tier search behavior of the DP alignment engine.
+/// Parameters configuring the behavior of the DP alignment engine.
 class AlignmentConfig {
   /// Maximum normalized penalty threshold allowed for a valid match.
   final double threshold;
@@ -82,38 +82,24 @@ class AlignmentConfig {
     this.chainedConfirmationPrefixChunks = 2,
   });
 
-  /// Factory helper for standard reciting strictness modes.
-  factory AlignmentConfig.fromStrictness(
-    String strictness, {
+  /// Factory helper for standard reciting mode.
+  factory AlignmentConfig.defaultConfig({
     bool isTajweed = false,
   }) {
-    final bool isEasy = strictness == 'easy';
-    final bool isStrict = strictness == 'strict';
-
-    final double threshold = isEasy ? 0.30 : (isStrict ? 0.15 : 0.25);
-
-    final double costDel = isEasy ? 0.65 : 1.0;
-    final double costIns = isEasy ? 0.65 : 1.0;
-
-    // Easy mode has NO lookahead or span fallback (moves strictly sequentially)
-    final bool enableLookahead = !isEasy;
-    final bool enableSpanFallback = !isEasy;
-
     return AlignmentConfig(
-      threshold: threshold,
-      costDel: costDel,
-      costIns: costIns,
-      enableLookahead: enableLookahead,
+      threshold: 0.25,
+      costDel: 1.0,
+      costIns: 1.0,
+      enableLookahead: true,
       maxLookaheadWords: 1,
-      lookaheadThresholdFactor: isStrict ? 0.85 : 0.95,
-      enableSpanFallback: enableSpanFallback,
-      spanThresholdFactor: isStrict ? 1.05 : 1.15,
+      lookaheadThresholdFactor: 0.95,
+      enableSpanFallback: true,
+      spanThresholdFactor: 1.15,
       minSpanBufferChunks: 3,
-      stalledRecoveryBufferChunks: isStrict ? 16 : 12,
-      stalledRecoveryMaxWords: isStrict ? 2 : 3,
-      lookaheadMarginDifferential: isStrict ? 0.15 : 0.10,
-      lookaheadJumpPenalty: isStrict ? 0.025 : 0.005,
-      chainedConfirmationPrefixChunks: 2,
+      stalledRecoveryBufferChunks: 12,
+      stalledRecoveryMaxWords: 3,
+      lookaheadMarginDifferential: 0.10,
+      lookaheadJumpPenalty: 0.005,
     );
   }
 

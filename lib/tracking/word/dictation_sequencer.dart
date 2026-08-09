@@ -26,7 +26,6 @@ class DictationSequencer {
   List<int> chunkToWordMap = [];
 
   bool isTajweed = false;
-  String trackingStrictness = 'normal';
 
   // ---------------------------------------------------------------------------
   // ASR State
@@ -75,7 +74,6 @@ class DictationSequencer {
     final String expectedPhonemes = cmd.fullPhonemes.replaceAll(' ', '');
     wordBoundaries = cmd.boundaries;
     isTajweed = cmd.isTajweed;
-    trackingStrictness = cmd.trackingStrictness;
 
     final int wordCount = max(0, wordBoundaries.length - 1);
     refChunks = [];
@@ -120,7 +118,7 @@ class DictationSequencer {
     lastMatchedPhoneme = null;
 
     debugLog(
-      '📖 [SURAH SET] Surah: $currentSurahNumber | Words: $wordCount | StartWord: $targetWordCursor | Tajweed: $isTajweed | Strict: $trackingStrictness',
+      '📖 [SURAH SET] Surah: $currentSurahNumber | Words: $wordCount | StartWord: $targetWordCursor | Tajweed: $isTajweed | Strict: normal',
     );
 
     if (!cmd.forceClear && currentSegmentAsr.isNotEmpty) {
@@ -223,8 +221,7 @@ class DictationSequencer {
         winEndChunk,
       );
 
-      final alignmentConfig = AlignmentConfig.fromStrictness(
-        trackingStrictness,
+      final alignmentConfig = AlignmentConfig.defaultConfig(
         isTajweed: isTajweed,
       );
 
@@ -477,7 +474,7 @@ class DictationSequencer {
     bool isNeutral = false;
     
     // Retroactive Forgiveness Check (Only in Normal mode)
-    if (asrStrings != null && trackingStrictness == 'normal') {
+    if (asrStrings != null) {
       final int wStart = wordStartChunk[wordId];
       final int wEnd = wordEndChunk[wordId];
       if (wStart < wEnd) {
@@ -488,7 +485,7 @@ class DictationSequencer {
           startChunk: wStart,
           endChunk: wEnd,
           expectedWord: wordId,
-          config: AlignmentConfig.fromStrictness('normal').copyWith(threshold: 1.0),
+          config: AlignmentConfig.defaultConfig().copyWith(threshold: 1.0),
           suppressLogs: true,
         );
         
@@ -613,7 +610,6 @@ class DictationSequencer {
         totalAyahWords: max(1, wordBoundaries.length - 1),
         matchScore: result.pureAcousticScore,
         previousWordTail: lastMatchedPhoneme,
-        trackingStrictness: trackingStrictness,
       );
     }
 

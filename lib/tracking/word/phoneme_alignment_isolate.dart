@@ -29,7 +29,6 @@ sealed class IsolateCommand {
           boundaries: (map['boundaries'] as List).cast<int>(),
           surahNumber: map['surahNumber'] as int? ?? 0,
           isTajweed: map['isTajweed'] as bool? ?? false,
-          trackingStrictness: map['trackingStrictness'] as String? ?? 'normal',
           forceClear: map['forceClear'] as bool? ?? false,
           startGlobalWord: map['startGlobalWord'] as int? ?? 0,
         );
@@ -51,11 +50,6 @@ sealed class IsolateCommand {
       case 'set_tajweed_mode':
         return SetTajweedModeCommand(
           isTajweed: map['is_tajweed'] as bool? ?? false,
-        );
-
-      case 'set_strictness':
-        return SetTrackingStrictnessCommand(
-          strictness: map['strictness'] as String? ?? 'normal',
         );
 
       case 'stop':
@@ -80,7 +74,6 @@ class SetSurahReferenceCommand extends IsolateCommand {
   final List<int> boundaries;
   final int surahNumber;
   final bool isTajweed;
-  final String trackingStrictness;
   final bool forceClear;
   final int startGlobalWord;
 
@@ -89,7 +82,6 @@ class SetSurahReferenceCommand extends IsolateCommand {
     required this.boundaries,
     required this.surahNumber,
     this.isTajweed = false,
-    this.trackingStrictness = 'normal',
     this.forceClear = false,
     this.startGlobalWord = 0,
   });
@@ -101,7 +93,6 @@ class SetSurahReferenceCommand extends IsolateCommand {
         'boundaries': boundaries,
         'surahNumber': surahNumber,
         'isTajweed': isTajweed,
-        'trackingStrictness': trackingStrictness,
         'forceClear': forceClear,
         'startGlobalWord': startGlobalWord,
       };
@@ -152,17 +143,6 @@ class SetTajweedModeCommand extends IsolateCommand {
   Map<String, dynamic> toMap() => {
         'command': 'set_tajweed_mode',
         'is_tajweed': isTajweed,
-      };
-}
-
-class SetTrackingStrictnessCommand extends IsolateCommand {
-  final String strictness;
-  const SetTrackingStrictnessCommand({required this.strictness});
-
-  @override
-  Map<String, dynamic> toMap() => {
-        'command': 'set_strictness',
-        'strictness': strictness,
       };
 }
 
@@ -286,9 +266,6 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
         case SetTajweedModeCommand(:final isTajweed):
           sequencer.isTajweed = isTajweed;
 
-        case SetTrackingStrictnessCommand(:final strictness):
-          sequencer.trackingStrictness = strictness;
-
         case StopIsolateCommand():
           Isolate.current.kill();
       }
@@ -363,7 +340,6 @@ class PhonemeAlignmentIsolate {
     List<int> wordBoundaries, {
     bool isTajweed = false,
     bool forceClear = false,
-    String trackingStrictness = 'normal',
     int startGlobalWord = 0,
     int surahNumber = 0,
   }) {
@@ -374,7 +350,6 @@ class PhonemeAlignmentIsolate {
         surahNumber: surahNumber,
         isTajweed: isTajweed,
         forceClear: forceClear,
-        trackingStrictness: trackingStrictness,
         startGlobalWord: startGlobalWord,
       ),
     );
@@ -404,10 +379,6 @@ class PhonemeAlignmentIsolate {
 
   void setTajweedMode(bool isTajweed) {
     send(SetTajweedModeCommand(isTajweed: isTajweed));
-  }
-
-  void setTrackingStrictness(String strictness) {
-    send(SetTrackingStrictnessCommand(strictness: strictness));
   }
 
   void stop() {
