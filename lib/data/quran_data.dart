@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+
 import 'package:flutter/services.dart';
 // ---------------------------------------------------------------------------
 // quran_data.dart
@@ -101,33 +101,13 @@ class QuranVerse {
   }
 }
 
-List<QuranVerse> _parseDatabaseInBackground(String data) {
-  final Map<String, dynamic> phonemesList = jsonDecode(data);
-
-  final List<QuranVerse> verses = [];
-  for (final entry in phonemesList.entries) {
-    final keyParts = entry.key.split(':');
-    if (keyParts.length == 2) {
-      final surahNum = int.tryParse(keyParts[0]) ?? 1;
-      final ayahNum = int.tryParse(keyParts[1]) ?? 1;
-      final phonemeObj = entry.value as Map<String, dynamic>;
-      verses.add(QuranVerse.fromJson(surahNum, ayahNum, phonemeObj));
-    }
-  }
-
-  // Sort sequentially by surah then ayah
-  verses.sort((a, b) {
-    if (a.surah != b.surah) return a.surah.compareTo(b.surah);
-    return a.ayah.compareTo(b.ayah);
-  });
-
-  return verses;
-}
-
+// We no longer parse the entire database upfront.
+// Verses are parsed lazily on demand from the decoded JSON map.
 class QuranMetadataService {
-  List<QuranVerse>? _allVerses;
-  Future<List<QuranVerse>> loadAll() async {
-    if (_allVerses != null) return _allVerses!;
+  Map<String, dynamic>? _rawJson;
+  
+  Future<void> loadData() async {
+    if (_rawJson != null) return;
 
     String phonemeData = '{}';
     try {
@@ -138,9 +118,10 @@ class QuranMetadataService {
       // Fallback if missing
     }
 
-    _allVerses = await compute(_parseDatabaseInBackground, phonemeData);
-    return _allVerses!;
+    _rawJson = jsonDecode(phonemeData);
   }
+
+  Map<String, dynamic>? get rawJson => _rawJson;
 }
 
 class ContinuousQuranWord {
@@ -164,36 +145,65 @@ class ContinuousQuranWord {
 class QuranRepository {
   final QuranMetadataService _service;
 
-  List<QuranVerse> _allVerses = [];
   bool _isLoaded = false;
   final Map<int, List<QuranVerse>> _surahCache = {};
   final Map<int, List<ContinuousQuranWord>> _surahWordsCache = {};
   final Map<int, Map<int, int>> _ayahStartWordIndexCache = {};
+  
+  final List<QuranVerse> _fallbackMetadata = [];
 
   QuranRepository(this._service);
 
-  List<QuranVerse> get verses => _allVerses;
-
   List<QuranVerse> get surahMetadata {
     if (!_isLoaded) return [];
-    return List.generate(114, (i) {
-      final s = getSurah(i + 1);
-      return s.isNotEmpty ? s.first : _allVerses.first;
-    });
+    
+    // We lazily parse Surah 1 verse 1 for each Surah to get the metadata 
+    // (surahName, surahNameEn, etc.) without parsing the whole Surah.
+    if (_fallbackMetadata.isEmpty && _service.rawJson != null) {
+      for (int i = 1; i <= 114; i++) {
+        final key = '$i:1';
+        final obj = _service.rawJson![key];
+        if (obj != null) {
+          _fallbackMetadata.add(QuranVerse.fromJson(i, 1, obj));
+        }
+      }
+    }
+    return _fallbackMetadata;
   }
 
   Future<void> loadSurahAsync(int surah) async {
-    if (_isLoaded) return;
-    _allVerses = await _service.loadAll();
-    _isLoaded = true;
-
-    for (final v in _allVerses) {
-      (_surahCache[v.surah] ??= []).add(v);
+    if (!_isLoaded) {
+      await _service.loadData();
+      _isLoaded = true;
     }
+    _ensureSurahParsed(surah);
+  }
+
+  void _ensureSurahParsed(int surah) {
+    if (_surahCache.containsKey(surah)) return;
+    
+    final rawJson = _service.rawJson;
+    if (rawJson == null) return;
+
+    final List<QuranVerse> verses = [];
+    
+    // Most surahs have < 300 ayahs (Al-Baqarah has 286). 
+    for (int ayah = 1; ayah <= 300; ayah++) {
+      final key = '$surah:$ayah';
+      final phonemeObj = rawJson[key];
+      if (phonemeObj != null) {
+        verses.add(QuranVerse.fromJson(surah, ayah, phonemeObj));
+      } else {
+        break; // Assume ayahs are contiguous and we reached the end
+      }
+    }
+    
+    _surahCache[surah] = verses;
   }
 
   List<QuranVerse> getSurah(int surah) {
     if (!_isLoaded) return [];
+    _ensureSurahParsed(surah);
     return _surahCache[surah] ?? [];
   }
 
@@ -204,6 +214,7 @@ class QuranRepository {
     }
 
     final verses = getSurah(surah);
+
     final List<ContinuousQuranWord> words = [];
     final Map<int, int> ayahStartMap = {};
     int globalIdx = 0;

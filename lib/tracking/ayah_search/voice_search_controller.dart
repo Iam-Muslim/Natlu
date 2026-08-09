@@ -20,6 +20,8 @@ import '../../engine/sherpa_engine.dart';
 import 'phonetic_search.dart';
 import '../../utils/debug_logger.dart';
 
+import 'package:flutter/foundation.dart';
+
 class AnchorResult {
   final int surah;
   final int ayah;
@@ -34,28 +36,39 @@ class VoiceSearchController {
 
   // The pre-built PhoneticSearch index.
   PhoneticSearch? _search;
-  bool _isIndexLoading = false;
+  
+  /// Exposes the loading state for the UI to show a loading indicator.
+  final ValueNotifier<bool> isIndexLoading = ValueNotifier(false);
+  
+  Future<void>? _loadFuture;
 
   VoiceSearchController({required this.engine});
 
   // ── Lazy Index Loading ───────────────────────────────────────────────────
 
   /// Loads the phonetic index from bundled assets the first time it's needed.
-  /// Subsequent calls are no-ops (index stays in memory for the session).
-  Future<void> preloadIndex() async {
-    if (_search != null || _isIndexLoading) return;
-    _isIndexLoading = true;
-    try {
-      DebugLogger.logSimple('VoiceSearch', 'Loading PhoneticSearch index...');
-      _search = PhoneticSearch();
-      await _search!.load();
-      DebugLogger.logSimple('VoiceSearch', 'Index loaded. Ready for search.');
-    } catch (e) {
-      DebugLogger.logSimple('VoiceSearch', 'ERROR: Failed to load phonetic search assets: $e');
-      _search = null;
-    } finally {
-      _isIndexLoading = false;
-    }
+  /// Returns immediately if already loaded. If a load is in progress, awaits it.
+  Future<void> preloadIndex() {
+    if (_search != null) return Future.value();
+    if (_loadFuture != null) return _loadFuture!;
+
+    _loadFuture = () async {
+      isIndexLoading.value = true;
+      try {
+        DebugLogger.logSimple('VoiceSearch', 'Loading PhoneticSearch index...');
+        final search = PhoneticSearch();
+        await search.load();
+        _search = search;
+        DebugLogger.logSimple('VoiceSearch', 'Index loaded. Ready for search.');
+      } catch (e) {
+        DebugLogger.logSimple('VoiceSearch', 'ERROR: Failed to load phonetic search assets: $e');
+        _search = null;
+      } finally {
+        isIndexLoading.value = false;
+        _loadFuture = null;
+      }
+    }();
+    return _loadFuture!;
   }
 
   // ── Search Lifecycle ─────────────────────────────────────────────────────

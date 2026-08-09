@@ -27,6 +27,7 @@ class TrackingScreen extends StatefulWidget {
   final String voiceSearchText;
   final VoidCallback onToggleRecord;
   final VoidCallback onVoiceSearchToggle;
+  final ValueNotifier<bool>? isVoiceSearchLoading;
   final VoidCallback onClearBuffer;
 
   const TrackingScreen({
@@ -37,6 +38,7 @@ class TrackingScreen extends StatefulWidget {
     this.voiceSearchText = '',
     required this.onToggleRecord,
     required this.onVoiceSearchToggle,
+    this.isVoiceSearchLoading,
     required this.onClearBuffer,
   });
 
@@ -115,7 +117,11 @@ class _TrackingScreenState extends State<TrackingScreen>
       _voiceSearchNotifier.value = widget.voiceSearchText;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          VoiceSearchDialog.show(context, onStop: widget.onVoiceSearchToggle);
+          VoiceSearchDialog.show(
+            context, 
+            onStop: widget.onVoiceSearchToggle,
+            isLoading: widget.isVoiceSearchLoading,
+          );
         }
       });
     } else if (!widget.isVoiceSearching && oldWidget.isVoiceSearching) {

@@ -215,11 +215,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   /// Each step updates the splash screen status text.
   Future<void> _init() async {
     try {
-      if (mounted) setState(() => _initStatus = 'Requesting permissions…');
-      await Permission.microphone.request();
-
       if (mounted) setState(() => _initStatus = 'Preparing ASR engine…');
-      await _engine.preExtractAssets();
       _engine.initialize(); // Fire-and-forget in background Isolate
 
       if (mounted) setState(() => _initStatus = 'Loading Quran database…');
@@ -227,8 +223,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       _repo = QuranRepository(service);
       await _repo!.loadSurahAsync(1);
 
-      if (mounted) setState(() => _initStatus = 'Loading Voice Search Index…');
-      await _voiceSearchCtrl.preloadIndex();
+      _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background
 
       _ctrl = HighlightingController(
         engine: _engine,
@@ -247,7 +242,7 @@ class _OrchestratorState extends State<_Orchestrator> {
           // silently discarding the final word's right-context tail every ayah.
         },
       );
-      await WakelockPlus.enable();
+      WakelockPlus.enable(); // No need to await platform channel
 
       if (mounted) setState(() => _isInit = false);
 
@@ -300,6 +295,17 @@ class _OrchestratorState extends State<_Orchestrator> {
             _isRecording = false;
           });
       } else {
+        final status = await Permission.microphone.request();
+        if (status != PermissionStatus.granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Microphone permission required')),
+            );
+          }
+          _isToggling = false;
+          return;
+        }
+
         // Ensure engine is ready (may still be initializing in background)
         if (!_engine.isInitialized) {
           // Trigger initialize just in case, but DON'T await
@@ -355,6 +361,17 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission required')),
+          );
+        }
+        _isToggling = false;
+        return;
+      }
+
       if (!_engine.isInitialized) {
         _engine.initialize();
       }
@@ -362,15 +379,16 @@ class _OrchestratorState extends State<_Orchestrator> {
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
       _ctrl?.finalize();
 
-      await _voiceSearchCtrl.startSearch();
-      await WakelockPlus.enable();
-
+      // SHOW UI IMMEDIATELY!
       if (mounted) {
         setState(() {
           _isVoiceSearching = true;
           _voiceSearchAsrText = '';
         });
       }
+
+      await _voiceSearchCtrl.startSearch();
+      await WakelockPlus.enable();
 
       // We rely entirely on Sherpa's VAD for endpointing (configured for 4.0s).
       // No custom timers needed anymore.
@@ -554,6 +572,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       voiceSearchText: _voiceSearchAsrText,
       onToggleRecord: _toggleRecord,
       onVoiceSearchToggle: _toggleVoiceSearch,
+      isVoiceSearchLoading: _voiceSearchCtrl.isIndexLoading,
       onClearBuffer: () {
         _engine.resetBuffer();
         _audio.clearBuffer();
