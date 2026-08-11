@@ -88,3 +88,4 @@ ios/Runner/GeneratedPluginRegistrant.*
 
 # Ignore scratch directories
 .scratch/
+/assets/model
