@@ -77,6 +77,7 @@ android {
 
     packaging {
         jniLibs {
+            useLegacyPackaging = true
             pickFirsts.add("**/libonnxruntime.so")
             pickFirsts.add("**/libc++_shared.so")
         }
