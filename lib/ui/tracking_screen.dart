@@ -360,7 +360,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeOutCubic,
-                  bottom: MediaQuery.of(context).viewPadding.bottom,
+                  bottom: 0,
                   left: 0,
                   right: 0,
                   child: AnimatedSwitcher(

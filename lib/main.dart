@@ -36,6 +36,7 @@ import 'audio/audio_processor.dart';
 import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
+import 'ui/widgets/dialogs/permission_dialog.dart';
 
 import 'tracking/ayah_search/voice_search_controller.dart';
 import 'utils/debug_logger.dart';
@@ -298,8 +299,11 @@ class _OrchestratorState extends State<_Orchestrator> {
         final status = await Permission.microphone.request();
         if (status != PermissionStatus.granted) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Microphone permission required')),
+            showDialog(
+              context: context,
+              builder: (ctx) => const PermissionDialog(
+                reason: PermissionReason.tracking,
+              ),
             );
           }
           _isToggling = false;
@@ -364,8 +368,11 @@ class _OrchestratorState extends State<_Orchestrator> {
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission required')),
+          showDialog(
+            context: context,
+            builder: (ctx) => const PermissionDialog(
+              reason: PermissionReason.voiceSearch,
+            ),
           );
         }
         _isToggling = false;
