@@ -50,12 +50,6 @@ class AlignmentConfig {
   /// Minimum unconsumed chunks required in buffer before attempting span fallback.
   final int minSpanBufferChunks;
 
-  /// Unconsumed chunks threshold to trigger stalled recovery scan (Tier 4).
-  final int stalledRecoveryBufferChunks;
-
-  /// Max words to search ahead during stalled recovery scan.
-  final int stalledRecoveryMaxWords;
-
   /// Score margin differential required for lookahead when chained confirmation is not available.
   final double lookaheadMarginDifferential;
 
@@ -75,8 +69,6 @@ class AlignmentConfig {
     this.enableSpanFallback = true,
     this.spanThresholdFactor = 1.15,
     this.minSpanBufferChunks = 3,
-    this.stalledRecoveryBufferChunks = 8,
-    this.stalledRecoveryMaxWords = 3,
     this.lookaheadMarginDifferential = 0.10,
     this.lookaheadJumpPenalty = 0.015,
     this.chainedConfirmationPrefixChunks = 2,
@@ -96,8 +88,6 @@ class AlignmentConfig {
       enableSpanFallback: true,
       spanThresholdFactor: 1.15,
       minSpanBufferChunks: 3,
-      stalledRecoveryBufferChunks: 12,
-      stalledRecoveryMaxWords: 3,
       lookaheadMarginDifferential: 0.10,
       lookaheadJumpPenalty: 0.005,
     );
@@ -114,8 +104,6 @@ class AlignmentConfig {
     bool? enableSpanFallback,
     double? spanThresholdFactor,
     int? minSpanBufferChunks,
-    int? stalledRecoveryBufferChunks,
-    int? stalledRecoveryMaxWords,
     double? lookaheadMarginDifferential,
     double? lookaheadJumpPenalty,
     int? chainedConfirmationPrefixChunks,
@@ -131,10 +119,6 @@ class AlignmentConfig {
       enableSpanFallback: enableSpanFallback ?? this.enableSpanFallback,
       spanThresholdFactor: spanThresholdFactor ?? this.spanThresholdFactor,
       minSpanBufferChunks: minSpanBufferChunks ?? this.minSpanBufferChunks,
-      stalledRecoveryBufferChunks:
-          stalledRecoveryBufferChunks ?? this.stalledRecoveryBufferChunks,
-      stalledRecoveryMaxWords:
-          stalledRecoveryMaxWords ?? this.stalledRecoveryMaxWords,
       lookaheadMarginDifferential:
           lookaheadMarginDifferential ?? this.lookaheadMarginDifferential,
       lookaheadJumpPenalty: lookaheadJumpPenalty ?? this.lookaheadJumpPenalty,

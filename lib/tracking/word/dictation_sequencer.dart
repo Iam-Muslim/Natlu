@@ -359,57 +359,7 @@ class DictationSequencer {
         }
       }
 
-      // ── TIER 4: Stalled Buffer Recovery (Local Forward Resync) ─────────────
-      int currentWordLen = wordEndChunk[targetWordCursor] - wordStartChunk[targetWordCursor];
-      int nextWordLen = 0;
-      if (targetWordCursor + 1 < wordCount) {
-        nextWordLen = wordEndChunk[targetWordCursor + 1] - wordStartChunk[targetWordCursor + 1];
-      }
-      
-      // Dynamic threshold: 1.5x combined length of W and W+1, safely bounded by a strict minimum floor.
-      int dynamicThreshold = ((currentWordLen + nextWordLen) * 1.5).ceil();
-      int effectiveRecoveryThreshold = max(
-        alignmentConfig.stalledRecoveryBufferChunks,
-        dynamicThreshold,
-      );
 
-      if (unconsumedStrings.length >= effectiveRecoveryThreshold &&
-          targetWordCursor + 2 < wordCount) {
-        final int maxScan = min(
-          targetWordCursor + 1 + alignmentConfig.stalledRecoveryMaxWords,
-          wordCount,
-        );
-        for (int scanW = targetWordCursor + 2; scanW < maxScan; scanW++) {
-          final int sStart = wordStartChunk[scanW];
-          final int sEnd = wordEndChunk[scanW];
-          if (sStart >= sEnd) continue;
-
-          final sRes = _alignWindow(
-            asrStrings: unconsumedStrings,
-            asrYsProbs: unconsumedYsProbs,
-            startChunk: sStart,
-            endChunk: sEnd,
-            expectedWord: scanW,
-            config: alignmentConfig,
-          );
-
-          if (sRes != null) {
-            for (int skipped = targetWordCursor; skipped < scanW; skipped++) {
-              _emitSkippedWord(skipped, asrStrings: unconsumedStrings, ysProbs: unconsumedYsProbs);
-            }
-            _commitMatch(
-              result: sRes,
-              unconsumedTokens: unconsumedTokens,
-              fullCleanTokens: cleanTokens,
-              targetWindow: refChunks.sublist(sStart, sEnd),
-              winStartChunk: sStart,
-              startWordId: scanW,
-            );
-            matchedSomething = true;
-            break;
-          }
-        }
-      }
     } while (matchedSomething);
   }
 

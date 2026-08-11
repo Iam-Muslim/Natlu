@@ -78,7 +78,7 @@ void main() async {
           systemNavigationBarColor: Colors.transparent,
         ),
       );
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
       // Request highest possible refresh rate (e.g., 120Hz) on Android
       if (Platform.isAndroid) {
