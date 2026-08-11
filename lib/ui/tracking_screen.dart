@@ -66,7 +66,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     WakelockPlus.enable();
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   @override
