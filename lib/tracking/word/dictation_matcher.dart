@@ -252,13 +252,16 @@ class ForwardDictationMatcher {
 
       final int pId = pIds[i - 1];
       
-      // Extract acoustic confidence. Default to 1.0 if missing.
-      final double pProb = (asrYsProbs != null && (i - 1) < asrYsProbs.length)
+      // Extract acoustic confidence (log-prob). Default to 0.0 (log(1) = 0) if missing.
+      final double logProb = (asrYsProbs != null && (i - 1) < asrYsProbs.length)
           ? asrYsProbs[i - 1]
-          : 1.0;
+          : 0.0;
+          
+      // Convert log-probability to linear probability (0.0 to 1.0)
+      final double linearProb = exp(logProb);
           
       // Dampen the weight so penalties never drop below 50%
-      final double weight = 0.5 + (0.5 * pProb);
+      final double weight = 0.5 + (0.5 * linearProb);
 
       for (int j = 1; j <= n; j++) {
         final int rId = rIds[j - 1];
