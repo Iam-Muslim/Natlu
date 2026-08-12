@@ -180,6 +180,7 @@ class ForwardDictationMatcher {
     required AlignmentConfig config,
     Int32List? targetEncodedIds,
     List<double>? asrYsProbs,
+    Set<int>? validEndChunks,
     void Function(String)? debugLog,
   }) {
     final double threshold = config.threshold;
@@ -242,6 +243,7 @@ class ForwardDictationMatcher {
 
     double bestNormDist = double.infinity;
     int bestI = -1;
+    int bestJ = -1;
     int bestStartI = 0;
 
     for (int i = 1; i <= m; i++) {
@@ -249,14 +251,25 @@ class ForwardDictationMatcher {
       currStartI[0] = i;
 
       final int pId = pIds[i - 1];
+      
+      // Extract acoustic confidence. Default to 1.0 if missing.
+      final double pProb = (asrYsProbs != null && (i - 1) < asrYsProbs.length)
+          ? asrYsProbs[i - 1]
+          : 1.0;
+          
+      // Dampen the weight so penalties never drop below 50%
+      final double weight = 0.5 + (0.5 * pProb);
 
       for (int j = 1; j <= n; j++) {
         final int rId = rIds[j - 1];
 
-        final double delCost = prevCost[j] + costIns;
+        // If ASR confidence is low, reduce penalty for ignoring it (Insertion)
+        final double delCost = prevCost[j] + (costIns * weight);
+        
         final double insCost = currCost[j - 1] + costDel;
 
-        final double matchCost = PhonemeMatrix.getCost(pId, rId);
+        // If ASR confidence is low, reduce penalty for a phonetic mismatch
+        final double matchCost = PhonemeMatrix.getCost(pId, rId) * weight;
         final double replCost = prevCost[j - 1] + matchCost;
 
         double minVal = replCost;
@@ -279,15 +292,23 @@ class ForwardDictationMatcher {
         currStartI[j] = sI;
         op[i * opStride + j] = choice;
 
-        if (j == n) {
+        bool isBoundary = false;
+        if (validEndChunks != null) {
+          isBoundary = validEndChunks.contains(j);
+        } else {
+          isBoundary = (j == n);
+        }
+
+        if (isBoundary) {
           final int lengthAsr = i - sI;
-          final int denom = max(n, lengthAsr);
+          final int denom = max(j, lengthAsr);
 
           if (denom > 0) {
             final double normDist = minVal / denom;
             if (normDist <= bestNormDist) {
               bestNormDist = normDist;
               bestI = i;
+              bestJ = j;
               bestStartI = sI;
             }
           }
@@ -301,7 +322,7 @@ class ForwardDictationMatcher {
 
     if (bestI != -1 && bestNormDist <= threshold) {
       int currI = bestI;
-      int currJ = n;
+      int currJ = bestJ;
       final List<PhonemeGroupAlignment> trace = [];
 
       while (currI > bestStartI || currJ > 0) {
@@ -407,15 +428,15 @@ class ForwardDictationMatcher {
         }
       }
 
-      final int denom = max(asrLen, max(n, 1));
+      final int denom = max(asrLen, max(bestJ, 1));
       final double wordScore = totalPenalty / denom;
 
-      final double coverage = n > 0 ? (matchedRefChunks / n) : 0.0;
-      final bool hasSufficientCoverage = n <= 1
+      final double coverage = bestJ > 0 ? (matchedRefChunks / bestJ) : 0.0;
+      final bool hasSufficientCoverage = bestJ <= 1
           ? (matchedRefChunks >= 1)
-          : (n == 2 ? matchedRefChunks >= 2 : coverage >= 0.60);
+          : (bestJ == 2 ? matchedRefChunks >= 2 : coverage >= 0.60);
 
-      final String refWordStr = targetWindow.join('');
+      final String refWordStr = targetWindow.sublist(0, bestJ).join('');
 
       if (wordScore <= threshold && hasSufficientCoverage) {
         debugLog?.call(
@@ -423,7 +444,7 @@ class ForwardDictationMatcher {
         );
         return AlignmentResult(
           bestI: bestI,
-          bestJ: n,
+          bestJ: bestJ,
           bestStartI: bestStartI,
           bestStartJ: 0,
           bestScore: wordScore,
@@ -435,7 +456,7 @@ class ForwardDictationMatcher {
       final String reason = wordScore > threshold
           ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
           : (!hasSufficientCoverage
-                ? '(Insufficient Coverage: matched=$matchedRefChunks/$n)'
+                ? '(Insufficient Coverage: matched=$matchedRefChunks/$bestJ)'
                 : '(Failed Threshold)');
 
       debugLog?.call(

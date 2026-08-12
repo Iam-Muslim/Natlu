@@ -60,10 +60,7 @@ class DictationSequencer {
 
   void debugLog(String message) {
     mainSendPort.send(
-      DebugLogEvent(
-        message: message,
-        asrBuffer: currentSegmentAsr,
-      ).toMap(),
+      DebugLogEvent(message: message, asrBuffer: currentSegmentAsr).toMap(),
     );
   }
 
@@ -83,7 +80,9 @@ class DictationSequencer {
 
     for (int w = 0; w < wordCount; w++) {
       final int startChar = wordBoundaries[w];
-      final int endChar = (w + 1 < wordBoundaries.length) ? wordBoundaries[w + 1] : expectedPhonemes.length;
+      final int endChar = (w + 1 < wordBoundaries.length)
+          ? wordBoundaries[w + 1]
+          : expectedPhonemes.length;
       if (startChar >= expectedPhonemes.length) break;
       final int safeEnd = min(endChar, expectedPhonemes.length);
       final String wordStr = expectedPhonemes.substring(startChar, safeEnd);
@@ -167,9 +166,7 @@ class DictationSequencer {
     final List<PhonemeToken> cleanTokens = rawTokens
         .where(
           (t) =>
-              t.text.trim().isNotEmpty &&
-              t.text != '<blank>' &&
-              t.text != 'ؙ',
+              t.text.trim().isNotEmpty && t.text != '<blank>' && t.text != 'ؙ',
         )
         .toList();
 
@@ -216,75 +213,63 @@ class DictationSequencer {
 
       if (winStartChunk >= winEndChunk) break;
 
-      final List<String> targetWindow = refChunks.sublist(
-        winStartChunk,
-        winEndChunk,
-      );
+
 
       final alignmentConfig = AlignmentConfig.defaultConfig(
         isTajweed: isTajweed,
       );
 
-      final List<String> unconsumedStrings =
-          unconsumedTokens.map((t) => t.text).toList();
-      final List<double> unconsumedYsProbs =
-          _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount);
+      final List<String> unconsumedStrings = unconsumedTokens
+          .map((t) => t.text)
+          .toList();
+      final List<double> unconsumedYsProbs = _getUnconsumedYsProbs(
+        cleanTokens,
+        asrConsumedTokenCount,
+      );
 
-      // ── TIER 1: Standard Sequential Match (Word W) ─────────────────────────
+      // ── TIER 1: Continuous Subsequence DTW (Word W, W+1, W+2...) ─────────
+      // Tests the current word and seamless Wasl connections up to 3 words ahead.
+      final int maxContinuous = min(targetWordCursor + 3, wordCount);
+      final int continuousEndChunk = wordEndChunk[maxContinuous - 1];
+
+      final Set<int> validEnds = {};
+      for (int w = targetWordCursor; w < maxContinuous; w++) {
+        validEnds.add(wordEndChunk[w] - winStartChunk);
+      }
+
       AlignmentResult? result = _alignWindow(
         asrStrings: unconsumedStrings,
         asrYsProbs: unconsumedYsProbs,
         startChunk: winStartChunk,
-        endChunk: winEndChunk,
+        endChunk: continuousEndChunk,
         expectedWord: targetWordCursor,
         config: alignmentConfig,
+        validEndChunks: validEnds,
       );
 
       if (result != null) {
+        int matchedWordIdx = targetWordCursor;
+        for (int w = targetWordCursor; w < maxContinuous; w++) {
+          if (result.bestJ == (wordEndChunk[w] - winStartChunk)) {
+            matchedWordIdx = w;
+            break;
+          }
+        }
+
         _commitMatch(
           result: result,
           unconsumedTokens: unconsumedTokens,
           fullCleanTokens: cleanTokens,
-          targetWindow: targetWindow,
+          targetWindow: refChunks.sublist(
+            winStartChunk,
+            wordEndChunk[matchedWordIdx],
+          ),
           winStartChunk: winStartChunk,
           startWordId: targetWordCursor,
+          endWordId: matchedWordIdx + 1,
         );
         matchedSomething = true;
         continue;
-      }
-
-      // ── TIER 3: Multi-Word Span Fallback (W + W+1 Continuous Wasl) ─────────
-      if (alignmentConfig.enableSpanFallback &&
-          targetWordCursor + 1 < wordCount &&
-          unconsumedStrings.length >= alignmentConfig.minSpanBufferChunks) {
-        final int spanEnd = wordEndChunk[targetWordCursor + 1];
-        if (winStartChunk < spanEnd) {
-          final spanRes = _alignWindow(
-            asrStrings: unconsumedStrings,
-            asrYsProbs: unconsumedYsProbs,
-            startChunk: winStartChunk,
-            endChunk: spanEnd,
-            expectedWord: targetWordCursor,
-            config: alignmentConfig.copyWith(
-              threshold: alignmentConfig.threshold *
-                  alignmentConfig.spanThresholdFactor,
-            ),
-          );
-
-          if (spanRes != null) {
-            _commitMatch(
-              result: spanRes,
-              unconsumedTokens: unconsumedTokens,
-              fullCleanTokens: cleanTokens,
-              targetWindow: refChunks.sublist(winStartChunk, spanEnd),
-              winStartChunk: winStartChunk,
-              startWordId: targetWordCursor,
-              endWordId: targetWordCursor + 2,
-            );
-            matchedSomething = true;
-            continue;
-          }
-        }
       }
 
       // ── TIER 2: Forward Lookahead Skip (W -> W + 1) ────────────────────────
@@ -301,7 +286,8 @@ class DictationSequencer {
             endChunk: nextEnd,
             expectedWord: nextW,
             config: alignmentConfig.copyWith(
-              threshold: alignmentConfig.threshold *
+              threshold:
+                  alignmentConfig.threshold *
                   alignmentConfig.lookaheadThresholdFactor,
             ),
           );
@@ -310,15 +296,21 @@ class DictationSequencer {
             bool acceptSkip = true;
 
             // Apply Distance Penalty for skips
-            final double distancePenalty = nextRes.bestStartI * alignmentConfig.lookaheadJumpPenalty;
+            final double distancePenalty =
+                nextRes.bestStartI * alignmentConfig.lookaheadJumpPenalty;
             final double adjustedScore = nextRes.bestScore + distancePenalty;
-            final double allowedThreshold = alignmentConfig.threshold * alignmentConfig.lookaheadThresholdFactor;
+            final double allowedThreshold =
+                alignmentConfig.threshold *
+                alignmentConfig.lookaheadThresholdFactor;
 
             if (adjustedScore > allowedThreshold) {
               acceptSkip = false;
             }
 
-            final bool hasOverlap = _hasPhoneticOverlap(targetWordCursor, nextW);
+            final bool hasOverlap = _hasPhoneticOverlap(
+              targetWordCursor,
+              nextW,
+            );
             if (hasOverlap && acceptSkip) {
               final wRes = _alignWindow(
                 asrStrings: unconsumedStrings,
@@ -336,14 +328,20 @@ class DictationSequencer {
                 } else {
                   acceptSkip = false;
                 }
-              } else if (nextRes.bestScore > wRes.bestScore - alignmentConfig.lookaheadMarginDifferential) {
+              } else if (nextRes.bestScore >
+                  wRes.bestScore -
+                      alignmentConfig.lookaheadMarginDifferential) {
                 // If W1 is a valid partial match, compare scores.
                 acceptSkip = false;
               }
             }
 
             if (acceptSkip) {
-              _emitSkippedWord(targetWordCursor, asrStrings: unconsumedStrings, ysProbs: unconsumedYsProbs);
+              _emitSkippedWord(
+                targetWordCursor,
+                asrStrings: unconsumedStrings,
+                ysProbs: unconsumedYsProbs,
+              );
               _commitMatch(
                 result: nextRes,
                 unconsumedTokens: unconsumedTokens,
@@ -358,14 +356,13 @@ class DictationSequencer {
           }
         }
       }
-
-
     } while (matchedSomething);
   }
 
   /// Checks if Word [w2] is a substring, sub-phoneme, or heavily overlapping with Word [w1].
   bool _hasPhoneticOverlap(int w1, int w2) {
-    if (w1 >= wordStartChunk.length || w2 >= wordStartChunk.length) return false;
+    if (w1 >= wordStartChunk.length || w2 >= wordStartChunk.length)
+      return false;
     final int s1 = wordStartChunk[w1], e1 = wordEndChunk[w1];
     final int s2 = wordStartChunk[w2], e2 = wordEndChunk[w2];
     if (s1 >= e1 || s2 >= e2) return false;
@@ -392,7 +389,7 @@ class DictationSequencer {
         prefixMatches++;
       }
     }
-    
+
     // If they share at least 1 of their starting phonemes, it's a dangerous overlap.
     return prefixMatches > 0;
   }
@@ -405,6 +402,7 @@ class DictationSequencer {
     required int endChunk,
     required int expectedWord,
     required AlignmentConfig config,
+    Set<int>? validEndChunks,
     bool suppressLogs = false,
   }) {
     return _matcher.align(
@@ -412,17 +410,25 @@ class DictationSequencer {
       targetWindow: refChunks.sublist(startChunk, endChunk),
       expectedWord: expectedWord,
       config: config,
-      targetEncodedIds:
-          Int32List.sublistView(refEncodedIds, startChunk, endChunk),
+      validEndChunks: validEndChunks,
+      targetEncodedIds: Int32List.sublistView(
+        refEncodedIds,
+        startChunk,
+        endChunk,
+      ),
       asrYsProbs: asrYsProbs,
       debugLog: suppressLogs ? null : debugLog,
     );
   }
 
   /// Emits a skipped (RED) or neutral word event to the UI thread.
-  void _emitSkippedWord(int wordId, {List<String>? asrStrings, List<double>? ysProbs}) {
+  void _emitSkippedWord(
+    int wordId, {
+    List<String>? asrStrings,
+    List<double>? ysProbs,
+  }) {
     bool isNeutral = false;
-    
+
     // Retroactive Forgiveness Check (Only in Normal mode)
     if (asrStrings != null) {
       final int wStart = wordStartChunk[wordId];
@@ -438,17 +444,23 @@ class DictationSequencer {
           config: AlignmentConfig.defaultConfig().copyWith(threshold: 1.0),
           suppressLogs: true,
         );
-        
+
         if (res != null) {
           final int safeStartI = res.bestStartI.clamp(0, asrStrings.length);
           final int safeEndI = res.bestI.clamp(safeStartI, asrStrings.length);
-          final String heardWordStr = asrStrings.sublist(safeStartI, safeEndI).join('');
+          final String heardWordStr = asrStrings
+              .sublist(safeStartI, safeEndI)
+              .join('');
 
           if (res.bestScore <= 0.45) {
             isNeutral = true;
-            debugLog('🛡️ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | passed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting NEUTRAL.');
+            debugLog(
+              '🛡️ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | passed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting NEUTRAL.',
+            );
           } else {
-            debugLog('❌ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | failed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting RED.');
+            debugLog(
+              '❌ [FORGIVENESS] Skipped "$wordStr", heard "$heardWordStr" | failed 45% threshold (Score: ${res.bestScore.toStringAsFixed(3)}). Painting RED.',
+            );
           }
         }
       }
@@ -477,7 +489,10 @@ class DictationSequencer {
     final int endW = endWordId ?? (startWordId + 1);
 
     final int safeStartI = result.bestStartI.clamp(0, unconsumedTokens.length);
-    final int safeEndI = result.bestI.clamp(safeStartI, unconsumedTokens.length);
+    final int safeEndI = result.bestI.clamp(
+      safeStartI,
+      unconsumedTokens.length,
+    );
     final List<String> matchedAsrSlice = unconsumedTokens
         .sublist(safeStartI, safeEndI)
         .map((t) => t.text)
@@ -489,10 +504,12 @@ class DictationSequencer {
       safeStartJ,
       safeEndJ,
     );
-    
+
     final String heardStr = matchedAsrSlice.join('');
     final String refStr = matchedRefSlice.join('');
-    debugLog('✅ COMMITTED (GREEN): ref word is "$refStr", heard word is "$heardStr"');
+    debugLog(
+      '✅ COMMITTED (GREEN): ref word is "$refStr", heard word is "$heardStr"',
+    );
 
     final List<PhonemeGroupAlignment> localAlignments = result.trace;
 
@@ -542,10 +559,7 @@ class DictationSequencer {
         fullCleanTokens,
         globalStartIdx,
       );
-      final int safeCharIdx = min(
-        charStart,
-        currentSegmentTimestamps.length,
-      );
+      final int safeCharIdx = min(charStart, currentSegmentTimestamps.length);
 
       tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
         alignments: localAlignments,
@@ -605,5 +619,4 @@ class DictationSequencer {
     }
     return const [];
   }
-
 }
