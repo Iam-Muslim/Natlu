@@ -27,6 +27,7 @@ class TrackingScreen extends StatefulWidget {
   final String voiceSearchText;
   final VoidCallback onToggleRecord;
   final VoidCallback onVoiceSearchToggle;
+  final bool isLoadingEngine;
   final ValueNotifier<bool>? isVoiceSearchLoading;
   final VoidCallback onClearBuffer;
 
@@ -38,6 +39,7 @@ class TrackingScreen extends StatefulWidget {
     this.voiceSearchText = '',
     required this.onToggleRecord,
     required this.onVoiceSearchToggle,
+    this.isLoadingEngine = false,
     this.isVoiceSearchLoading,
     required this.onClearBuffer,
   });
@@ -382,6 +384,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                     child: BottomActionBar(
                       key: const ValueKey('word_checker_bar'),
                       isRecording: widget.isRecording,
+                      isLoadingEngine: widget.isLoadingEngine,
                       isVoiceSearching: widget.isVoiceSearching,
                       isAutoScrolling: _isAutoScrolling,
                       c: c,

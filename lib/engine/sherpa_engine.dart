@@ -53,7 +53,7 @@ class SherpaEngine {
 
   bool _isInitialized = false;
   Future<void>? _initFuture;
-  final List<SherpaRecognizeCommand> _pendingChunks = [];
+  final List<SherpaCommand> _pendingChunks = [];
   int _currentStreamEpoch = 0;
 
   bool get isInitialized => _isInitialized;
@@ -72,12 +72,19 @@ class SherpaEngine {
       return file.path;
     }
 
+    final targetPath = file.path;
+
+    // Load asset on the main thread where ServicesBinding is initialized
     final ByteData data = await rootBundle.load(assetPath);
     final Uint8List bytes = data.buffer.asUint8List(
       data.offsetInBytes,
       data.lengthInBytes,
     );
-    await file.writeAsBytes(bytes, flush: true);
+
+    // Write to disk in a background isolate to prevent UI freezing
+    await Isolate.run(() async {
+      await File(targetPath).writeAsBytes(bytes, flush: true);
+    });
 
     if (await file.length() == 0) {
       throw Exception(
@@ -102,6 +109,7 @@ class SherpaEngine {
   }
 
   Future<void> _doInitialize() async {
+    _currentStreamEpoch = 0;
     if (_isolate != null) {
       if (_sendPort != null) {
         _sendPort!.send(const SherpaDestroyCommand());
@@ -205,14 +213,24 @@ class SherpaEngine {
   void resetBuffer() {
     _currentStreamEpoch++;
     _pendingChunks.clear();
-    _sendPort?.send(const SherpaResetCommand());
+    final cmd = const SherpaResetCommand();
+    if (!_isInitialized && _initFuture != null) {
+      _pendingChunks.add(cmd);
+    } else {
+      _sendPort?.send(cmd);
+    }
   }
 
   /// Flush-then-Reset: crosses an Ayah boundary cleanly without loss of speech.
   void flushThenReset() {
     _currentStreamEpoch++;
     _pendingChunks.clear();
-    _sendPort?.send(const SherpaFlushCommand());
+    final cmd = const SherpaFlushCommand();
+    if (!_isInitialized && _initFuture != null) {
+      _pendingChunks.add(cmd);
+    } else {
+      _sendPort?.send(cmd);
+    }
   }
 
   void destroy() {

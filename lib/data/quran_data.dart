@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'dart:isolate';
 import 'package:flutter/services.dart';
+
 // ---------------------------------------------------------------------------
 // quran_data.dart
 // ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ class QuranVerse {
 // Verses are parsed lazily on demand from the decoded JSON map.
 class QuranMetadataService {
   Map<String, dynamic>? _rawJson;
-  
+
   Future<void> loadData() async {
     if (_rawJson != null) return;
 
@@ -114,11 +116,15 @@ class QuranMetadataService {
       phonemeData = await rootBundle.loadString(
         'assets/model/ordered_quran_phonemes.json',
       );
-    } catch (_) {
-      // Fallback if missing
+    } catch (e, stack) {
+      // Re-throw so the Orchestrator can show an error instead of silently breaking the matching system
+      print('CRITICAL ERROR loading quran phonemes: $e\n$stack');
+      rethrow;
     }
 
-    _rawJson = jsonDecode(phonemeData);
+    _rawJson = await Isolate.run(
+      () => jsonDecode(phonemeData) as Map<String, dynamic>,
+    );
   }
 
   Map<String, dynamic>? get rawJson => _rawJson;
@@ -149,15 +155,15 @@ class QuranRepository {
   final Map<int, List<QuranVerse>> _surahCache = {};
   final Map<int, List<ContinuousQuranWord>> _surahWordsCache = {};
   final Map<int, Map<int, int>> _ayahStartWordIndexCache = {};
-  
+
   final List<QuranVerse> _fallbackMetadata = [];
 
   QuranRepository(this._service);
 
   List<QuranVerse> get surahMetadata {
     if (!_isLoaded) return [];
-    
-    // We lazily parse Surah 1 verse 1 for each Surah to get the metadata 
+
+    // We lazily parse Surah 1 verse 1 for each Surah to get the metadata
     // (surahName, surahNameEn, etc.) without parsing the whole Surah.
     if (_fallbackMetadata.isEmpty && _service.rawJson != null) {
       for (int i = 1; i <= 114; i++) {
@@ -181,13 +187,13 @@ class QuranRepository {
 
   void _ensureSurahParsed(int surah) {
     if (_surahCache.containsKey(surah)) return;
-    
+
     final rawJson = _service.rawJson;
     if (rawJson == null) return;
 
     final List<QuranVerse> verses = [];
-    
-    // Most surahs have < 300 ayahs (Al-Baqarah has 286). 
+
+    // Most surahs have < 300 ayahs (Al-Baqarah has 286).
     for (int ayah = 1; ayah <= 300; ayah++) {
       final key = '$surah:$ayah';
       final phonemeObj = rawJson[key];
@@ -197,7 +203,7 @@ class QuranRepository {
         break; // Assume ayahs are contiguous and we reached the end
       }
     }
-    
+
     _surahCache[surah] = verses;
   }
 
@@ -222,16 +228,19 @@ class QuranRepository {
     for (final verse in verses) {
       ayahStartMap[verse.ayah] = globalIdx;
       for (int i = 0; i < verse.phonemeWords.length; i++) {
-        final uthmani =
-            i < verse.uthmaniWords.length ? verse.uthmaniWords[i] : '';
-        words.add(ContinuousQuranWord(
-          globalIndex: globalIdx++,
-          surah: verse.surah,
-          ayah: verse.ayah,
-          wordInAyah: i,
-          uthmani: uthmani,
-          phoneme: verse.phonemeWords[i],
-        ));
+        final uthmani = i < verse.uthmaniWords.length
+            ? verse.uthmaniWords[i]
+            : '';
+        words.add(
+          ContinuousQuranWord(
+            globalIndex: globalIdx++,
+            surah: verse.surah,
+            ayah: verse.ayah,
+            wordInAyah: i,
+            uthmani: uthmani,
+            phoneme: verse.phonemeWords[i],
+          ),
+        );
       }
     }
 

@@ -54,21 +54,27 @@ void main() async {
       if (Platform.isIOS) {
         try {
           final session = await AudioSession.instance;
-          await session.configure(AudioSessionConfiguration(
-            avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-            avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker |
-                AVAudioSessionCategoryOptions.allowBluetooth,
-            avAudioSessionMode: AVAudioSessionMode.measurement,
-          ));
+          await session.configure(
+            AudioSessionConfiguration(
+              avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+              avAudioSessionCategoryOptions:
+                  AVAudioSessionCategoryOptions.defaultToSpeaker |
+                  AVAudioSessionCategoryOptions.allowBluetooth,
+              avAudioSessionMode: AVAudioSessionMode.measurement,
+            ),
+          );
         } catch (e) {
-          DebugLogger.logSimple('AudioSession', 'Failed to configure AudioSession: $e');
+          DebugLogger.logSimple(
+            'AudioSession',
+            'Failed to configure AudioSession: $e',
+          );
         }
       }
 
       if (kReleaseMode) {
         debugPrint = (String? message, {int? wrapWidth}) {
           // //logs: Send debugPrint into our custom print zone instead of the void!
-          if (message != null) print(message); 
+          if (message != null) print(message);
         };
       }
 
@@ -86,7 +92,10 @@ void main() async {
         try {
           await FlutterDisplayMode.setHighRefreshRate();
         } catch (e) {
-          DebugLogger.logSimple('DisplayMode', 'Failed to set high refresh rate: $e');
+          DebugLogger.logSimple(
+            'DisplayMode',
+            'Failed to set high refresh rate: $e',
+          );
         }
       }
 
@@ -159,6 +168,8 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isRecording = false;
   String _initStatus = 'Starting…';
   bool _isToggling = false; // Prevents double-tap hardware crashes
+  bool _isEngineLoading =
+      false; // Tracks if ASR is compiling/extracting when user presses record
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
 
@@ -183,7 +194,10 @@ class _OrchestratorState extends State<_Orchestrator> {
             _stopVoiceSearch(precalculatedResult: rtResult);
           } else if (res.isFinal) {
             // Sherpa's VAD detected 4s of silence
-            DebugLogger.log('VoiceSearch', 'Auto-stopping on VAD endpoint (4s silence)');
+            DebugLogger.log(
+              'VoiceSearch',
+              'Auto-stopping on VAD endpoint (4s silence)',
+            );
             _stopVoiceSearch();
           }
         });
@@ -212,8 +226,8 @@ class _OrchestratorState extends State<_Orchestrator> {
     super.dispose();
   }
 
-  /// Sequential initialization pipeline.
-  /// Each step updates the splash screen status text.
+  /// Sequential initialization pipeline in the background.
+  /// Does not block the splash screen for the heavy model extraction.
   Future<void> _init() async {
     try {
       if (mounted) setState(() => _initStatus = 'Preparing ASR engine…');
@@ -301,9 +315,8 @@ class _OrchestratorState extends State<_Orchestrator> {
           if (mounted) {
             showDialog(
               context: context,
-              builder: (ctx) => const PermissionDialog(
-                reason: PermissionReason.tracking,
-              ),
+              builder: (ctx) =>
+                  const PermissionDialog(reason: PermissionReason.tracking),
             );
           }
           _isToggling = false;
@@ -312,8 +325,12 @@ class _OrchestratorState extends State<_Orchestrator> {
 
         // Ensure engine is ready (may still be initializing in background)
         if (!_engine.isInitialized) {
-          // Trigger initialize just in case, but DON'T await
-          _engine.initialize();
+          if (mounted) setState(() => _isEngineLoading = true);
+          try {
+            await _engine.initialize();
+          } finally {
+            if (mounted) setState(() => _isEngineLoading = false);
+          }
         }
 
         await WakelockPlus.enable();
@@ -370,9 +387,8 @@ class _OrchestratorState extends State<_Orchestrator> {
         if (mounted) {
           showDialog(
             context: context,
-            builder: (ctx) => const PermissionDialog(
-              reason: PermissionReason.voiceSearch,
-            ),
+            builder: (ctx) =>
+                const PermissionDialog(reason: PermissionReason.voiceSearch),
           );
         }
         _isToggling = false;
@@ -380,7 +396,12 @@ class _OrchestratorState extends State<_Orchestrator> {
       }
 
       if (!_engine.isInitialized) {
-        _engine.initialize();
+        if (mounted) setState(() => _isEngineLoading = true);
+        try {
+          await _engine.initialize();
+        } finally {
+          if (mounted) setState(() => _isEngineLoading = false);
+        }
       }
 
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
@@ -575,6 +596,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     return TrackingScreen(
       controller: _ctrl!,
       isRecording: _isRecording,
+      isLoadingEngine: _isEngineLoading,
       isVoiceSearching: _isVoiceSearching,
       voiceSearchText: _voiceSearchAsrText,
       onToggleRecord: _toggleRecord,
