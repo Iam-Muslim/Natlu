@@ -87,17 +87,7 @@ void main() async {
       );
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-      // Request highest possible refresh rate (e.g., 120Hz) on Android
-      if (Platform.isAndroid) {
-        try {
-          await FlutterDisplayMode.setHighRefreshRate();
-        } catch (e) {
-          DebugLogger.logSimple(
-            'DisplayMode',
-            'Failed to set high refresh rate: $e',
-          );
-        }
-      }
+
 
       await AppState.instance.load();
       runApp(const QuranApp());
@@ -206,17 +196,38 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     _init();
     _checkForUpdates();
+
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        try {
+          await FlutterDisplayMode.setHighRefreshRate();
+        } catch (e) {
+          DebugLogger.logSimple(
+            'DisplayMode',
+            'Failed to set high refresh rate: $e',
+          );
+        }
+      });
+    }
   }
 
   Future<void> _checkForUpdates() async {
     if (!Platform.isAndroid) return;
     try {
+      const platform = MethodChannel('com.recitequran.app/playstore');
+      final bool hasPlayStore = await platform.invokeMethod('isPlayStoreInstalled');
+      
+      if (!hasPlayStore) {
+        DebugLogger.logSimple('Update', 'Play Store missing (LineageOS). Bypassing Play Core API.');
+        return;
+      }
+
       final info = await InAppUpdate.checkForUpdate();
       if (info.updateAvailability == UpdateAvailability.updateAvailable) {
         await InAppUpdate.performImmediateUpdate();
       }
     } catch (e) {
-      DebugLogger.logSimple('Update', "Update check failed: $e");
+      DebugLogger.logSimple('Update', "Play Core update check aborted safely: $e");
     }
   }
 

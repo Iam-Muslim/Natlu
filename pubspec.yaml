@@ -25,12 +25,6 @@ dependencies:
   wakelock_plus: ^1.6.1
 
 
-dependency_overrides:
-  sherpa_onnx:
-    git:
-      url: https://github.com/Iam-Muslim/ReciteQuran.git
-      ref: sherpa_onnx
-      path: flutter/sherpa_onnx
 
 dev_dependencies:
   flutter_test:

@@ -81,9 +81,14 @@ class SherpaEngine {
       data.lengthInBytes,
     );
 
+    // Transfer ownership of the massive byte array to the background isolate
+    // to prevent a 130MB Out-Of-Memory (OOM) copy spike on low-RAM devices (e.g. Redmi).
+    final transferable = TransferableTypedData.fromList([bytes]);
+
     // Write to disk in a background isolate to prevent UI freezing
     await Isolate.run(() async {
-      await File(targetPath).writeAsBytes(bytes, flush: true);
+      final transferredBytes = transferable.materialize().asUint8List();
+      await File(targetPath).writeAsBytes(transferredBytes, flush: true);
     });
 
     if (await file.length() == 0) {
@@ -301,8 +306,10 @@ class SherpaEngine {
               recognizer = tryCreateRecognizer(
                 Platform.isAndroid ? 'xnnpack' : 'cpu',
               );
-            } catch (_) {
+            } catch (e) {
               if (Platform.isAndroid) {
+                // Cannot use DebugLogger directly in isolate, send via port
+                // Hardware acceleration failed (Custom ROM HAL). Falling back to pure CPU.
                 recognizer = tryCreateRecognizer('cpu');
               } else {
                 rethrow;

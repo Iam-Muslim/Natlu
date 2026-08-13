@@ -69,15 +69,12 @@ android {
                 signingConfig = null
             }
             
-            isMinifyEnabled = true
-            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
             pickFirsts.add("**/libonnxruntime.so")
             pickFirsts.add("**/libc++_shared.so")
         }
