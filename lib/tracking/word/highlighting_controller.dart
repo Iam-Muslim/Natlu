@@ -41,12 +41,10 @@ class VerseMatch {
 class ProcessedAudioStream {
   final String asrText;
   final List<double> charDurations;
-  final List<double> charYsProbs;
 
   const ProcessedAudioStream({
     required this.asrText,
     required this.charDurations,
-    required this.charYsProbs,
   });
 
   bool get isEmpty => asrText.isEmpty;
@@ -61,21 +59,17 @@ class AsrTokenProcessor {
   final List<String> _filteredTokens = [];
   final List<double> _filteredSpikeTimes = [];
   final List<double> _filteredLastBlanks = [];
-  final List<double> _filteredTokenProbs = [];
 
   final StringBuffer _asrTextBuffer = StringBuffer();
   final List<double> _charDurations = [];
-  final List<double> _charYsProbs = [];
 
   void reset() {
     _lastRawTokens.clear();
     _filteredTokens.clear();
     _filteredSpikeTimes.clear();
     _filteredLastBlanks.clear();
-    _filteredTokenProbs.clear();
     _asrTextBuffer.clear();
     _charDurations.clear();
-    _charYsProbs.clear();
   }
 
   ProcessedAudioStream process(TranscriptionResult result) {
@@ -102,7 +96,6 @@ class AsrTokenProcessor {
       return ProcessedAudioStream(
         asrText: _asrTextBuffer.toString(),
         charDurations: _charDurations,
-        charYsProbs: _charYsProbs,
       );
     }
 
@@ -121,22 +114,14 @@ class AsrTokenProcessor {
         continue;
       }
 
-      double prob = 0.0;
-      if (result.ysProbs.length > i) {
-        prob = result.ysProbs[i];
-        if (prob < -2.0) continue;
-      }
-
       _filteredTokens.add(tok);
       _filteredSpikeTimes.add(realTs);
       _filteredLastBlanks.add(lastBlankTs);
-      _filteredTokenProbs.add(prob);
 
       final int fIdx = _filteredTokens.length - 1;
       final String token = _filteredTokens[fIdx];
       final double spikeTime = _filteredSpikeTimes[fIdx];
       final double lastBlankBefore = _filteredLastBlanks[fIdx];
-      final double probVal = _filteredTokenProbs[fIdx];
 
       double prevSpikeTime =
           (fIdx == 0) ? max(0.0, spikeTime - 0.15) : _filteredSpikeTimes[fIdx - 1];
@@ -203,14 +188,12 @@ class AsrTokenProcessor {
         _asrTextBuffer.write(token[j]);
         final double charDur = tokenDur * (charWeights[j] / totalWeight);
         _charDurations.add(charDur);
-        _charYsProbs.add(probVal);
       }
     }
 
     return ProcessedAudioStream(
       asrText: _asrTextBuffer.toString(),
       charDurations: _charDurations,
-      charYsProbs: _charYsProbs,
     );
   }
 }
@@ -662,7 +645,6 @@ class HighlightingController extends ChangeNotifier {
       _alignmentIsolate.syncStream(
         asrText,
         stream.charDurations,
-        stream.charYsProbs,
         isNewSegment,
         _currentMatch?.verse.ayah ?? 0,
       );

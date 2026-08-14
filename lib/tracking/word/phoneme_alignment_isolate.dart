@@ -37,7 +37,6 @@ sealed class IsolateCommand {
         return SyncStreamCommand(
           asrText: map['tokens'] as String? ?? '',
           timestamps: (map['timestamps'] as List?)?.cast<double>() ?? const [],
-          ysProbs: (map['ys_probs'] as List?)?.cast<double>() ?? const [],
           isNewSegment: map['is_new_segment'] as bool? ?? false,
           ayahNumber: map['ayah_number'] as int? ?? 0,
         );
@@ -101,14 +100,12 @@ class SetSurahReferenceCommand extends IsolateCommand {
 class SyncStreamCommand extends IsolateCommand {
   final String asrText;
   final List<double> timestamps;
-  final List<double> ysProbs;
   final bool isNewSegment;
   final int ayahNumber;
 
   const SyncStreamCommand({
     required this.asrText,
     required this.timestamps,
-    this.ysProbs = const [],
     this.isNewSegment = false,
     this.ayahNumber = 0,
   });
@@ -118,7 +115,6 @@ class SyncStreamCommand extends IsolateCommand {
         'command': 'sync_stream',
         'tokens': asrText,
         'timestamps': timestamps,
-        'ys_probs': ysProbs,
         'is_new_segment': isNewSegment,
         'ayah_number': ayahNumber,
       };
@@ -307,7 +303,7 @@ class PhonemeAlignmentIsolate {
     receivePort.listen((message) {
       if (message is SendPort) {
         _sendPort = message;
-        completer.complete();
+        if (!completer.isCompleted) completer.complete();
       } else if (message is Map) {
         try {
           final event = IsolateEvent.fromMap(message);
@@ -324,7 +320,18 @@ class PhonemeAlignmentIsolate {
       }
     });
 
-    return completer.future;
+    // Guard against the isolate dying before sending its SendPort back
+    // (e.g. OOM on low-RAM devices). Without a timeout, this Completer
+    // would hang forever, silently blocking the entire alignment pipeline.
+    return completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        DebugLogger.log(
+          'PhonemeAlignmentIsolate',
+          '⚠️ Alignment isolate failed to handshake within 10s — isolate likely OOM-killed. Proceeding without alignment.',
+        );
+      },
+    );
   }
 
   void send(IsolateCommand command) {
@@ -360,19 +367,17 @@ class PhonemeAlignmentIsolate {
   }
 
   void syncStream(
-    String fullSegmentAsr,
-    List<double> segmentTimestamps, [
-    List<double>? segmentYsProbs,
+    String segmentText,
+    List<double>? segmentTimestamps, [
     bool isNewSegment = false,
-    int ayahNumber = 0,
+    int? ayahNumber,
   ]) {
     send(
       SyncStreamCommand(
-        asrText: fullSegmentAsr,
-        timestamps: segmentTimestamps,
-        ysProbs: segmentYsProbs ?? const [],
+        asrText: segmentText,
+        timestamps: segmentTimestamps ?? const [],
         isNewSegment: isNewSegment,
-        ayahNumber: ayahNumber,
+        ayahNumber: ayahNumber ?? 0,
       ),
     );
   }

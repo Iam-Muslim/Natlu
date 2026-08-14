@@ -231,7 +231,6 @@ class ErrorExplainer {
     required int startWordId,
     required int nextWordId,
     required int totalAyahWords,
-    double? matchScore,
     String? previousWordTail,
   }) {
     final Map<int, List<ReciterError>> errorsByWord = {};
@@ -310,9 +309,6 @@ class ErrorExplainer {
         (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
       ),
     );
-    // Note: The Confidence-Gate (which used to clear errors if matchScore > 0.15)
-    // has been removed. We want Tajweed errors (yellow) and Normal errors (red)
-    // to always be passed to the UI for accurate highlighting, regardless of score.
     // ── ERROR FILTERING ──
     // Show all errors (Only Dictation Threshold is affected by engine mode).
     errorsByWord.forEach((wIdx, list) {

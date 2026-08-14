@@ -53,7 +53,7 @@ class AudioProcessor {
           usage: AndroidAudioUsage.voiceCommunication, // Used for audio focus
         ),
         androidAudioFocusGainType:
-            AndroidAudioFocusGainType.gainTransientExclusive,
+            AndroidAudioFocusGainType.gainTransientMayDuck,
         androidWillPauseWhenDucked: true,
       ),
     );

@@ -1,7 +1,7 @@
 name: the_great_quran
 description: "The Great Quran — Real-time recitation tracker"
 publish_to: 'none'
-version: 1.0.1+14
+version: 1.0.2+15
 
 environment:
   sdk: ^3.11.5
@@ -12,15 +12,15 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_displaymode: ^0.7.0
-  in_app_update: ^4.2.5
+  in_app_update: ^5.0.0
 
   path_provider: ^2.1.5
-  permission_handler: ^12.0.1
-  record: ^6.2.0
+  permission_handler: ^13.0.1
+  record: ^7.1.1
 
   share_plus: ^13.1.0
   shared_preferences: ^2.2.0
-  sherpa_onnx: ^1.13.1
+  sherpa_onnx: ^1.13.5
   super_sliver_list: ^0.4.1
   wakelock_plus: ^1.6.1
 

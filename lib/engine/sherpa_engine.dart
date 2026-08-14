@@ -14,7 +14,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -29,7 +28,6 @@ class TranscriptionResult {
   final int startTime;
   final List<String> tokens;
   final List<double> timestamps;
-  final List<double> ysProbs;
   final int streamEpoch;
 
   TranscriptionResult({
@@ -38,7 +36,6 @@ class TranscriptionResult {
     this.startTime = 0,
     this.tokens = const [],
     this.timestamps = const [],
-    this.ysProbs = const [],
     this.streamEpoch = 0,
   });
 }
@@ -69,10 +66,15 @@ class SherpaEngine {
     );
 
     if (await file.exists()) {
-      return file.path;
+      // Validate the existing file isn't from a crashed partial write.
+      // If the file is suspiciously small (< 1KB), nuke it and re-extract.
+      final int existingLen = await file.length();
+      if (existingLen > 1024) {
+        return file.path;
+      }
+      // Corrupt/truncated file from a previous OOM crash. Delete and re-extract.
+      await file.delete();
     }
-
-    final targetPath = file.path;
 
     // Load asset on the main thread where ServicesBinding is initialized
     final ByteData data = await rootBundle.load(assetPath);
@@ -81,21 +83,25 @@ class SherpaEngine {
       data.lengthInBytes,
     );
 
-    // Transfer ownership of the massive byte array to the background isolate
-    // to prevent a 130MB Out-Of-Memory (OOM) copy spike on low-RAM devices (e.g. Redmi).
-    final transferable = TransferableTypedData.fromList([bytes]);
+    // ATOMIC WRITE: Write to a .tmp file first, then rename.
+    // If the app is OOM-killed during writeAsBytes, the .tmp file is left
+    // as garbage but the real file path doesn't exist yet, so the next
+    // launch will correctly re-extract instead of loading a corrupt file.
+    final File tmpFile = File('${file.path}.tmp');
+    await tmpFile.writeAsBytes(bytes, flush: true);
 
-    // Write to disk in a background isolate to prevent UI freezing
-    await Isolate.run(() async {
-      final transferredBytes = transferable.materialize().asUint8List();
-      await File(targetPath).writeAsBytes(transferredBytes, flush: true);
-    });
-
-    if (await file.length() == 0) {
+    // Validate the write completed fully
+    final int writtenLen = await tmpFile.length();
+    if (writtenLen != bytes.length) {
+      await tmpFile.delete();
       throw Exception(
-        'CRITICAL: $assetPath copied as 0 bytes — check pubspec.yaml.',
+        'CRITICAL: $assetPath partial write — expected ${bytes.length} bytes, got $writtenLen.',
       );
     }
+
+    // Atomic rename: this is an inode operation, not a data copy.
+    // It either succeeds completely or fails — no partial state.
+    await tmpFile.rename(file.path);
 
     return file.path;
   }
@@ -161,19 +167,6 @@ class SherpaEngine {
           if (message.isFinal) {
             DebugLogger.log('ASR', '⚡ Endpoint detected (${latency}ms)');
           }
-
-          if (message.ysProbs.isNotEmpty) {
-            final minLogProb = message.ysProbs.reduce(
-              (curr, next) => curr < next ? curr : next,
-            );
-            final double minConfidencePercentage = exp(minLogProb) * 100;
-            if (minConfidencePercentage < 80.0) {
-              DebugLogger.log(
-                'ASR-CONFIDENCE',
-                '⚠️ Low confidence detected: ${minConfidencePercentage.toStringAsFixed(1)}%',
-              );
-            }
-          }
         }
 
         _outputController.add(
@@ -183,7 +176,6 @@ class SherpaEngine {
             startTime: message.startTime,
             tokens: message.tokens,
             timestamps: message.timestamps,
-            ysProbs: message.ysProbs,
             streamEpoch: message.streamEpoch,
           ),
         );
@@ -302,14 +294,38 @@ class SherpaEngine {
               );
             }
 
+            final File lockFile = File('${File(modelPath).parent.path}/xnnpack_lock');
+            String provider = 'cpu';
+
+            if (Platform.isAndroid) {
+              if (lockFile.existsSync()) {
+                // A crash loop was detected! The app natively aborted (SIGILL/SIGSEGV)
+                // during the previous XNNPACK initialization. We must fallback to 'cpu'.
+                provider = 'cpu';
+              } else {
+                // First attempt. Create the poison pill lock file.
+                // If XNNPACK natively aborts, this file will remain on disk, 
+                // protecting the next startup.
+                lockFile.createSync();
+                provider = 'xnnpack';
+              }
+            }
+
             try {
-              recognizer = tryCreateRecognizer(
-                Platform.isAndroid ? 'xnnpack' : 'cpu',
-              );
+              recognizer = tryCreateRecognizer(provider);
+              // DO NOT delete lockfile here!
+              // XNNPACK lazily initializes its compute kernels — it probes
+              // /proc/cpuinfo during the FIRST `decode()` call, not during
+              // model loading. On LineageOS, the SIGILL fires at decode(),
+              // not at OnlineRecognizer(). If we delete the lock here, the
+              // crash won't be detected and we get an infinite crash loop.
             } catch (e) {
-              if (Platform.isAndroid) {
-                // Cannot use DebugLogger directly in isolate, send via port
-                // Hardware acceleration failed (Custom ROM HAL). Falling back to pure CPU.
+              // Graceful Dart exception during model loading (not a native abort).
+              if (lockFile.existsSync()) {
+                lockFile.deleteSync();
+              }
+              if (Platform.isAndroid && provider == 'xnnpack') {
+                // Fallback to CPU on standard initialization errors.
                 recognizer = tryCreateRecognizer('cpu');
               } else {
                 rethrow;
@@ -320,6 +336,14 @@ class SherpaEngine {
             stream!.acceptWaveform(sampleRate: 16000, samples: primingBuffer);
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
+            }
+
+            // ═══ SAFE TO DELETE LOCKFILE NOW ═══
+            // If we reach this line, XNNPACK successfully executed its first
+            // inference pass (which is when it lazily probes the CPU and selects
+            // optimized kernels). The lockfile can now safely be removed.
+            if (lockFile.existsSync()) {
+              lockFile.deleteSync();
             }
 
             mainSendPort.send(const SherpaInitSuccessEvent());
@@ -351,14 +375,6 @@ class SherpaEngine {
             recognizer!.decode(stream!);
           }
 
-          List<double> extractYsProbs(dynamic result) {
-            try {
-              return List<double>.from(result.ysProbs);
-            } catch (_) {
-              return [];
-            }
-          }
-
           final partial = recognizer!.getResult(stream!);
           final bool endpointDetected = recognizer!.isEndpoint(stream!);
 
@@ -368,7 +384,6 @@ class SherpaEngine {
                 text: partial.text,
                 tokens: List<String>.from(partial.tokens),
                 timestamps: List<double>.from(partial.timestamps),
-                ysProbs: extractYsProbs(partial),
                 isFinal: false,
                 startTime: startTime,
                 streamEpoch: isolateStreamEpoch,
@@ -390,7 +405,6 @@ class SherpaEngine {
                 text: finalResult.text,
                 tokens: List<String>.from(finalResult.tokens),
                 timestamps: List<double>.from(finalResult.timestamps),
-                ysProbs: extractYsProbs(finalResult),
                 isFinal: true,
                 startTime: startTime,
                 streamEpoch: isolateStreamEpoch,

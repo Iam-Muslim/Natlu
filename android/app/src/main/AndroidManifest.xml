@@ -8,7 +8,7 @@
         android:label="@string/app_name"
         android:name="${applicationName}"
         android:largeHeap="true"
-        android:extractNativeLibs="true"
+
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -44,6 +44,8 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Required to check for Play Store existence to safely bypass InAppUpdate -->
+        <package android:name="com.android.vending" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -64,12 +64,11 @@ final class SherpaInitErrorEvent extends SherpaEvent {
   const SherpaInitErrorEvent(this.error);
 }
 
-/// Streaming transcription result containing decoded text, tokens, timestamps, and acoustic log-probabilities.
+/// Streaming transcription result containing decoded text, tokens, and timestamps.
 final class SherpaTranscriptionEvent extends SherpaEvent {
   final String text;
   final List<String> tokens;
   final List<double> timestamps;
-  final List<double> ysProbs;
   final bool isFinal;
   final int startTime;
   final int streamEpoch;
@@ -78,7 +77,6 @@ final class SherpaTranscriptionEvent extends SherpaEvent {
     required this.text,
     required this.tokens,
     required this.timestamps,
-    required this.ysProbs,
     required this.isFinal,
     required this.startTime,
     required this.streamEpoch,

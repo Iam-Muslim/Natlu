@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'dart:isolate';
 import 'package:flutter/services.dart';
+
 
 // ---------------------------------------------------------------------------
 // quran_data.dart
@@ -122,9 +122,12 @@ class QuranMetadataService {
       rethrow;
     }
 
-    _rawJson = await Isolate.run(
-      () => jsonDecode(phonemeData) as Map<String, dynamic>,
-    );
+    // Decode synchronously on the main isolate.
+    // Spawning a 3rd concurrent isolate here (alongside the Sherpa isolate and the
+    // alignment isolate) pushes RSS to ~300MB+ during startup on 32-bit low-RAM
+    // devices (e.g. Redmi 2020), triggering the OOM killer.
+    // jsonDecode of the ~15MB Quran JSON takes < 200ms — acceptable for a one-time load.
+    _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
   }
 
   Map<String, dynamic>? get rawJson => _rawJson;

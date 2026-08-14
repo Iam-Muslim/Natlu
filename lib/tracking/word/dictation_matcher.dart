@@ -30,48 +30,10 @@ class AlignmentConfig {
   /// Penalty cost for hallucinating an extra phoneme (Insertions).
   final double costIns;
 
-  /// Whether forward lookahead (word skip detection) is enabled (Tier 2).
-  /// (Matches W+1 in isolation using Tier 1 cost parameters).
-  final bool enableLookahead;
-
-  /// Maximum words ahead to search for a skip in Tier 2 (typically 1, i.e., W+1).
-  final int maxLookaheadWords;
-
-  /// Relative threshold multiplier for lookahead acceptance (e.g. 0.95).
-  final double lookaheadThresholdFactor;
-
-  /// Whether multi-word span fallback (Tier 3) is enabled.
-  /// (Matches W+1 using looser cost parameters to recover from phonetic drift).
-  final bool enableSpanFallback;
-
-  /// Relative threshold multiplier for span fallback (e.g. 1.15).
-  final double spanThresholdFactor;
-
-  /// Minimum unconsumed chunks required in buffer before attempting span fallback.
-  final int minSpanBufferChunks;
-
-  /// Score margin differential required for lookahead when chained confirmation is not available.
-  final double lookaheadMarginDifferential;
-
-  /// Penalty added per skipped ASR chunk during Lookahead (Tier 2).
-  final double lookaheadJumpPenalty;
-
-  /// Minimum phonetic chunks of word W+2 required for chained confirmation window.
-  final int chainedConfirmationPrefixChunks;
-
   const AlignmentConfig({
     required this.threshold,
     this.costDel = 1.0,
     this.costIns = 1.0,
-    this.enableLookahead = true,
-    this.maxLookaheadWords = 1,
-    this.lookaheadThresholdFactor = 0.95,
-    this.enableSpanFallback = true,
-    this.spanThresholdFactor = 1.15,
-    this.minSpanBufferChunks = 3,
-    this.lookaheadMarginDifferential = 0.10,
-    this.lookaheadJumpPenalty = 0.015,
-    this.chainedConfirmationPrefixChunks = 2,
   });
 
   /// Factory helper for standard reciting mode.
@@ -82,14 +44,6 @@ class AlignmentConfig {
       threshold: 0.25,
       costDel: 1.0,
       costIns: 1.0,
-      enableLookahead: true,
-      maxLookaheadWords: 1,
-      lookaheadThresholdFactor: 0.95,
-      enableSpanFallback: true,
-      spanThresholdFactor: 1.15,
-      minSpanBufferChunks: 3,
-      lookaheadMarginDifferential: 0.10,
-      lookaheadJumpPenalty: 0.005,
     );
   }
 
@@ -98,33 +52,11 @@ class AlignmentConfig {
     double? threshold,
     double? costDel,
     double? costIns,
-    bool? enableLookahead,
-    int? maxLookaheadWords,
-    double? lookaheadThresholdFactor,
-    bool? enableSpanFallback,
-    double? spanThresholdFactor,
-    int? minSpanBufferChunks,
-    double? lookaheadMarginDifferential,
-    double? lookaheadJumpPenalty,
-    int? chainedConfirmationPrefixChunks,
   }) {
     return AlignmentConfig(
       threshold: threshold ?? this.threshold,
       costDel: costDel ?? this.costDel,
       costIns: costIns ?? this.costIns,
-      enableLookahead: enableLookahead ?? this.enableLookahead,
-      maxLookaheadWords: maxLookaheadWords ?? this.maxLookaheadWords,
-      lookaheadThresholdFactor:
-          lookaheadThresholdFactor ?? this.lookaheadThresholdFactor,
-      enableSpanFallback: enableSpanFallback ?? this.enableSpanFallback,
-      spanThresholdFactor: spanThresholdFactor ?? this.spanThresholdFactor,
-      minSpanBufferChunks: minSpanBufferChunks ?? this.minSpanBufferChunks,
-      lookaheadMarginDifferential:
-          lookaheadMarginDifferential ?? this.lookaheadMarginDifferential,
-      lookaheadJumpPenalty: lookaheadJumpPenalty ?? this.lookaheadJumpPenalty,
-      chainedConfirmationPrefixChunks:
-          chainedConfirmationPrefixChunks ??
-          this.chainedConfirmationPrefixChunks,
     );
   }
 }
@@ -136,7 +68,6 @@ class AlignmentResult {
   final int bestStartI;
   final int bestStartJ;
   final double bestScore;
-  final double pureAcousticScore;
   final List<PhonemeGroupAlignment> trace;
 
   const AlignmentResult({
@@ -145,7 +76,6 @@ class AlignmentResult {
     required this.bestStartI,
     required this.bestStartJ,
     required this.bestScore,
-    required this.pureAcousticScore,
     required this.trace,
   });
 
@@ -179,7 +109,6 @@ class ForwardDictationMatcher {
     required int expectedWord,
     required AlignmentConfig config,
     Int32List? targetEncodedIds,
-    List<double>? asrYsProbs,
     Set<int>? validEndChunks,
     void Function(String)? debugLog,
   }) {
@@ -251,28 +180,14 @@ class ForwardDictationMatcher {
       currStartI[0] = i;
 
       final int pId = pIds[i - 1];
-      
-      // Extract acoustic confidence (log-prob). Default to 0.0 (log(1) = 0) if missing.
-      final double logProb = (asrYsProbs != null && (i - 1) < asrYsProbs.length)
-          ? asrYsProbs[i - 1]
-          : 0.0;
-          
-      // Convert log-probability to linear probability (0.0 to 1.0)
-      final double linearProb = exp(logProb);
-          
-      // Dampen the weight so penalties never drop below 50%
-      final double weight = 0.5 + (0.5 * linearProb);
 
       for (int j = 1; j <= n; j++) {
         final int rId = rIds[j - 1];
 
-        // If ASR confidence is low, reduce penalty for ignoring it (Insertion)
-        final double delCost = prevCost[j] + (costIns * weight);
-        
+        final double delCost = prevCost[j] + costIns;
         final double insCost = currCost[j - 1] + costDel;
 
-        // If ASR confidence is low, reduce penalty for a phonetic mismatch
-        final double matchCost = PhonemeMatrix.getCost(pId, rId) * weight;
+        final double matchCost = PhonemeMatrix.getCost(pId, rId);
         final double replCost = prevCost[j - 1] + matchCost;
 
         double minVal = replCost;
@@ -451,7 +366,6 @@ class ForwardDictationMatcher {
           bestStartI: bestStartI,
           bestStartJ: 0,
           bestScore: wordScore,
-          pureAcousticScore: bestNormDist,
           trace: finalTrace,
         );
       }

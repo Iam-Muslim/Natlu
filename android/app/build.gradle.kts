@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.recitequran.app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     val keystoreProperties = Properties()
@@ -77,6 +77,7 @@ android {
         jniLibs {
             pickFirsts.add("**/libonnxruntime.so")
             pickFirsts.add("**/libc++_shared.so")
+            useLegacyPackaging = true
         }
     }
 
