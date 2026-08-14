@@ -140,10 +140,16 @@ class DictationSequencer {
 
   /// Ingests streaming ASR audio data and triggers monotonic sequence evaluation.
   void syncStream(SyncStreamCommand cmd) {
-    if (cmd.isNewSegment || cmd.asrText.length < currentSegmentAsr.length) {
+    if (cmd.isNewSegment) {
       asrConsumedTokenCount = 0;
       debugLog(
-        '🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.',
+        '🔄 [SYNC] New ASR segment started (Explicit Reset). Consumed tokens reset to 0.',
+      );
+    } else if (cmd.asrText.length < currentSegmentAsr.length) {
+      // Safe prefix clamping: if Sherpa prunes the stream upstream, we clamp rather than zeroing out
+      asrConsumedTokenCount = min(asrConsumedTokenCount, cmd.asrText.length);
+      debugLog(
+        '🔄 [SYNC] Stream pruned upstream. Clamped consumed tokens to $asrConsumedTokenCount.',
       );
     }
 
@@ -217,42 +223,73 @@ class DictationSequencer {
           .map((t) => t.text)
           .toList();
 
-      // ── THE HOLY GRAIL: Single Full-Ayah Subsequence DTW ─────────
-      // Tests the current word and any skips or connections up to the end of the Ayah.
-      final int continuousEndChunk = wordEndChunk[wordCount - 1];
+      // ── THE HOLY GRAIL: Parallel Sliding Horizon Scanning (PSHS) ─────────
+      // Tests up to 25 upcoming words independently for 100% Free Skips across entire Ayahs.
+      const int lookaheadWordSpan = 25;
+      final int maxLookaheadWord = min(wordCount, targetWordCursor + lookaheadWordSpan);
 
-      final Set<int> validEnds = {};
-      for (int w = targetWordCursor; w < wordCount; w++) {
-        validEnds.add(wordEndChunk[w] - winStartChunk);
-      }
+      AlignmentResult? bestResult;
+      int matchedWordIdx = targetWordCursor;
 
-      AlignmentResult? result = _alignWindow(
-        asrStrings: unconsumedStrings,
-        startChunk: winStartChunk,
-        endChunk: continuousEndChunk,
-        expectedWord: targetWordCursor,
-        config: alignmentConfig,
-        validEndChunks: validEnds,
-      );
+      for (int w = targetWordCursor; w < maxLookaheadWord; w++) {
+        final int wStartChunk = wordStartChunk[w];
+        final int wEndChunk = wordEndChunk[w];
+        final int refLength = wEndChunk - wStartChunk;
+        
+        if (refLength <= 0) continue;
 
-      if (result != null) {
-        int matchedWordIdx = targetWordCursor;
-        for (int w = targetWordCursor; w < wordCount; w++) {
-          if (result.bestJ == (wordEndChunk[w] - winStartChunk)) {
-            matchedWordIdx = w;
-            break;
+        final int skipDistance = w - targetWordCursor;
+        double effectiveThreshold = alignmentConfig.threshold;
+
+        // --- ANTI-DRIFT & FALSE JUMP PROTECTION ---
+        if (skipDistance > 0) {
+          // 1. Distance Penalty: Tighten threshold by 0.02 for every word skipped
+          effectiveThreshold = max(0.12, effectiveThreshold - (skipDistance * 0.02));
+          
+          // 2. Short Word Anchor Protection: Don't allow distant jumps for tiny ambiguous words
+          if (refLength <= 4) {
+             effectiveThreshold = max(0.10, effectiveThreshold - 0.05);
+             if (skipDistance > 5 && refLength <= 3) {
+                // Ignore tiny prepositions (length <= 3) if jumping more than 5 words!
+                continue; 
+             }
+             if (skipDistance > 10 && refLength <= 4) {
+                // Ignore short words (length <= 4) if jumping massively (> 10 words).
+                // Requires the reciter to anchor on a larger, robust word (length 5+) to trigger a massive jump.
+                continue;
+             }
           }
         }
 
-        // Emit skipped words for anything between targetWordCursor and matchedWordIdx (exclusive of the matched sequence)
-        // Since Subsequence DTW naturaly traces the whole span, _commitMatch will handle it. 
-        // But to properly trigger `_emitSkippedWord` UI events for skips, we can do it here if needed, 
-        // or just rely on `_commitMatch`'s loop. However, `_commitMatch` emits `isRed: false`.
-        // The rule says "Word status (GREEN/RED/NEUTRAL) is derived from traceback coverage analysis".
-        // Let's rely on _commitMatch but we will need to update `_commitMatch` to check coverage.
-        
+        AlignmentResult? result = _alignWindow(
+          asrStrings: unconsumedStrings,
+          startChunk: wStartChunk,
+          endChunk: wEndChunk,
+          expectedWord: w,
+          config: alignmentConfig.copyWith(threshold: effectiveThreshold),
+        );
+
+        if (result != null) {
+          bestResult = result;
+          matchedWordIdx = w;
+          break; // First chronological match wins (closest to cursor)
+        }
+      }
+
+      if (bestResult != null) {
+        final int skippedChunks = wordStartChunk[matchedWordIdx] - winStartChunk;
+
+        final shiftedResult = AlignmentResult(
+          bestI: bestResult.bestI,
+          bestJ: bestResult.bestJ + skippedChunks,
+          bestStartI: bestResult.bestStartI,
+          bestStartJ: bestResult.bestStartJ + skippedChunks,
+          bestScore: bestResult.bestScore,
+          trace: bestResult.trace, // Removed shiftedTrace to fix double-shift bug
+        );
+
         _commitMatch(
-          result: result,
+          result: shiftedResult,
           unconsumedTokens: unconsumedTokens,
           fullCleanTokens: cleanTokens,
           targetWindow: refChunks.sublist(
@@ -432,12 +469,18 @@ class DictationSequencer {
       );
     }
 
-    targetWordCursor = endW;
-    asrConsumedTokenCount += result.bestI;
-
+    int tokensToAdvance = result.bestI;
     if (matchedRefSlice.isNotEmpty) {
-      lastMatchedPhoneme = matchedRefSlice.last;
+      final String lastChar = matchedRefSlice.last;
+      const List<String> waslChars = ['ا', 'و', 'ي', 'ى', 'ن', 'م', 'ں', 'ٍ', 'ٌ', 'ً'];
+      if (waslChars.any((c) => lastChar.contains(c)) && tokensToAdvance > 1) {
+        tokensToAdvance -= 1; // Soft overlap to allow Wasl/connected speech on next word
+      }
+      lastMatchedPhoneme = lastChar;
     }
+
+    targetWordCursor = endW;
+    asrConsumedTokenCount += tokensToAdvance;
   }
 
   int _getCharIndexForToken(List<PhonemeToken> tokens, int tokenIndex) {

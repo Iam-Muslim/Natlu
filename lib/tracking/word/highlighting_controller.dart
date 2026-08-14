@@ -351,6 +351,11 @@ class HighlightingController extends ChangeNotifier {
       }
 
       if (activeAyah.value != ayahNum) {
+        if (activeAyah.value != null && ayahNum > activeAyah.value!) {
+          for (int a = activeAyah.value!; a < ayahNum; a++) {
+            _completedAyahs.add(a);
+          }
+        }
         activeAyah.value = ayahNum;
         final v = repository.getVerse(_targetSurah, ayahNum);
         if (v != null) {
@@ -620,21 +625,6 @@ class HighlightingController extends ChangeNotifier {
     if (_expectingNewSegment) {
       isNewSegment = true;
       _expectingNewSegment = false;
-    } else if (!asrText.startsWith(_lastProcessedText)) {
-      int commonLen = 0;
-      final int minLen = min(_lastProcessedText.length, asrText.length);
-      for (int i = 0; i < minLen; i++) {
-        if (_lastProcessedText[i] == asrText[i]) {
-          commonLen++;
-        } else {
-          break;
-        }
-      }
-
-      if (commonLen == 0 ||
-          (commonLen < 5 && _lastProcessedText.length > 20)) {
-        isNewSegment = true;
-      }
     }
 
     if (asrText.isNotEmpty && _isolateStarted) {
