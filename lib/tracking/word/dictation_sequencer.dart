@@ -210,8 +210,13 @@ class DictationSequencer {
         break;
       }
 
+      // ── THE HOLY GRAIL: Continuous Subsequence DTW ─────────
+      // Tests up to 25 upcoming words continuously for native Wasl and free skips.
+      const int lookaheadWordSpan = 25;
+      final int maxLookaheadWord = min(wordCount, targetWordCursor + lookaheadWordSpan);
+
       final int winStartChunk = wordStartChunk[targetWordCursor];
-      final int winEndChunk = wordEndChunk[targetWordCursor];
+      final int winEndChunk = wordEndChunk[maxLookaheadWord - 1];
 
       if (winStartChunk >= winEndChunk) break;
 
@@ -223,73 +228,35 @@ class DictationSequencer {
           .map((t) => t.text)
           .toList();
 
-      // ── THE HOLY GRAIL: Parallel Sliding Horizon Scanning (PSHS) ─────────
-      // Tests up to 25 upcoming words independently for 100% Free Skips across entire Ayahs.
-      const int lookaheadWordSpan = 25;
-      final int maxLookaheadWord = min(wordCount, targetWordCursor + lookaheadWordSpan);
-
-      AlignmentResult? bestResult;
-      int matchedWordIdx = targetWordCursor;
-
+      Set<int> validStartChunks = {};
+      Set<int> validEndChunks = {};
+      
       for (int w = targetWordCursor; w < maxLookaheadWord; w++) {
-        final int wStartChunk = wordStartChunk[w];
-        final int wEndChunk = wordEndChunk[w];
-        final int refLength = wEndChunk - wStartChunk;
-        
-        if (refLength <= 0) continue;
-
-        final int skipDistance = w - targetWordCursor;
-        double effectiveThreshold = alignmentConfig.threshold;
-
-        // --- ANTI-DRIFT & FALSE JUMP PROTECTION ---
-        if (skipDistance > 0) {
-          // 1. Distance Penalty: Tighten threshold by 0.02 for every word skipped
-          effectiveThreshold = max(0.12, effectiveThreshold - (skipDistance * 0.02));
-          
-          // 2. Short Word Anchor Protection: Don't allow distant jumps for tiny ambiguous words
-          if (refLength <= 4) {
-             effectiveThreshold = max(0.10, effectiveThreshold - 0.05);
-             if (skipDistance > 5 && refLength <= 3) {
-                // Ignore tiny prepositions (length <= 3) if jumping more than 5 words!
-                continue; 
-             }
-             if (skipDistance > 10 && refLength <= 4) {
-                // Ignore short words (length <= 4) if jumping massively (> 10 words).
-                // Requires the reciter to anchor on a larger, robust word (length 5+) to trigger a massive jump.
-                continue;
-             }
-          }
-        }
-
-        AlignmentResult? result = _alignWindow(
-          asrStrings: unconsumedStrings,
-          startChunk: wStartChunk,
-          endChunk: wEndChunk,
-          expectedWord: w,
-          config: alignmentConfig.copyWith(threshold: effectiveThreshold),
-        );
-
-        if (result != null) {
-          bestResult = result;
-          matchedWordIdx = w;
-          break; // First chronological match wins (closest to cursor)
-        }
+          validStartChunks.add(wordStartChunk[w] - winStartChunk);
+          validEndChunks.add(wordEndChunk[w] - winStartChunk);
       }
 
-      if (bestResult != null) {
-        final int skippedChunks = wordStartChunk[matchedWordIdx] - winStartChunk;
+      AlignmentResult? bestResult = _alignWindow(
+        asrStrings: unconsumedStrings,
+        startChunk: winStartChunk,
+        endChunk: winEndChunk,
+        expectedWord: targetWordCursor,
+        config: alignmentConfig,
+        validStartChunks: validStartChunks,
+        validEndChunks: validEndChunks,
+      );
 
-        final shiftedResult = AlignmentResult(
-          bestI: bestResult.bestI,
-          bestJ: bestResult.bestJ + skippedChunks,
-          bestStartI: bestResult.bestStartI,
-          bestStartJ: bestResult.bestStartJ + skippedChunks,
-          bestScore: bestResult.bestScore,
-          trace: bestResult.trace, // Removed shiftedTrace to fix double-shift bug
-        );
+      if (bestResult != null) {
+        int matchedWordIdx = targetWordCursor;
+        for (int w = targetWordCursor; w < maxLookaheadWord; w++) {
+           if (wordEndChunk[w] - winStartChunk == bestResult.bestJ) {
+              matchedWordIdx = w;
+              break;
+           }
+        }
 
         _commitMatch(
-          result: shiftedResult,
+          result: bestResult,
           unconsumedTokens: unconsumedTokens,
           fullCleanTokens: cleanTokens,
           targetWindow: refChunks.sublist(
@@ -315,6 +282,7 @@ class DictationSequencer {
     required int endChunk,
     required int expectedWord,
     required AlignmentConfig config,
+    Set<int>? validStartChunks,
     Set<int>? validEndChunks,
     bool suppressLogs = false,
   }) {
@@ -323,6 +291,7 @@ class DictationSequencer {
       targetWindow: refChunks.sublist(startChunk, endChunk),
       expectedWord: expectedWord,
       config: config,
+      validStartChunks: validStartChunks,
       validEndChunks: validEndChunks,
       targetEncodedIds: Int32List.sublistView(
         refEncodedIds,
@@ -472,10 +441,6 @@ class DictationSequencer {
     int tokensToAdvance = result.bestI;
     if (matchedRefSlice.isNotEmpty) {
       final String lastChar = matchedRefSlice.last;
-      const List<String> waslChars = ['ا', 'و', 'ي', 'ى', 'ن', 'م', 'ں', 'ٍ', 'ٌ', 'ً'];
-      if (waslChars.any((c) => lastChar.contains(c)) && tokensToAdvance > 1) {
-        tokensToAdvance -= 1; // Soft overlap to allow Wasl/connected speech on next word
-      }
       lastMatchedPhoneme = lastChar;
     }
 

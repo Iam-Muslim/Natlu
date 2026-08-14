@@ -98,6 +98,8 @@ class ForwardDictationMatcher {
   Float64List _currCost = Float64List(256);
   Int32List _prevStartI = Int32List(256);
   Int32List _currStartI = Int32List(256);
+  Int32List _prevStartJ = Int32List(256);
+  Int32List _currStartJ = Int32List(256);
   Uint8List _op = Uint8List(256 * 256);
   Int32List _pIds = Int32List(256);
   Int32List _rIds = Int32List(256);
@@ -109,6 +111,7 @@ class ForwardDictationMatcher {
     required int expectedWord,
     required AlignmentConfig config,
     Int32List? targetEncodedIds,
+    Set<int>? validStartChunks,
     Set<int>? validEndChunks,
     void Function(String)? debugLog,
   }) {
@@ -128,6 +131,8 @@ class ForwardDictationMatcher {
       _currCost = Float64List(newCap);
       _prevStartI = Int32List(newCap);
       _currStartI = Int32List(newCap);
+      _prevStartJ = Int32List(newCap);
+      _currStartJ = Int32List(newCap);
     }
 
     final int requiredOp = (m + 1) * (n + 1);
@@ -162,22 +167,36 @@ class ForwardDictationMatcher {
     final Float64List currCost = _currCost;
     final Int32List prevStartI = _prevStartI;
     final Int32List currStartI = _currStartI;
+    final Int32List prevStartJ = _prevStartJ;
+    final Int32List currStartJ = _currStartJ;
     final Uint8List op = _op;
     final int opStride = n + 1;
 
+    double currentDelCost = 0.0;
+    int currentStartJ = 0;
     for (int j = 0; j <= n; j++) {
-      prevCost[j] = j * costDel;
+      bool isBoundary = validStartChunks != null ? validStartChunks.contains(j) : (j == 0);
+      if (isBoundary) {
+        currentDelCost = 0.0;
+        currentStartJ = j;
+      }
+      prevCost[j] = currentDelCost;
       prevStartI[j] = 0;
+      prevStartJ[j] = currentStartJ;
+      
+      currentDelCost += costDel;
     }
 
     double bestNormDist = double.infinity;
     int bestI = -1;
     int bestJ = -1;
     int bestStartI = 0;
+    int bestStartJ = 0;
 
     for (int i = 1; i <= m; i++) {
       currCost[0] = 0.0;
       currStartI[0] = i;
+      currStartJ[0] = 0;
 
       final int pId = pIds[i - 1];
 
@@ -193,21 +212,35 @@ class ForwardDictationMatcher {
         double minVal = replCost;
         int choice = AlignmentOp.replace.index;
         int sI = prevStartI[j - 1];
+        int sJ = prevStartJ[j - 1];
 
         if (delCost < minVal) {
           minVal = delCost;
           choice = AlignmentOp.insert.index;
           sI = prevStartI[j];
+          sJ = prevStartJ[j];
         }
 
         if (insCost < minVal) {
           minVal = insCost;
           choice = AlignmentOp.delete.index;
           sI = currStartI[j - 1];
+          sJ = currStartJ[j - 1];
+        }
+
+        if (validStartChunks != null && validStartChunks.contains(j - 1)) {
+          double restartCost = matchCost;
+          if (restartCost < minVal) {
+            minVal = restartCost;
+            choice = AlignmentOp.replace.index;
+            sI = i - 1;
+            sJ = j - 1;
+          }
         }
 
         currCost[j] = minVal;
         currStartI[j] = sI;
+        currStartJ[j] = sJ;
         op[i * opStride + j] = choice;
 
         bool isBoundary = false;
@@ -219,7 +252,8 @@ class ForwardDictationMatcher {
 
         if (isBoundary) {
           final int lengthAsr = i - sI;
-          final int denom = max(j, lengthAsr);
+          final int lengthRef = j - sJ;
+          final int denom = max(lengthRef, lengthAsr);
 
           if (denom > 0) {
             final double normDist = minVal / denom;
@@ -228,6 +262,7 @@ class ForwardDictationMatcher {
               bestI = i;
               bestJ = j;
               bestStartI = sI;
+              bestStartJ = sJ;
             }
           }
         }
@@ -236,6 +271,7 @@ class ForwardDictationMatcher {
       // Fast block transfer from curr to prev
       prevCost.setRange(0, n + 1, currCost);
       prevStartI.setRange(0, n + 1, currStartI);
+      prevStartJ.setRange(0, n + 1, currStartJ);
     }
 
     if (bestI != -1 && bestNormDist <= threshold) {
@@ -243,7 +279,7 @@ class ForwardDictationMatcher {
       int currJ = bestJ;
       final List<PhonemeGroupAlignment> trace = [];
 
-      while (currI > bestStartI || currJ > 0) {
+      while (currI > bestStartI || currJ > bestStartJ) {
         if (currI == bestStartI) {
           trace.add(
             PhonemeGroupAlignment(
@@ -255,7 +291,7 @@ class ForwardDictationMatcher {
           currJ--;
           continue;
         }
-        if (currJ == 0) {
+        if (currJ == bestStartJ) {
           trace.add(
             PhonemeGroupAlignment(
               opType: 'insert',
@@ -310,7 +346,7 @@ class ForwardDictationMatcher {
       final List<PhonemeGroupAlignment> finalTrace = trace.reversed.map((a) {
         return PhonemeGroupAlignment(
           opType: a.opType,
-          refIdx: a.refIdx >= 0 ? a.refIdx : -1,
+          refIdx: a.refIdx >= 0 ? a.refIdx - bestStartJ : -1,
           predIdx: a.predIdx >= 0 ? a.predIdx - bestStartI : -1,
         );
       }).toList();
@@ -340,21 +376,22 @@ class ForwardDictationMatcher {
         } else if (align.opType == 'replace') {
           final double exactCost = PhonemeMatrix.getCost(
             pIds[bestStartI + align.predIdx],
-            rIds[align.refIdx],
+            rIds[bestStartJ + align.refIdx],
           );
           totalPenalty += exactCost;
         }
       }
 
-      final int denom = max(asrLen, max(bestJ, 1));
+      final int matchLengthRef = bestJ - bestStartJ;
+      final int denom = max(asrLen, max(matchLengthRef, 1));
       final double wordScore = totalPenalty / denom;
 
-      final double coverage = bestJ > 0 ? (matchedRefChunks / bestJ) : 0.0;
-      final bool hasSufficientCoverage = bestJ <= 1
+      final double coverage = matchLengthRef > 0 ? (matchedRefChunks / matchLengthRef) : 0.0;
+      final bool hasSufficientCoverage = matchLengthRef <= 1
           ? (matchedRefChunks >= 1)
-          : (bestJ == 2 ? matchedRefChunks >= 2 : coverage >= 0.60);
+          : (matchLengthRef == 2 ? matchedRefChunks >= 2 : coverage >= 0.60);
 
-      final String refWordStr = targetWindow.sublist(0, bestJ).join('');
+      final String refWordStr = targetWindow.sublist(bestStartJ, bestJ).join('');
 
       if (wordScore <= threshold && hasSufficientCoverage) {
         debugLog?.call(
@@ -364,7 +401,7 @@ class ForwardDictationMatcher {
           bestI: bestI,
           bestJ: bestJ,
           bestStartI: bestStartI,
-          bestStartJ: 0,
+          bestStartJ: bestStartJ,
           bestScore: wordScore,
           trace: finalTrace,
         );
