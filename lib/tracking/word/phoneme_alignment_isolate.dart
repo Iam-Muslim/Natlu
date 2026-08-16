@@ -35,7 +35,7 @@ sealed class IsolateCommand {
 
       case 'sync_stream':
         return SyncStreamCommand(
-          asrText: map['tokens'] as String? ?? '',
+          asrTokens: (map['tokens'] as List?)?.cast<String>() ?? const [],
           timestamps: (map['timestamps'] as List?)?.cast<double>() ?? const [],
           isNewSegment: map['is_new_segment'] as bool? ?? false,
           ayahNumber: map['ayah_number'] as int? ?? 0,
@@ -98,13 +98,13 @@ class SetSurahReferenceCommand extends IsolateCommand {
 }
 
 class SyncStreamCommand extends IsolateCommand {
-  final String asrText;
+  final List<String> asrTokens;
   final List<double> timestamps;
   final bool isNewSegment;
   final int ayahNumber;
 
   const SyncStreamCommand({
-    required this.asrText,
+    required this.asrTokens,
     required this.timestamps,
     this.isNewSegment = false,
     this.ayahNumber = 0,
@@ -113,7 +113,7 @@ class SyncStreamCommand extends IsolateCommand {
   @override
   Map<String, dynamic> toMap() => {
         'command': 'sync_stream',
-        'tokens': asrText,
+        'tokens': asrTokens,
         'timestamps': timestamps,
         'is_new_segment': isNewSegment,
         'ayah_number': ayahNumber,
@@ -225,6 +225,7 @@ class DebugLogEvent extends IsolateEvent {
       };
 }
 
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKGROUND ISOLATE WORKER ENTRYPOINT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -269,7 +270,7 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
       mainSendPort.send(
         DebugLogEvent(
           message: '⚠️ [ISOLATE ERROR] Handled exception: $e\n$stack',
-          asrBuffer: sequencer.currentSegmentAsr,
+          asrBuffer: sequencer.currentSegmentAsrTokens.join(''),
         ).toMap(),
       );
     }
@@ -367,14 +368,14 @@ class PhonemeAlignmentIsolate {
   }
 
   void syncStream(
-    String segmentText,
+    List<String> segmentTokens,
     List<double>? segmentTimestamps, [
     bool isNewSegment = false,
     int? ayahNumber,
   ]) {
     send(
       SyncStreamCommand(
-        asrText: segmentText,
+        asrTokens: segmentTokens,
         timestamps: segmentTimestamps ?? const [],
         isNewSegment: isNewSegment,
         ayahNumber: ayahNumber ?? 0,

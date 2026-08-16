@@ -195,7 +195,7 @@ class ForwardDictationMatcher {
 
     for (int i = 1; i <= m; i++) {
       currCost[0] = 0.0;
-      currStartI[0] = i;
+      currStartI[0] = 0;
       currStartJ[0] = 0;
 
       final int pId = pIds[i - 1];
@@ -211,7 +211,7 @@ class ForwardDictationMatcher {
 
         double minVal = replCost;
         int choice = AlignmentOp.replace.index;
-        int sI = prevStartI[j - 1];
+        int sI = (j == 1) ? (i - 1) : prevStartI[j - 1];
         int sJ = prevStartJ[j - 1];
 
         if (delCost < minVal) {
@@ -254,15 +254,60 @@ class ForwardDictationMatcher {
           final int lengthAsr = i - sI;
           final int lengthRef = j - sJ;
           final int denom = max(lengthRef, lengthAsr);
-
           if (denom > 0) {
             final double normDist = minVal / denom;
-            if (normDist <= bestNormDist) {
-              bestNormDist = normDist;
-              bestI = i;
-              bestJ = j;
-              bestStartI = sI;
-              bestStartJ = sJ;
+
+            // Forward skips (sJ > 0) require robust evidence to prevent trailing syllables
+            // of the previous word from triggering false jumps over the cursor word:
+            // - For multi-word skips (wordsSkipped >= 2): strictly require >= 3 reference chunks.
+            // - For single-word skips (wordsSkipped <= 1): allow 2 reference chunks if buffer has >= 3 tokens (preceding speech) and exact/near-exact match (normDist <= 0.05).
+            final bool isForwardJump = (sJ > 0);
+            int wordsSkipped = 0;
+            if (validStartChunks != null && isForwardJump) {
+              wordsSkipped = validStartChunks.where((start) => start < sJ).length;
+            }
+            final bool hasValidEvidence = !isForwardJump ||
+                (lengthRef >= 3 && lengthAsr >= 3) ||
+                (lengthRef == 2 && lengthAsr >= 2 && wordsSkipped <= 1 && m >= 3 && normDist <= 0.05);
+
+            final bool hasPotentialCoverage = (lengthRef <= 1) || (lengthAsr >= (lengthRef * 0.50).floor());
+
+            if (hasValidEvidence && hasPotentialCoverage) {
+              final double skipPenalty = isForwardJump ? (wordsSkipped * 0.050) : 0.0;
+              final double effectiveNormDist = normDist + skipPenalty;
+
+              bool shouldUpdate = false;
+              if (bestI == -1) {
+                shouldUpdate = isForwardJump
+                    ? (effectiveNormDist <= threshold * 0.80)
+                    : (effectiveNormDist <= threshold);
+              } else if (sJ == bestStartJ) {
+                // Same starting anchor: prefer lower normalized distance,
+                // or if tied, prefer ASR length closest to reference length (minimal insertion parsimony)
+                if (effectiveNormDist < bestNormDist - 0.001) {
+                  shouldUpdate = true;
+                } else if ((effectiveNormDist - bestNormDist).abs() <= 0.001) {
+                  final int currDiff = (lengthAsr - lengthRef).abs();
+                  final int bestDiff = ((bestI - bestStartI) - (bestJ - bestStartJ)).abs();
+                  shouldUpdate = (currDiff < bestDiff);
+                }
+              } else if (sJ == 0) {
+                shouldUpdate = (effectiveNormDist <= threshold);
+              } else if (bestStartJ == 0 && bestNormDist <= threshold) {
+                shouldUpdate = false;
+              } else if (sJ < bestStartJ) {
+                shouldUpdate = (effectiveNormDist <= bestNormDist + 0.05 && effectiveNormDist <= threshold);
+              } else {
+                shouldUpdate = (bestNormDist > threshold && effectiveNormDist <= threshold * 0.90);
+              }
+
+              if (shouldUpdate) {
+                bestNormDist = effectiveNormDist;
+                bestI = i;
+                bestJ = j;
+                bestStartI = sI;
+                bestStartJ = sJ;
+              }
             }
           }
         }
@@ -272,6 +317,30 @@ class ForwardDictationMatcher {
       prevCost.setRange(0, n + 1, currCost);
       prevStartI.setRange(0, n + 1, currStartI);
       prevStartJ.setRange(0, n + 1, currStartJ);
+    }
+
+    final int firstWordEndChunk = (validEndChunks != null && validEndChunks.isNotEmpty)
+        ? validEndChunks.first
+        : n;
+
+    if (debugLog != null && bestI != -1 && bestStartJ > 0) {
+      debugLog('🔍 [ALIGN CANDIDATE] bestI=$bestI, bestJ=$bestJ, bestStartI=$bestStartI, bestStartJ=$bestStartJ, firstWordEndChunk=$firstWordEndChunk, m=$m');
+    }
+
+    // If candidate is a forward jump, verify that the unconsumed stream is NOT
+    // an in-flight prefix of the current cursor word.
+    if (bestI != -1 && bestStartJ > 0 && firstWordEndChunk > 1) {
+      for (int j = 1; j < firstWordEndChunk; j++) {
+        if (prevStartJ[j] == 0) {
+          final double prefixScore = prevCost[j] / j;
+          if (prefixScore <= threshold) {
+            if (debugLog != null) {
+              debugLog('🚫 [PREFIX GUARD] Blocking forward jump (bestStartJ=$bestStartJ) because cursor prefix j=$j is active (prefixScore=$prefixScore <= $threshold)');
+            }
+            return null;
+          }
+        }
+      }
     }
 
     if (bestI != -1 && bestNormDist <= threshold) {
@@ -393,9 +462,14 @@ class ForwardDictationMatcher {
 
       final String refWordStr = targetWindow.sublist(bestStartJ, bestJ).join('');
 
-      if (wordScore <= threshold && hasSufficientCoverage) {
+      // Pillar IV: Adaptive Length Scoring (Bayesian Length-Normalized Scoring)
+      // Relax the threshold for shorter words where a single penalty creates a huge average cost.
+      final int effectiveRefLen = max(matchLengthRef, 1);
+      final double adaptiveThreshold = threshold * (1.0 + (1.5 / sqrt(effectiveRefLen)));
+
+      if (wordScore <= adaptiveThreshold && hasSufficientCoverage) {
         debugLog?.call(
-          '✅ ALIGN MATCH: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= $threshold (Coverage: ${(coverage * 100).toInt()}%)',
+          '✅ ALIGN MATCH: ref word is "$refWordStr", heard word is "$heardWordStr" | Score: ${wordScore.toStringAsFixed(3)} <= ${adaptiveThreshold.toStringAsFixed(3)} (Coverage: ${(coverage * 100).toInt()}%)',
         );
         return AlignmentResult(
           bestI: bestI,
@@ -407,8 +481,8 @@ class ForwardDictationMatcher {
         );
       }
 
-      final String reason = wordScore > threshold
-          ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
+      final String reason = wordScore > adaptiveThreshold
+          ? '(Score: ${wordScore.toStringAsFixed(3)} > ${adaptiveThreshold.toStringAsFixed(3)})'
           : (!hasSufficientCoverage
                 ? '(Insufficient Coverage: matched=$matchedRefChunks/$bestJ)'
                 : '(Failed Threshold)');

@@ -30,9 +30,10 @@ class DictationSequencer {
   // ---------------------------------------------------------------------------
   // ASR State
   // ---------------------------------------------------------------------------
-  String currentSegmentAsr = '';
+  List<String> currentSegmentAsrTokens = [];
   List<double> currentSegmentTimestamps = [];
   int asrConsumedTokenCount = 0;
+  bool isFinalSegment = false;
 
   // ---------------------------------------------------------------------------
   // Tracking Progress State
@@ -59,7 +60,7 @@ class DictationSequencer {
 
   void debugLog(String message) {
     mainSendPort.send(
-      DebugLogEvent(message: message, asrBuffer: currentSegmentAsr).toMap(),
+      DebugLogEvent(message: message, asrBuffer: currentSegmentAsrTokens.join('')).toMap(),
     );
   }
 
@@ -102,7 +103,7 @@ class DictationSequencer {
     }
 
     if (cmd.forceClear) {
-      currentSegmentAsr = '';
+      currentSegmentAsrTokens = [];
       currentSegmentTimestamps = [];
       asrConsumedTokenCount = 0;
       targetWordCursor = cmd.startGlobalWord.clamp(0, wordCount);
@@ -118,7 +119,7 @@ class DictationSequencer {
       '📖 [SURAH SET] Surah: $currentSurahNumber | Words: $wordCount | StartWord: $targetWordCursor | Tajweed: $isTajweed | Strict: normal',
     );
 
-    if (!cmd.forceClear && currentSegmentAsr.isNotEmpty) {
+    if (!cmd.forceClear && currentSegmentAsrTokens.isNotEmpty) {
       _processSequence();
     }
   }
@@ -128,7 +129,7 @@ class DictationSequencer {
     final int wordCount = wordBoundaries.length - 1;
     targetWordCursor = cmd.globalWordIndex.clamp(0, max(0, wordCount));
 
-    currentSegmentAsr = '';
+    currentSegmentAsrTokens = [];
     currentSegmentTimestamps = [];
     asrConsumedTokenCount = 0;
     lastMatchedPhoneme = null;
@@ -145,32 +146,24 @@ class DictationSequencer {
       debugLog(
         '🔄 [SYNC] New ASR segment started (Explicit Reset). Consumed tokens reset to 0.',
       );
-    } else if (cmd.asrText.length < currentSegmentAsr.length) {
+    } else if (cmd.asrTokens.length < currentSegmentAsrTokens.length) {
       // Safe prefix clamping: if Sherpa prunes the stream upstream, we clamp rather than zeroing out
-      asrConsumedTokenCount = min(asrConsumedTokenCount, cmd.asrText.length);
+      asrConsumedTokenCount = min(asrConsumedTokenCount, cmd.asrTokens.length);
       debugLog(
         '🔄 [SYNC] Stream pruned upstream. Clamped consumed tokens to $asrConsumedTokenCount.',
       );
     }
 
-    currentSegmentAsr = cmd.asrText;
+    currentSegmentAsrTokens = cmd.asrTokens;
     currentSegmentTimestamps = cmd.timestamps;
+    isFinalSegment = cmd.isNewSegment; // the cmd.isNewSegment actually means isFinal in Sherpa. Wait, it's called isNewSegment from UI, but it maps to isFinal.
 
     _processSequence();
   }
 
   /// Core alignment loop: matches unconsumed ASR tokens against the active expected word.
   void _processSequence() {
-    if (currentSegmentAsr.isEmpty) return;
-
-    final List<PhonemeToken> rawTokens =
-        QuranNormalizer.chunkPhonemesWithIndices(currentSegmentAsr);
-    final List<PhonemeToken> cleanTokens = rawTokens
-        .where(
-          (t) =>
-              t.text.trim().isNotEmpty && t.text != '<blank>' && t.text != 'ؙ',
-        )
-        .toList();
+    if (currentSegmentAsrTokens.isEmpty) return;
 
     bool matchedSomething;
     do {
@@ -178,12 +171,12 @@ class DictationSequencer {
 
       if (targetWordCursor >= wordBoundaries.length - 1) break;
 
-      // Handle rollbacks in streaming ASR text
-      if (cleanTokens.length < asrConsumedTokenCount) {
-        asrConsumedTokenCount = cleanTokens.length;
+      // Handle rollbacks in streaming ASR tokens
+      if (currentSegmentAsrTokens.length < asrConsumedTokenCount) {
+        asrConsumedTokenCount = currentSegmentAsrTokens.length;
       }
 
-      List<PhonemeToken> unconsumedTokens = cleanTokens.sublist(
+      List<String> unconsumedTokens = currentSegmentAsrTokens.sublist(
         asrConsumedTokenCount,
       );
 
@@ -211,8 +204,8 @@ class DictationSequencer {
       }
 
       // ── THE HOLY GRAIL: Continuous Subsequence DTW ─────────
-      // Tests up to 25 upcoming words continuously for native Wasl and free skips.
-      const int lookaheadWordSpan = 25;
+      // Tests up to 10 upcoming words continuously for native Wasl and free skips.
+      const int lookaheadWordSpan = 10;
       final int maxLookaheadWord = min(wordCount, targetWordCursor + lookaheadWordSpan);
 
       final int winStartChunk = wordStartChunk[targetWordCursor];
@@ -224,9 +217,7 @@ class DictationSequencer {
         isTajweed: isTajweed,
       );
 
-      final List<String> unconsumedStrings = unconsumedTokens
-          .map((t) => t.text)
-          .toList();
+      final List<String> unconsumedStrings = unconsumedTokens;
 
       Set<int> validStartChunks = {};
       Set<int> validEndChunks = {};
@@ -236,7 +227,7 @@ class DictationSequencer {
           validEndChunks.add(wordEndChunk[w] - winStartChunk);
       }
 
-      AlignmentResult? bestResult = _alignWindow(
+      AlignmentResult? forwardResult = _alignWindow(
         asrStrings: unconsumedStrings,
         startChunk: winStartChunk,
         endChunk: winEndChunk,
@@ -246,19 +237,53 @@ class DictationSequencer {
         validEndChunks: validEndChunks,
       );
 
-      if (bestResult != null) {
+      if (forwardResult != null) {
+        final int targetAbsStartChunk = winStartChunk + forwardResult.bestStartJ;
+        final int targetAbsEndChunk = winStartChunk + forwardResult.bestJ;
+        int startMatchedWord = targetWordCursor;
+        if (targetAbsStartChunk < chunkToWordMap.length) {
+          startMatchedWord = chunkToWordMap[targetAbsStartChunk];
+        }
+
         int matchedWordIdx = targetWordCursor;
-        for (int w = targetWordCursor; w < maxLookaheadWord; w++) {
-           if (wordEndChunk[w] - winStartChunk == bestResult.bestJ) {
+        if (targetAbsEndChunk > 0 && targetAbsEndChunk - 1 < chunkToWordMap.length) {
+          matchedWordIdx = chunkToWordMap[targetAbsEndChunk - 1];
+        } else {
+          for (int w = targetWordCursor; w < maxLookaheadWord; w++) {
+            if (wordEndChunk[w] - winStartChunk == forwardResult.bestJ) {
               matchedWordIdx = w;
               break;
-           }
+            }
+          }
+        }
+
+        // Backward Repetition Debris Guard:
+        // If candidate is a forward jump (startMatchedWord > targetWordCursor) matching ONLY a single isolated word,
+        // and that word is phonetically identical to the immediately preceding committed word (targetWordCursor - 1),
+        // the reciter has simply repeated the previous word (e.g. stumbling/re-reading).
+        // Suppress this forward jump so it doesn't falsely skip the unread intermediate words.
+        if (startMatchedWord > targetWordCursor &&
+            startMatchedWord == matchedWordIdx &&
+            targetWordCursor > 0 &&
+            targetWordCursor - 1 < wordStartChunk.length &&
+            startMatchedWord < wordStartChunk.length) {
+          final int prevWord = targetWordCursor - 1;
+          final String prevWordPhonemes = refChunks.sublist(wordStartChunk[prevWord], wordEndChunk[prevWord]).join('');
+          final String matchedWordPhonemes = refChunks.sublist(wordStartChunk[startMatchedWord], wordEndChunk[startMatchedWord]).join('');
+
+          if (prevWordPhonemes == matchedWordPhonemes) {
+            if (forwardResult.bestI > 0 && forwardResult.bestI <= unconsumedTokens.length) {
+              unconsumedTokens.removeRange(0, forwardResult.bestI);
+            }
+            debugLog('🔄 [REPETITION ABSORPTION] Absorbed repetition of previous word "$prevWordPhonemes" without jumping ahead');
+            matchedSomething = true;
+            continue;
+          }
         }
 
         _commitMatch(
-          result: bestResult,
+          result: forwardResult,
           unconsumedTokens: unconsumedTokens,
-          fullCleanTokens: cleanTokens,
           targetWindow: refChunks.sublist(
             winStartChunk,
             wordEndChunk[matchedWordIdx],
@@ -270,6 +295,7 @@ class DictationSequencer {
         matchedSomething = true;
         continue;
       }
+
     } while (matchedSomething);
   }
 
@@ -307,8 +333,7 @@ class DictationSequencer {
 
   void _commitMatch({
     required AlignmentResult result,
-    required List<PhonemeToken> unconsumedTokens,
-    required List<PhonemeToken> fullCleanTokens,
+    required List<String> unconsumedTokens,
     required List<String> targetWindow,
     required int winStartChunk,
     required int startWordId,
@@ -322,9 +347,7 @@ class DictationSequencer {
       unconsumedTokens.length,
     );
     final List<String> matchedAsrSlice = unconsumedTokens
-        .sublist(safeStartI, safeEndI)
-        .map((t) => t.text)
-        .toList();
+        .sublist(safeStartI, safeEndI);
 
     final int safeStartJ = result.bestStartJ.clamp(0, targetWindow.length);
     final int safeEndJ = result.bestJ.clamp(safeStartJ, targetWindow.length);
@@ -360,19 +383,14 @@ class DictationSequencer {
         final int absPredIdx = safeStartI + align.predIdx;
         if (absPredIdx >= unconsumedTokens.length) continue;
 
-        final String chunk = unconsumedTokens[absPredIdx].text;
+        final String chunk = unconsumedTokens[absPredIdx];
         wordPredStr += chunk;
 
         final int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
-        final int charStart = _getCharIndexForToken(
-          fullCleanTokens,
-          globalTokenIdx,
-        );
-
-        for (int c = 0; c < chunk.length; c++) {
-          if (charStart + c < currentSegmentTimestamps.length) {
-            wordPredTs.add(currentSegmentTimestamps[charStart + c]);
-          }
+        
+        // Pillar I: 1-to-1 token-to-timestamp mapping
+        if (globalTokenIdx < currentSegmentTimestamps.length) {
+          wordPredTs.add(currentSegmentTimestamps[globalTokenIdx]);
         }
       }
 
@@ -387,11 +405,7 @@ class DictationSequencer {
     Map<int, List<ReciterError>>? tajweedErrors;
     if (isTajweed) {
       final int globalStartIdx = asrConsumedTokenCount + safeStartI;
-      final int charStart = _getCharIndexForToken(
-        fullCleanTokens,
-        globalStartIdx,
-      );
-      final int safeCharIdx = min(charStart, currentSegmentTimestamps.length);
+      final int safeCharIdx = min(globalStartIdx, currentSegmentTimestamps.length);
 
       tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
         alignments: localAlignments,
@@ -414,19 +428,67 @@ class DictationSequencer {
         serializedErrors = tajweedErrors[w]!.map((e) => e.toMap()).toList();
       }
 
-      int matchedRefChunks = 0;
+      double validMatchedChunks = 0.0;
+      double totalWordCost = 0.0;
+      int wordAsrChunks = 0;
+
       for (final align in localAlignments) {
-        if (align.refIdx < 0 || align.predIdx < 0) continue;
-        final int absRefIdx = winStartChunk + safeStartJ + align.refIdx;
-        if (absRefIdx >= chunkToWordMap.length) continue;
-        if (chunkToWordMap[absRefIdx] != w) continue;
-        if (align.opType == 'match' || align.opType == 'replace') {
-          matchedRefChunks++;
+        if (align.refIdx >= 0) {
+          final int absRefIdx = winStartChunk + safeStartJ + align.refIdx;
+          if (absRefIdx < chunkToWordMap.length && chunkToWordMap[absRefIdx] == w) {
+            if (align.predIdx >= 0 && (safeStartI + align.predIdx) < unconsumedTokens.length) {
+              wordAsrChunks++;
+              final String pChunk = unconsumedTokens[safeStartI + align.predIdx];
+              final String rChunk = refChunks[absRefIdx];
+              final int pId = PhonemeMatrix.encode(pChunk);
+              final int rId = PhonemeMatrix.encode(rChunk);
+              final double cost = PhonemeMatrix.getCost(pId, rId);
+              totalWordCost += cost;
+
+              if (cost <= 0.001) {
+                // Exact phoneme match
+                validMatchedChunks += 1.0;
+              } else if (cost <= 0.25) {
+                // Minor phonetic / vowel / Madd variation
+                validMatchedChunks += 1.0;
+              } else if (cost <= 0.40) {
+                // Near articulatory neighbor (e.g. ص/س or length difference)
+                validMatchedChunks += 0.75;
+              } else {
+                // Severe phonetic error (wrong consonant / Lahn Jali) -> no match credit
+                validMatchedChunks += 0.0;
+              }
+            } else {
+              // Deletion: reference chunk missing in ASR
+              totalWordCost += 1.0;
+            }
+          }
         }
       }
-      final int totalRefChunks = wordEndChunk[w] - wordStartChunk[w];
-      final bool hasSufficientCoverage = totalRefChunks <= 0 || (matchedRefChunks / totalRefChunks) >= 0.50;
-      final bool isRed = !hasSufficientCoverage;
+
+      final int totalRefChunks = (w < wordEndChunk.length && w < wordStartChunk.length)
+          ? (wordEndChunk[w] - wordStartChunk[w])
+          : 0;
+
+      bool isGreen = false;
+      if (totalRefChunks <= 0) {
+        isGreen = true;
+      } else {
+        final double coverage = validMatchedChunks / totalRefChunks;
+        final int denom = max(totalRefChunks, max(wordAsrChunks, 1));
+        final double wordScore = totalWordCost / denom;
+        final double adaptiveThresh = 0.25 * (1.0 + (1.5 / sqrt(max(totalRefChunks, 1))));
+
+        if (totalRefChunks == 1) {
+          isGreen = (validMatchedChunks >= 0.75 && wordScore <= 0.35);
+        } else if (totalRefChunks == 2) {
+          isGreen = (validMatchedChunks >= 1.50 && wordScore <= adaptiveThresh);
+        } else {
+          isGreen = (coverage >= 0.50 && wordScore <= adaptiveThresh);
+        }
+      }
+
+      final bool isRed = !isGreen;
 
       mainSendPort.send(
         WordMatchedEvent(
@@ -446,10 +508,5 @@ class DictationSequencer {
 
     targetWordCursor = endW;
     asrConsumedTokenCount += tokensToAdvance;
-  }
-
-  int _getCharIndexForToken(List<PhonemeToken> tokens, int tokenIndex) {
-    if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
-    return tokens[tokenIndex].originalIndex;
   }
 }

@@ -270,15 +270,10 @@ class ErrorExplainer {
       double chunkDuration = 0.0;
       List<double> chunkCharDurations = [];
       if (absPredIdx >= 0) {
-        int charStart = 0;
-        for (int k = 0; k < absPredIdx; k++)
-          charStart += currentAsrChunks[k].length;
-        for (int c = 0; c < predChunk.length; c++) {
-          if (charStart + c < trackingTimestamps.length) {
-            double ts = trackingTimestamps[charStart + c];
-            chunkCharDurations.add(ts);
-            chunkDuration += ts;
-          }
+        if (absPredIdx < trackingTimestamps.length) {
+          double ts = trackingTimestamps[absPredIdx];
+          chunkCharDurations.add(ts);
+          chunkDuration = ts;
         }
         if (chunkDuration <= 0.0) chunkDuration = 0.15;
       }
@@ -326,7 +321,8 @@ class ErrorExplainer {
         String ruleInfo = e.expectedRule != null
             ? ' | Rule: ${e.expectedRule!.name.en}'
             : '';
-        DebugLogger.log('Error',
+        DebugLogger.log(
+          'Error',
           '🚨 [ERROR LOG] Word "$wordStr" ($wIdx) | ${e.errorType.name.toUpperCase()} -> ${e.speechErrorType.name.toUpperCase()} (Exp: "${e.expectedPh}" vs Got: "${e.predictedPh}")$ruleInfo',
         );
       }
@@ -520,7 +516,10 @@ class ErrorExplainer {
       for (int i = 0; i < globalRefChunks.length; i++) {
         if (refChunkToWordMap[i] == wordIdx) wordStr += globalRefChunks[i];
       }
-      DebugLogger.log('Tajweed', '⏱️ [TAJWEED] Word "$wordStr" ($wordIdx) | $timingLog');
+      DebugLogger.log(
+        'Tajweed',
+        '⏱️ [TAJWEED] Word "$wordStr" ($wordIdx) | $timingLog',
+      );
       timingChecksDesc.add(timingLog);
       if (!hasValidDuration) {
         String durDesc = durStatus == TajweedDurationStatus.defect

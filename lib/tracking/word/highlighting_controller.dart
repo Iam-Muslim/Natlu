@@ -39,16 +39,11 @@ class VerseMatch {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ProcessedAudioStream {
-  final String asrText;
-  final List<double> charDurations;
-
-  const ProcessedAudioStream({
-    required this.asrText,
-    required this.charDurations,
-  });
-
-  bool get isEmpty => asrText.isEmpty;
-  bool get isNotEmpty => asrText.isNotEmpty;
+  final List<String> tokens;
+  final List<double> durations;
+  ProcessedAudioStream({required this.tokens, required this.durations});
+  bool get isEmpty => tokens.isEmpty;
+  bool get isNotEmpty => tokens.isNotEmpty;
 }
 
 class AsrTokenProcessor {
@@ -60,16 +55,14 @@ class AsrTokenProcessor {
   final List<double> _filteredSpikeTimes = [];
   final List<double> _filteredLastBlanks = [];
 
-  final StringBuffer _asrTextBuffer = StringBuffer();
-  final List<double> _charDurations = [];
+  final List<double> _tokenDurations = [];
 
   void reset() {
     _lastRawTokens.clear();
     _filteredTokens.clear();
     _filteredSpikeTimes.clear();
     _filteredLastBlanks.clear();
-    _asrTextBuffer.clear();
-    _charDurations.clear();
+    _tokenDurations.clear();
   }
 
   ProcessedAudioStream process(TranscriptionResult result) {
@@ -94,8 +87,8 @@ class AsrTokenProcessor {
 
     if (commonLen == maxCount) {
       return ProcessedAudioStream(
-        asrText: _asrTextBuffer.toString(),
-        charDurations: _charDurations,
+        tokens: _filteredTokens,
+        durations: _tokenDurations,
       );
     }
 
@@ -167,33 +160,12 @@ class AsrTokenProcessor {
       }
 
       final double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
-
-      double totalWeight = 0.0;
-      final List<double> charWeights = [];
-      for (int j = 0; j < token.length; j++) {
-        final String ch = token[j];
-        final double w = QuranNormalizer.isResidual(ch) ? 0.0 : 1.0;
-        charWeights.add(w);
-        totalWeight += w;
-      }
-
-      if (totalWeight == 0.0) {
-        for (int j = 0; j < token.length; j++) {
-          charWeights.add(1.0);
-        }
-        totalWeight = token.length.toDouble();
-      }
-
-      for (int j = 0; j < token.length; j++) {
-        _asrTextBuffer.write(token[j]);
-        final double charDur = tokenDur * (charWeights[j] / totalWeight);
-        _charDurations.add(charDur);
-      }
+      _tokenDurations.add(tokenDur);
     }
 
     return ProcessedAudioStream(
-      asrText: _asrTextBuffer.toString(),
-      charDurations: _charDurations,
+      tokens: _filteredTokens,
+      durations: _tokenDurations,
     );
   }
 }
@@ -464,6 +436,7 @@ class HighlightingController extends ChangeNotifier {
     notifyListeners();
   }
 
+
   void clearHighlightsFromAyah(int startAyah) {
     _completedAyahs.removeWhere((ayah) => ayah >= startAyah);
     _greenWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
@@ -606,17 +579,17 @@ class HighlightingController extends ChangeNotifier {
     }
 
     final ProcessedAudioStream stream = _tokenProcessor.process(result);
-    final String asrText = stream.asrText;
+    final String asrText = stream.tokens.join('');
     debugRecognizedText.value = asrText;
 
-    if (asrText.length > 8000) {
+    if (stream.tokens.length > 8000) {
       _engine.resetBuffer();
       _tokenProcessor.reset();
       _lastProcessedText = '';
       return;
     }
 
-    if (asrText.isEmpty) {
+    if (stream.tokens.isEmpty) {
       _lastProcessedText = '';
       return;
     }
@@ -627,14 +600,14 @@ class HighlightingController extends ChangeNotifier {
       _expectingNewSegment = false;
     }
 
-    if (asrText.isNotEmpty && _isolateStarted) {
+    if (stream.tokens.isNotEmpty && _isolateStarted) {
       if (!isNewSegment && asrText == _lastProcessedText) {
         return;
       }
       _lastProcessedText = asrText;
       _alignmentIsolate.syncStream(
-        asrText,
-        stream.charDurations,
+        stream.tokens,
+        stream.durations,
         isNewSegment,
         _currentMatch?.verse.ayah ?? 0,
       );
