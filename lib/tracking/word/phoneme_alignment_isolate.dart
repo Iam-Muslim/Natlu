@@ -4,6 +4,7 @@ import 'dart:isolate';
 import '../../utils/debug_logger.dart';
 import 'phoneme_matrix.dart';
 import 'dictation_sequencer.dart';
+import '../common/quran_normalizer.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ISOLATE PROTOCOL (Commands: Main UI ➔ Isolate | Events: Isolate ➔ Main UI)
@@ -250,6 +251,7 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
       switch (command) {
         case SetupMatrixCommand(:final tokens):
           PhonemeMatrix.preheat(tokens);
+          QuranNormalizer.initVocabulary(tokens);
 
         case SetSurahReferenceCommand():
           sequencer.setSurahReference(command);

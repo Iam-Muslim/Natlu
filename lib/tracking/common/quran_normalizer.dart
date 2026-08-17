@@ -108,12 +108,40 @@ class QuranNormalizer {
   static final RegExp _chunkRegex =
       RegExp('(([^$_residualsStr])\\2*[$_residualsStr]*)');
 
+  static List<String> _vocabulary = [];
+
+  /// Initializes the ASR vocabulary for greedy longest-prefix match chunking.
+  static void initVocabulary(List<String> tokens) {
+    // Sort tokens by length descending for greedy match
+    _vocabulary = List<String>.from(tokens)..sort((a, b) => b.length.compareTo(a.length));
+  }
+
   /// Splits a continuous Arabic phonetic string into individual phoneme groups.
-  ///
-  /// Example:
-  ///   Input:  "بِسمِللَاا"
-  ///   Output: ["بِ", "س", "مِ", "ل", "لَ", "ا", "ا"]
+  /// Uses Longest-Prefix-Match against the loaded vocabulary if available,
+  /// otherwise falls back to the legacy regex behavior.
   static List<String> chunkPhonemes(String phoneticScript) {
+    if (_vocabulary.isNotEmpty) {
+      final List<String> chunks = [];
+      int i = 0;
+      while (i < phoneticScript.length) {
+        bool matched = false;
+        for (final token in _vocabulary) {
+          if (phoneticScript.startsWith(token, i)) {
+            chunks.add(token);
+            i += token.length;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          chunks.add(phoneticScript[i]);
+          i++;
+        }
+      }
+      return chunks;
+    }
+
+    // Fallback to legacy regex chunker
     return _chunkRegex
         .allMatches(phoneticScript)
         .map((m) => m.group(1)!)
@@ -123,6 +151,27 @@ class QuranNormalizer {
   /// Same as `chunkPhonemes`, but returns the exact original character index
   /// where this chunk began in `phoneticScript` for O(1) timestamp mapping.
   static List<PhonemeToken> chunkPhonemesWithIndices(String phoneticScript) {
+    if (_vocabulary.isNotEmpty) {
+      final List<PhonemeToken> chunks = [];
+      int i = 0;
+      while (i < phoneticScript.length) {
+        bool matched = false;
+        for (final token in _vocabulary) {
+          if (phoneticScript.startsWith(token, i)) {
+            chunks.add(PhonemeToken(token, i));
+            i += token.length;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          chunks.add(PhonemeToken(phoneticScript[i], i));
+          i++;
+        }
+      }
+      return chunks;
+    }
+
     return _chunkRegex
         .allMatches(phoneticScript)
         .map((m) => PhonemeToken(m.group(1)!, m.start))

@@ -263,6 +263,7 @@ class HighlightingController extends ChangeNotifier {
         }
       }
       _alignmentIsolate.setup(tokens);
+      QuranNormalizer.initVocabulary(tokens);
     } catch (e) {
       DebugLogger.logSimple(
         'HighlightingController',

@@ -255,8 +255,8 @@ class SherpaEngine {
     OnlineRecognizer? recognizer;
     OnlineStream? stream;
     final Float32List primingBuffer = Float32List(
-      4800,
-    ); // 300ms pre-roll silence
+      7680,
+    ); // 480ms (exact 1 ONNX chunk stride = 48 frames) pre-roll silence
     int isolateStreamEpoch = 0;
 
     port.listen((msg) {
