@@ -189,6 +189,12 @@ class DictationSequencer {
             }
 
             if (result.tokensConsumed > 0) {
+              // Ensure that merged words are actually legitimate boundary-merges (Wasl/Idgham)
+              // and not just a hallucinated word hiding behind a perfect word.
+              if (merge > 1 && !_isValidMerge(result, startW, endW, unconsumed)) {
+                continue; // Reject this merge and try another combination
+              }
+
               // 1. Mark skipped words RED
               for (int s = 0; s < skip; s++) {
                 _commitRed(targetWordCursor + s, startW);
@@ -286,5 +292,53 @@ class DictationSequencer {
   String _getWordReference(int w) {
     if (w < 0 || w >= wordStartChunk.length || w >= wordEndChunk.length) return "";
     return refChunks.sublist(wordStartChunk[w], wordEndChunk[w]).join('');
+  }
+
+  bool _isValidMerge(WordMatchResult result, int startW, int endW, List<String> asrTokens) {
+    if (startW == endW) return true;
+
+    // The merge feature is specifically for Idgham, Iqlab, Wasl, etc., which happen at the BOUNDARIES.
+    // To prevent a completely wrong word (e.g. "المبين") from piggybacking on a correct word,
+    // we must verify that the "Core" (the middle) of EVERY word in the merge is highly accurate.
+    for (int w = startW; w <= endW; w++) {
+      final int refStart = wordStartChunk[w];
+      final int refEnd = wordEndChunk[w];
+      final int wordLen = refEnd - refStart;
+      
+      // We forgive up to 2 phonemes at the junction (Idgham/Wasl zones).
+      final int forgiveStart = (w > startW) ? min(2, wordLen ~/ 3) : 0;
+      final int forgiveEnd = (w < endW) ? min(2, wordLen ~/ 3) : 0;
+      
+      final int coreStart = refStart + forgiveStart;
+      final int coreEnd = refEnd - forgiveEnd;
+      final int coreLen = coreEnd - coreStart;
+      
+      if (coreLen <= 0) continue; // Word too short to have a distinct core
+
+      double coreCost = 0.0;
+
+      for (final align in result.trace) {
+        if (align.refIdx >= coreStart && align.refIdx < coreEnd) {
+          if (align.opType == 'delete') {
+            coreCost += config.costDel;
+          } else if (align.opType == 'replace') {
+             if (align.predIdx >= 0 && align.refIdx >= 0 && align.predIdx < asrTokens.length) {
+                final rId = refEncodedIds[align.refIdx];
+                final pId = PhonemeMatrix.encode(asrTokens[align.predIdx]);
+                coreCost += PhonemeMatrix.getCost(pId, rId);
+             } else {
+                coreCost += config.costIns; // Fallback
+             }
+          }
+        }
+      }
+      
+      // If the core of any individual word exceeds the threshold, the whole merge is INVALID.
+      // This stops "المبين" from hiding behind "أكان".
+      if ((coreCost / coreLen) > config.maxPathCost) {
+        return false;
+      }
+    }
+    return true;
   }
 }
