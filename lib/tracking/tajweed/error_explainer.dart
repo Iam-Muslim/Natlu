@@ -40,6 +40,8 @@
 // 5. NORMAL:
 //    - Identity: Single consonant (Length 1). No duration checking required.
 // ═══════════════════════════════════════════════════════════════════════════════
+import 'dart:math';
+
 import 'tajweed_rules.dart';
 import '../../utils/debug_logger.dart';
 
@@ -222,12 +224,12 @@ class ErrorExplainer {
   // ───────────────────────────────────────────────────────────────────────────
   static Map<int, List<ReciterError>> evaluatePreAlignedWords({
     required List<PhonemeGroupAlignment> alignments,
-    required List<String> globalRefChunks,
-    required List<int> refChunkToWordMap,
-    required List<String> currentAsrChunks,
+    required String fullPhonemes,
+    required List<int> wordBoundaries,
+    required String currentAsrText,
     required List<double> trackingTimestamps,
     required int bestAsrStartIdx,
-    required int targetChunkCursor,
+    required int targetCharCursor,
     required int startWordId,
     required int nextWordId,
     required int totalAyahWords,
@@ -236,36 +238,55 @@ class ErrorExplainer {
     final Map<int, List<ReciterError>> errorsByWord = {};
     final Map<int, List<String>> wordErrorDescMap = {};
     final Map<int, List<String>> timingChecksDescMap = {};
+
+    int getWordIndex(int charIdx) {
+      if (wordBoundaries.isEmpty) return 0;
+      for (int w = 0; w < wordBoundaries.length - 1; w++) {
+        if (charIdx >= wordBoundaries[w] && charIdx < wordBoundaries[w + 1]) {
+          return w;
+        }
+      }
+      return max(0, wordBoundaries.length - 2);
+    }
+
+    String getWordText(int wIdx) {
+      if (wIdx < 0 || wIdx >= wordBoundaries.length - 1) return '';
+      final start = wordBoundaries[wIdx];
+      final end = (wIdx + 1 < wordBoundaries.length) ? wordBoundaries[wIdx + 1] : fullPhonemes.length;
+      return fullPhonemes.substring(start, min(end, fullPhonemes.length));
+    }
+
     for (var align in alignments) {
       if (align.refIdx < 0 && align.predIdx < 0) continue;
-      int absRefIdx = targetChunkCursor + align.refIdx;
+      int absRefIdx = targetCharCursor + align.refIdx;
       int wIdx = -1;
-      // If it's an insertion, we assign it to the previous word or current word context.
-      if (absRefIdx >= 0 && absRefIdx < refChunkToWordMap.length) {
-        wIdx = refChunkToWordMap[absRefIdx];
-      } else if (align.refIdx == -1 &&
-          targetChunkCursor < refChunkToWordMap.length) {
-        wIdx = refChunkToWordMap[targetChunkCursor];
+      if (absRefIdx >= 0 && absRefIdx < fullPhonemes.length) {
+        wIdx = getWordIndex(absRefIdx);
+      } else if (align.refIdx == -1 && targetCharCursor < fullPhonemes.length) {
+        wIdx = getWordIndex(targetCharCursor);
       }
-      if (wIdx < startWordId || wIdx >= nextWordId)
+      if (wIdx < startWordId || wIdx >= nextWordId) {
         continue; // Out of bounds of the committed match
+      }
+
       String refChunk = '';
-      if (absRefIdx >= 0 && absRefIdx < globalRefChunks.length) {
-        refChunk = globalRefChunks[absRefIdx];
+      if (absRefIdx >= 0 && absRefIdx < fullPhonemes.length) {
+        refChunk = fullPhonemes[absRefIdx];
       }
       String nextRefChunk = '';
       bool isNextChunkInNextWord = false;
-      if (absRefIdx >= 0 && absRefIdx + 1 < globalRefChunks.length) {
-        nextRefChunk = globalRefChunks[absRefIdx + 1];
-        if (refChunkToWordMap[absRefIdx] != refChunkToWordMap[absRefIdx + 1]) {
+      if (absRefIdx >= 0 && absRefIdx + 1 < fullPhonemes.length) {
+        nextRefChunk = fullPhonemes[absRefIdx + 1];
+        if (getWordIndex(absRefIdx) != getWordIndex(absRefIdx + 1)) {
           isNextChunkInNextWord = true;
         }
       }
       int absPredIdx = bestAsrStartIdx + align.predIdx;
       String predChunk = '';
-      if (absPredIdx >= 0 && absPredIdx < currentAsrChunks.length) {
-        predChunk = currentAsrChunks[absPredIdx];
+      if (absPredIdx >= 0 && absPredIdx < currentAsrText.length) {
+        predChunk = currentAsrText[absPredIdx];
       }
+
       // Calculate durations
       double chunkDuration = 0.0;
       List<double> chunkCharDurations = [];
@@ -277,6 +298,7 @@ class ErrorExplainer {
         }
         if (chunkDuration <= 0.0) chunkDuration = 0.15;
       }
+
       wordErrorDescMap.putIfAbsent(wIdx, () => []);
       timingChecksDescMap.putIfAbsent(wIdx, () => []);
       List<ReciterError> chunkErrors = _evaluateChunkAlignment(
@@ -291,32 +313,30 @@ class ErrorExplainer {
         timingChecksDesc: timingChecksDescMap[wIdx]!,
         nextRefChunk: nextRefChunk,
         isNextChunkInNextWord: isNextChunkInNextWord,
-        globalRefChunks: globalRefChunks,
-        refChunkToWordMap: refChunkToWordMap,
+        wordText: getWordText(wIdx),
       );
       if (chunkErrors.isNotEmpty) {
         errorsByWord.putIfAbsent(wIdx, () => []).addAll(chunkErrors);
       }
     }
+
     // Sort every word's error list according to UI display priority.
     errorsByWord.forEach(
       (_, list) => list.sort(
         (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
       ),
     );
+
     // ── ERROR FILTERING ──
-    // Show all errors (Only Dictation Threshold is affected by engine mode).
     errorsByWord.forEach((wIdx, list) {
       list.removeWhere((e) {
         return e.errorType == ErrorCategory.normal ||
             e.durationStatus == TajweedDurationStatus.surplus;
       });
     });
+
     errorsByWord.forEach((wIdx, list) {
-      String wordStr = '';
-      for (int i = 0; i < globalRefChunks.length; i++) {
-        if (refChunkToWordMap[i] == wIdx) wordStr += globalRefChunks[i];
-      }
+      final String wordStr = getWordText(wIdx);
       for (var e in list) {
         String ruleInfo = e.expectedRule != null
             ? ' | Rule: ${e.expectedRule!.name.en}'
@@ -327,6 +347,7 @@ class ErrorExplainer {
         );
       }
     });
+
     // Clean up empty lists after filtering
     errorsByWord.removeWhere((wIdx, list) => list.isEmpty);
     return errorsByWord;
@@ -351,8 +372,7 @@ class ErrorExplainer {
     required List<String> timingChecksDesc,
     required String nextRefChunk,
     required bool isNextChunkInNextWord,
-    required List<String> globalRefChunks,
-    required List<int> refChunkToWordMap,
+    required String wordText,
   }) {
     // ── Phase 1A: Complete Insertion Error ──
     // The DP Matrix found an ASR phoneme with NO matching reference phoneme.
@@ -512,10 +532,7 @@ class ErrorExplainer {
                 : "FAIL (Surplus زيادة) ✗");
       String timingLog =
           '${specificRule.name.en}Timing(chunk:"$refChunk" chars:$charBreakdown = ${(chunkDuration * 1000).toStringAsFixed(0)}ms | need: ~${(reqDur * 1000).toStringAsFixed(0)}ms -> $statusStr)';
-      String wordStr = '';
-      for (int i = 0; i < globalRefChunks.length; i++) {
-        if (refChunkToWordMap[i] == wordIdx) wordStr += globalRefChunks[i];
-      }
+      final String wordStr = wordText;
       DebugLogger.log(
         'Tajweed',
         '⏱️ [TAJWEED] Word "$wordStr" ($wordIdx) | $timingLog',

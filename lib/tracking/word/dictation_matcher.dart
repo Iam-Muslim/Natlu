@@ -2,28 +2,27 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../tajweed/error_explainer.dart';
-import 'phoneme_matrix.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Per-Word Semi-Global DTW Matcher
+// Per-Word Semi-Global DTW Matcher (Direct Character-Level Alignment)
 //
 // Each word is matched independently against the unconsumed ASR buffer.
-// Free-start: leading noise tokens are free (handles Wasl and CTC jitter).
-// First-valid-endpoint: consumes the minimum number of ASR tokens.
+// Free-start: leading noise characters are free (handles Wasl and CTC jitter).
+// First-valid-endpoint: consumes the minimum number of ASR characters.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Result of aligning ASR tokens against a single word's reference.
+/// Result of aligning ASR characters against a single word's reference.
 class WordMatchResult {
   /// Total edit cost normalized by reference length.
   final double pathCost;
 
-  /// How many ASR tokens this match consumed from the buffer.
+  /// How many ASR characters this match consumed from the buffer.
   final int tokensConsumed;
 
-  /// Joined ASR phonemes that aligned to the word (match/replace ops only).
+  /// Substring of ASR phonemes that aligned to the word.
   final String cleanAsr;
 
-  /// Timestamps of the aligned ASR tokens.
+  /// Timestamps of the aligned ASR characters.
   final List<double> timestamps;
 
   /// Full alignment trace for Tajweed evaluation.
@@ -71,30 +70,30 @@ class AlignmentConfig {
       const AlignmentConfig();
 }
 
-/// Per-word semi-global DTW matcher.
+/// Per-word semi-global DTW matcher operating directly on character strings.
 class QuranDictationMatcher {
-  Float64List _dp = Float64List(1024);
-  Uint8List _bt = Uint8List(1024);
-  Int32List _pIds = Int32List(256);
+  Float64List _dp = Float64List(2048);
+  Uint8List _bt = Uint8List(2048);
 
-  /// Aligns [asrTokens] against the reference chunk slice [refStart, refEnd).
+  void reset() {}
+
+  /// Aligns [asrText] against the reference slice [refStart, refEnd) in [fullPhonemes].
   ///
   /// Returns the best match or null if no alignment meets the threshold.
   WordMatchResult? matchWord({
-    required List<String> asrTokens,
+    required String asrText,
     required List<double> asrTimestamps,
-    required List<String> refChunks,
+    required String fullPhonemes,
     required int refStart,
     required int refEnd,
-    Int32List? refEncodedIds,
     required AlignmentConfig config,
   }) {
-    final int m = asrTokens.length;
+    final int m = asrText.length;
     final int n = refEnd - refStart;
     if (m == 0 || n <= 0) return null;
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 1. BUFFER MANAGEMENT & ENCODING
+    // 1. BUFFER MANAGEMENT
     // ═════════════════════════════════════════════════════════════════════════
     final int stride = n + 1;
     final int cells = (m + 1) * stride;
@@ -102,12 +101,6 @@ class QuranDictationMatcher {
       final int sz = max(cells, _dp.length * 2);
       _dp = Float64List(sz);
       _bt = Uint8List(sz);
-    }
-    if (_pIds.length < m) {
-      _pIds = Int32List(max(m, _pIds.length * 2));
-    }
-    for (int i = 0; i < m; i++) {
-      _pIds[i] = PhonemeMatrix.encode(asrTokens[i]);
     }
 
     final dp = _dp;
@@ -126,27 +119,24 @@ class QuranDictationMatcher {
       bt[j] = 1; // delete
     }
 
-    // Column 0: FREE START (skip leading ASR tokens at zero cost)
+    // Column 0: FREE START (skip leading ASR noise characters at zero cost)
     for (int i = 1; i <= m; i++) {
       dp[i * stride] = 0.0;
       bt[i * stride] = 2; // free insert
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 3. CORE DP FILL (DYNAMIC TIME WARPING)
+    // 3. CORE DP FILL (DYNAMIC TIME WARPING WITH DIRECT CODE UNITS)
     // ═════════════════════════════════════════════════════════════════════════
     for (int i = 1; i <= m; i++) {
-      final int pId = _pIds[i - 1];
+      final int aCode = asrText.codeUnitAt(i - 1);
       final int row = i * stride;
       final int prev = (i - 1) * stride;
 
       for (int j = 1; j <= n; j++) {
-        final int rIdx = refStart + j - 1;
-        final int rId = (refEncodedIds != null && rIdx < refEncodedIds.length)
-            ? refEncodedIds[rIdx]
-            : PhonemeMatrix.encode(refChunks[rIdx]);
+        final int rCode = fullPhonemes.codeUnitAt(refStart + j - 1);
 
-        final double sub = dp[prev + j - 1] + PhonemeMatrix.getCost(pId, rId);
+        final double sub = dp[prev + j - 1] + (aCode == rCode ? 0.0 : 1.0);
         final double del = dp[row + j - 1] + costDel;
         final double ins = dp[prev + j] + costIns;
 
@@ -166,7 +156,6 @@ class QuranDictationMatcher {
     // ═════════════════════════════════════════════════════════════════════════
     // 4. ENDPOINT DETECTION
     // ═════════════════════════════════════════════════════════════════════════
-    // Endpoint: best row i where dp[i][n]/n <= threshold
     int bestI = -1;
     double bestCost = double.infinity;
 
@@ -181,7 +170,6 @@ class QuranDictationMatcher {
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / n;
       if (norm <= threshold) {
-        // Find the absolute minimum cost. Use < to avoid consuming trailing noise.
         if (norm < bestCost) {
           bestI = i;
           bestCost = norm;
@@ -190,17 +178,14 @@ class QuranDictationMatcher {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // PARTIAL MATCHING LOGIC
-    // We must detect if the microphone buffer chopped a word in half.
+    // 5. PARTIAL MATCHING LOGIC
     // ═════════════════════════════════════════════════════════════════════════
     bool isPartial = false;
 
     if (bestI < 0) {
       // ── 1. Prefix Match (For words that failed the full cost threshold) ──
-      // Check if a prefix of the reference strongly aligns with the END of the ASR buffer.
-      // We check the last 3 ASR tokens (m-2 to m) to make it immune to trailing noise/spaces!
       int minJ = n > 2 ? 2 : 1;
-      int startI = max(1, m - 2); 
+      int startI = max(1, m - 2);
       for (int i = startI; i <= m; i++) {
         for (int j = minJ; j < n; j++) {
           if (dp[i * stride + j] / j <= config.maxPathCost) {
@@ -212,30 +197,28 @@ class QuranDictationMatcher {
       }
     } else if (config.isTajweedEnabled && (m - bestI) <= 3) {
       // ── 2. Massive Word Check (For long words that mathematically passed) ──
-      // ONLY active if Tajweed is ON. If OFF, we commit instantly for UI speed.
-      // We trace backwards to count exact errors at the trailing edge of the word.
       int trailingErrors = 0;
       int ci = bestI, cj = n;
 
       while (ci > 0 && cj > 0) {
         int op = bt[ci * stride + cj];
         if (op == 1) { // Deletion
-          trailingErrors++; cj--;
+          trailingErrors++;
+          cj--;
         } else if (op == 2) { // Insertion
-          trailingErrors++; ci--;
+          trailingErrors++;
+          ci--;
         } else { // Match or Sub
-          int rId = (refEncodedIds != null && (refStart + cj - 1) < refEncodedIds.length)
-              ? refEncodedIds[refStart + cj - 1]
-              : PhonemeMatrix.encode(refChunks[refStart + cj - 1]);
-          if (PhonemeMatrix.getCost(_pIds[ci - 1], rId) > 0.0) {
-            trailingErrors++; ci--; cj--;
+          if (asrText.codeUnitAt(ci - 1) != fullPhonemes.codeUnitAt(refStart + cj - 1)) {
+            trailingErrors++;
+            ci--;
+            cj--;
           } else {
-            break; // We found the end of the properly spoken word!
+            break;
           }
         }
       }
-      
-      // If 3 or more errors are at the very end, it was chopped by the mic.
+
       if (trailingErrors >= 3) {
         isPartial = true;
       }
@@ -252,7 +235,6 @@ class QuranDictationMatcher {
       );
     }
 
-    // If it failed both the full match and the partial match, the word is completely rejected.
     if (bestI < 0) return null;
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -260,12 +242,10 @@ class QuranDictationMatcher {
     // ═════════════════════════════════════════════════════════════════════════
     int ci = bestI, cj = n;
     final List<PhonemeGroupAlignment> rawTrace = [];
-    final List<String> asrChars = [];
     final List<double> ts = [];
 
     while (cj > 0) {
       if (ci == 0) {
-        // Remaining reference deletions at the start
         rawTrace.add(
           PhonemeGroupAlignment(
             opType: 'delete',
@@ -281,42 +261,34 @@ class QuranDictationMatcher {
       final int gRef = refStart + cj - 1;
 
       if (op == 0) {
-        // Match or substitution
-        final int rId = (refEncodedIds != null && gRef < refEncodedIds.length)
-            ? refEncodedIds[gRef]
-            : PhonemeMatrix.encode(refChunks[gRef]);
-        final double sc = PhonemeMatrix.getCost(_pIds[ci - 1], rId);
+        final bool isMatch = (asrText.codeUnitAt(ci - 1) == fullPhonemes.codeUnitAt(gRef));
         rawTrace.add(
           PhonemeGroupAlignment(
-            opType: sc == 0.0 ? 'match' : 'replace',
+            opType: isMatch ? 'match' : 'replace',
             refIdx: gRef,
             predIdx: ci - 1,
           ),
         );
-        asrChars.add(asrTokens[ci - 1]);
         if (ci - 1 < asrTimestamps.length) ts.add(asrTimestamps[ci - 1]);
         ci--;
         cj--;
       } else if (op == 1) {
-        // Reference deletion
         rawTrace.add(
           PhonemeGroupAlignment(opType: 'delete', refIdx: gRef, predIdx: -1),
         );
         cj--;
       } else {
-        // ASR insertion (noise within the alignment)
         rawTrace.add(
           PhonemeGroupAlignment(opType: 'insert', refIdx: -1, predIdx: ci - 1),
         );
         ci--;
       }
     }
-    // ci > 0 here = free leading tokens. Not traced.
 
     return WordMatchResult(
       pathCost: bestCost,
       tokensConsumed: bestI,
-      cleanAsr: asrChars.reversed.join(''),
+      cleanAsr: asrText.substring(0, bestI),
       timestamps: ts.reversed.toList(),
       trace: rawTrace.reversed.toList(),
     );

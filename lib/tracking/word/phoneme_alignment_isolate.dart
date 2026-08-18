@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../utils/debug_logger.dart';
-import 'phoneme_matrix.dart';
-import 'phoneme_tokenizer.dart';
 import 'dictation_sequencer.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -19,11 +17,6 @@ sealed class IsolateCommand {
   static IsolateCommand fromMap(Map map) {
     final command = map['command'] as String?;
     switch (command) {
-      case 'setup':
-        return SetupMatrixCommand(
-          tokens: (map['tokens'] as List).cast<String>(),
-        );
-
       case 'set_surah_reference':
         return SetSurahReferenceCommand(
           fullPhonemes: map['phonemes'] as String,
@@ -36,7 +29,7 @@ sealed class IsolateCommand {
 
       case 'sync_stream':
         return SyncStreamCommand(
-          asrTokens: (map['tokens'] as List?)?.cast<String>() ?? const [],
+          asrText: map['text'] as String? ?? (map['tokens'] as List?)?.join('') ?? '',
           timestamps: (map['timestamps'] as List?)?.cast<double>() ?? const [],
           isNewSegment: map['is_new_segment'] as bool? ?? false,
           ayahNumber: map['ayah_number'] as int? ?? 0,
@@ -59,14 +52,6 @@ sealed class IsolateCommand {
         throw ArgumentError('Unknown IsolateCommand: $command');
     }
   }
-}
-
-class SetupMatrixCommand extends IsolateCommand {
-  final List<String> tokens;
-  const SetupMatrixCommand({required this.tokens});
-
-  @override
-  Map<String, dynamic> toMap() => {'command': 'setup', 'tokens': tokens};
 }
 
 class SetSurahReferenceCommand extends IsolateCommand {
@@ -99,13 +84,13 @@ class SetSurahReferenceCommand extends IsolateCommand {
 }
 
 class SyncStreamCommand extends IsolateCommand {
-  final List<String> asrTokens;
+  final String asrText;
   final List<double> timestamps;
   final bool isNewSegment;
   final int ayahNumber;
 
   const SyncStreamCommand({
-    required this.asrTokens,
+    required this.asrText,
     required this.timestamps,
     this.isNewSegment = false,
     this.ayahNumber = 0,
@@ -114,7 +99,7 @@ class SyncStreamCommand extends IsolateCommand {
   @override
   Map<String, dynamic> toMap() => {
         'command': 'sync_stream',
-        'tokens': asrTokens,
+        'text': asrText,
         'timestamps': timestamps,
         'is_new_segment': isNewSegment,
         'ayah_number': ayahNumber,
@@ -226,7 +211,6 @@ class DebugLogEvent extends IsolateEvent {
       };
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKGROUND ISOLATE WORKER ENTRYPOINT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -249,10 +233,6 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
 
     try {
       switch (command) {
-        case SetupMatrixCommand(:final tokens):
-          PhonemeMatrix.preheat(tokens);
-          PhonemeTokenizer.initVocabulary(tokens);
-
         case SetSurahReferenceCommand():
           sequencer.setSurahReference(command);
 
@@ -272,12 +252,11 @@ void alignmentWorkerEntrypoint(SendPort mainSendPort) {
       mainSendPort.send(
         DebugLogEvent(
           message: '⚠️ [ISOLATE ERROR] Handled exception: $e\n$stack',
-          asrBuffer: sequencer.currentSegmentAsrTokens.join(''),
+          asrBuffer: sequencer.currentSegmentAsrText,
         ).toMap(),
       );
     }
   });
-
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -323,9 +302,6 @@ class PhonemeAlignmentIsolate {
       }
     });
 
-    // Guard against the isolate dying before sending its SendPort back
-    // (e.g. OOM on low-RAM devices). Without a timeout, this Completer
-    // would hang forever, silently blocking the entire alignment pipeline.
     return completer.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
@@ -339,10 +315,6 @@ class PhonemeAlignmentIsolate {
 
   void send(IsolateCommand command) {
     _sendPort?.send(command.toMap());
-  }
-
-  void setup(List<String> tokens) {
-    send(SetupMatrixCommand(tokens: tokens));
   }
 
   void setSurahReference(
@@ -370,14 +342,14 @@ class PhonemeAlignmentIsolate {
   }
 
   void syncStream(
-    List<String> segmentTokens,
+    String segmentText,
     List<double>? segmentTimestamps, [
     bool isNewSegment = false,
     int? ayahNumber,
   ]) {
     send(
       SyncStreamCommand(
-        asrTokens: segmentTokens,
+        asrText: segmentText,
         timestamps: segmentTimestamps ?? const [],
         isNewSegment: isNewSegment,
         ayahNumber: ayahNumber ?? 0,

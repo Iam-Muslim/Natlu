@@ -1,21 +1,18 @@
 import 'dart:isolate';
 import 'dart:math';
-import 'dart:typed_data';
 
-import 'phoneme_tokenizer.dart';
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'phoneme_alignment_isolate.dart';
-import 'phoneme_matrix.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Forward Dictation Sequencer
+// Forward Dictation Sequencer (Direct Continuous String Matching)
 //
 // Per-word sequential matching with anchored consumption:
-// 1. Slice the ASR buffer at the anchor (drop consumed tokens).
+// 1. Slice the continuous ASR string at the character anchor.
 // 2. Try matching the current word. If GREEN → commit, advance anchor & cursor.
 // 3. If current word fails, try skip+1 and skip+2 (omission detection).
-// 4. If nothing matches → stay NEUTRAL, wait for more tokens.
+// 4. If nothing matches → stay NEUTRAL, wait for more text.
 // 5. Loop: after each commit, immediately try the next word.
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -24,18 +21,14 @@ class DictationSequencer {
 
   // ── Reference ──
   List<int> wordBoundaries = [];
-  List<String> refChunks = [];
-  List<int> chunkToWordMap = [];
-  List<int> wordStartChunk = [];
-  List<int> wordEndChunk = [];
-  Int32List refEncodedIds = Int32List(0);
+  String fullPhonemes = '';
   bool isTajweed = false;
   int currentSurahNumber = 0;
 
   // ── ASR Stream ──
-  List<String> currentSegmentAsrTokens = [];
+  String currentSegmentAsrText = '';
   List<double> currentSegmentTimestamps = [];
-  int asrTokenAnchor = 0;
+  int asrCharAnchor = 0;
 
   // ── Tracking ──
   int targetWordCursor = 0;
@@ -51,8 +44,8 @@ class DictationSequencer {
   int get _wordCount => max(0, wordBoundaries.length - 1);
 
   void debugLog(String message) {
-    final buf = (asrTokenAnchor < currentSegmentAsrTokens.length)
-        ? currentSegmentAsrTokens.sublist(asrTokenAnchor).join('')
+    final buf = (asrCharAnchor < currentSegmentAsrText.length)
+        ? currentSegmentAsrText.substring(asrCharAnchor)
         : '';
     mainSendPort.send(DebugLogEvent(message: message, asrBuffer: buf).toMap());
   }
@@ -62,69 +55,38 @@ class DictationSequencer {
   // ─────────────────────────────────────────────────────────────────────────────
 
   void setSurahReference(SetSurahReferenceCommand cmd) {
-    PhonemeMatrix.reset();
+    _matcher.reset();
     currentSurahNumber = cmd.surahNumber;
-    final phonemes = cmd.fullPhonemes.replaceAll(' ', '');
+    fullPhonemes = cmd.fullPhonemes.replaceAll(' ', '');
     wordBoundaries = cmd.boundaries;
     isTajweed = cmd.isTajweed;
 
-    final int wordCount = _wordCount;
-    refChunks = [];
-    chunkToWordMap = [];
-    wordStartChunk = List.filled(wordCount, 0);
-    wordEndChunk = List.filled(wordCount, 0);
-
-    for (int w = 0; w < wordCount; w++) {
-      final int start = wordBoundaries[w];
-      final int end = (w + 1 < wordBoundaries.length)
-          ? wordBoundaries[w + 1]
-          : phonemes.length;
-      if (start >= phonemes.length) break;
-      final int safeEnd = min(end, phonemes.length);
-      final chunks = PhonemeTokenizer.tokenize(
-        phonemes.substring(start, safeEnd),
-      );
-
-      wordStartChunk[w] = refChunks.length;
-      for (final ch in chunks) {
-        chunkToWordMap.add(w);
-        refChunks.add(ch);
-      }
-      wordEndChunk[w] = refChunks.length;
-    }
-
-    PhonemeMatrix.preheat(refChunks);
-    refEncodedIds = Int32List(refChunks.length);
-    for (int i = 0; i < refChunks.length; i++) {
-      refEncodedIds[i] = PhonemeMatrix.encode(refChunks[i]);
-    }
-
     committedGreenWords.clear();
     committedRedWords.clear();
-    asrTokenAnchor = 0;
+    asrCharAnchor = 0;
 
     if (cmd.forceClear) {
-      currentSegmentAsrTokens = [];
+      currentSegmentAsrText = '';
       currentSegmentTimestamps = [];
     }
 
-    targetWordCursor = cmd.startGlobalWord.clamp(0, wordCount);
+    targetWordCursor = cmd.startGlobalWord.clamp(0, _wordCount);
     lastMatchedPhoneme = null;
 
     debugLog(
-      '📖 Surah $currentSurahNumber | $wordCount words | cursor=$targetWordCursor | tajweed=$isTajweed',
+      '📖 Surah $currentSurahNumber | $_wordCount words | cursor=$targetWordCursor | tajweed=$isTajweed',
     );
 
-    if (!cmd.forceClear && currentSegmentAsrTokens.isNotEmpty) {
+    if (!cmd.forceClear && currentSegmentAsrText.isNotEmpty) {
       _processSequence();
     }
   }
 
   void jumpToWord(JumpToWordCommand cmd) {
     targetWordCursor = cmd.globalWordIndex.clamp(0, _wordCount);
-    currentSegmentAsrTokens = [];
+    currentSegmentAsrText = '';
     currentSegmentTimestamps = [];
-    asrTokenAnchor = 0;
+    asrCharAnchor = 0;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);
     committedRedWords.removeWhere((w) => w >= targetWordCursor);
@@ -133,12 +95,12 @@ class DictationSequencer {
 
   void syncStream(SyncStreamCommand cmd) {
     if (cmd.isNewSegment) {
-      currentSegmentAsrTokens = [];
+      currentSegmentAsrText = '';
       currentSegmentTimestamps = [];
-      asrTokenAnchor = 0;
+      asrCharAnchor = 0;
       debugLog('🔄 New segment');
     }
-    currentSegmentAsrTokens = cmd.asrTokens;
+    currentSegmentAsrText = cmd.asrText;
     currentSegmentTimestamps = cmd.timestamps;
     _processSequence();
   }
@@ -150,10 +112,10 @@ class DictationSequencer {
   void _processSequence() {
     final int wordCount = _wordCount;
 
-    while (asrTokenAnchor < currentSegmentAsrTokens.length &&
+    while (asrCharAnchor < currentSegmentAsrText.length &&
         targetWordCursor < wordCount) {
-      final unconsumed = currentSegmentAsrTokens.sublist(asrTokenAnchor);
-      final int tsStart = min(asrTokenAnchor, currentSegmentTimestamps.length);
+      final unconsumed = currentSegmentAsrText.substring(asrCharAnchor);
+      final int tsStart = min(asrCharAnchor, currentSegmentTimestamps.length);
       final unconsumedTs = currentSegmentTimestamps.sublist(tsStart);
 
       bool matched = false;
@@ -172,13 +134,17 @@ class DictationSequencer {
           final int endW = startW + merge - 1;
           if (endW >= wordCount) break;
 
+          final int refStart = wordBoundaries[startW];
+          final int refEnd = (endW + 1 < wordBoundaries.length)
+              ? wordBoundaries[endW + 1]
+              : fullPhonemes.length;
+
           final result = _matcher.matchWord(
-            asrTokens: unconsumed,
+            asrText: unconsumed,
             asrTimestamps: unconsumedTs,
-            refChunks: refChunks,
-            refStart: wordStartChunk[startW],
-            refEnd: wordEndChunk[endW],
-            refEncodedIds: refEncodedIds,
+            fullPhonemes: fullPhonemes,
+            refStart: refStart,
+            refEnd: refEnd,
             config: AlignmentConfig(isTajweedEnabled: isTajweed),
           );
 
@@ -194,7 +160,6 @@ class DictationSequencer {
 
             if (result.tokensConsumed > 0) {
               // Ensure that merged words are actually legitimate boundary-merges (Wasl/Idgham)
-              // and not just a hallucinated word hiding behind a perfect word.
               if (merge > 1 &&
                   !_isValidMerge(result, startW, endW, unconsumed)) {
                 continue; // Reject this merge and try another combination
@@ -210,7 +175,7 @@ class DictationSequencer {
                 _commitGreen(w, result, unconsumed, unconsumedTs);
               }
 
-              asrTokenAnchor += result.tokensConsumed;
+              asrCharAnchor += result.tokensConsumed;
               targetWordCursor = endW + 1;
               matched = true;
               break;
@@ -221,7 +186,7 @@ class DictationSequencer {
         if (matched || waitingForPartial) break;
       }
 
-      if (!matched) break; // Wait for more ASR tokens
+      if (!matched) break; // Wait for more ASR text
     }
   }
 
@@ -232,7 +197,7 @@ class DictationSequencer {
   void _commitGreen(
     int w,
     WordMatchResult result,
-    List<String> slicedTokens,
+    String slicedAsr,
     List<double> slicedTs,
   ) {
     if (committedGreenWords.contains(w)) return;
@@ -244,12 +209,12 @@ class DictationSequencer {
     if (isTajweed && result.trace.isNotEmpty) {
       final errors = ErrorExplainer.evaluatePreAlignedWords(
         alignments: result.trace,
-        globalRefChunks: refChunks,
-        refChunkToWordMap: chunkToWordMap,
-        currentAsrChunks: slicedTokens,
+        fullPhonemes: fullPhonemes,
+        wordBoundaries: wordBoundaries,
+        currentAsrText: slicedAsr,
         trackingTimestamps: slicedTs,
         bestAsrStartIdx: 0,
-        targetChunkCursor: 0,
+        targetCharCursor: 0,
         startWordId: w,
         nextWordId: w + 1,
         totalAyahWords: max(1, _wordCount),
@@ -276,8 +241,8 @@ class DictationSequencer {
       ).toMap(),
     );
 
-    if (w < wordEndChunk.length && wordEndChunk[w] - 1 < refChunks.length) {
-      lastMatchedPhoneme = refChunks[wordEndChunk[w] - 1];
+    if (w + 1 < wordBoundaries.length && wordBoundaries[w + 1] - 1 < fullPhonemes.length) {
+      lastMatchedPhoneme = fullPhonemes[wordBoundaries[w + 1] - 1];
     }
   }
 
@@ -306,28 +271,30 @@ class DictationSequencer {
   }
 
   String _getWordReference(int w) {
-    if (w < 0 || w >= wordStartChunk.length || w >= wordEndChunk.length)
-      return "";
-    return refChunks.sublist(wordStartChunk[w], wordEndChunk[w]).join('');
+    if (w < 0 || w >= _wordCount) return "";
+    final start = wordBoundaries[w];
+    final end = (w + 1 < wordBoundaries.length)
+        ? wordBoundaries[w + 1]
+        : fullPhonemes.length;
+    return fullPhonemes.substring(start, min(end, fullPhonemes.length));
   }
 
   bool _isValidMerge(
     WordMatchResult result,
     int startW,
     int endW,
-    List<String> asrTokens,
+    String asrText,
   ) {
     if (startW == endW) return true;
 
     // The merge feature is specifically for Idgham, Iqlab, Wasl, etc., which happen at the BOUNDARIES.
-    // To prevent a completely wrong word (e.g. "المبين") from piggybacking on a correct word,
-    // we must verify that the "Core" (the middle) of EVERY word in the merge is highly accurate.
     for (int w = startW; w <= endW; w++) {
-      final int refStart = wordStartChunk[w];
-      final int refEnd = wordEndChunk[w];
+      final int refStart = wordBoundaries[w];
+      final int refEnd = (w + 1 < wordBoundaries.length)
+          ? wordBoundaries[w + 1]
+          : fullPhonemes.length;
       final int wordLen = refEnd - refStart;
 
-      // We forgive up to 2 phonemes at the junction (Idgham/Wasl zones).
       final int forgiveStart = (w > startW) ? min(2, wordLen ~/ 3) : 0;
       final int forgiveEnd = (w < endW) ? min(2, wordLen ~/ 3) : 0;
 
@@ -335,7 +302,7 @@ class DictationSequencer {
       final int coreEnd = refEnd - forgiveEnd;
       final int coreLen = coreEnd - coreStart;
 
-      if (coreLen <= 0) continue; // Word too short to have a distinct core
+      if (coreLen <= 0) continue;
 
       double coreCost = 0.0;
 
@@ -346,19 +313,17 @@ class DictationSequencer {
           } else if (align.opType == 'replace') {
             if (align.predIdx >= 0 &&
                 align.refIdx >= 0 &&
-                align.predIdx < asrTokens.length) {
-              final rId = refEncodedIds[align.refIdx];
-              final pId = PhonemeMatrix.encode(asrTokens[align.predIdx]);
-              coreCost += PhonemeMatrix.getCost(pId, rId);
+                align.predIdx < asrText.length) {
+              final bool isMatch = fullPhonemes.codeUnitAt(align.refIdx) ==
+                  asrText.codeUnitAt(align.predIdx);
+              coreCost += (isMatch ? 0.0 : 1.0);
             } else {
-              coreCost += config.costIns; // Fallback
+              coreCost += config.costIns;
             }
           }
         }
       }
 
-      // If the core of any individual word exceeds the threshold, the whole merge is INVALID.
-      // This stops "المبين" from hiding behind "أكان".
       if ((coreCost / coreLen) > config.maxPathCost) {
         return false;
       }

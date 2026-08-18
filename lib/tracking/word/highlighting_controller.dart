@@ -1,12 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
-import '../../utils/debug_logger.dart';
-import 'phoneme_tokenizer.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
 
@@ -212,27 +209,6 @@ class HighlightingController extends ChangeNotifier {
   Future<void> _initIsolate() async {
     await _alignmentIsolate.start();
     _isolateStarted = true;
-
-    try {
-      final String tokensStr =
-          await rootBundle.loadString('assets/model/tokens.txt');
-      final List<String> tokens = [];
-      for (final line in tokensStr.split('\n')) {
-        final parts = line.split(' ');
-        if (parts.isNotEmpty &&
-            parts[0].trim().isNotEmpty &&
-            parts[0] != '<blank>') {
-          tokens.add(parts[0].trim());
-        }
-      }
-      _alignmentIsolate.setup(tokens);
-      PhonemeTokenizer.initVocabulary(tokens);
-    } catch (e) {
-      DebugLogger.logSimple(
-        'HighlightingController',
-        'Failed to load tokens for matrix preheat: $e',
-      );
-    }
 
     _wordSub = _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
 
@@ -569,9 +545,19 @@ class HighlightingController extends ChangeNotifier {
         return;
       }
       _lastProcessedText = asrText;
+
+      final List<double> charDurations = [];
+      for (int i = 0; i < stream.tokens.length; i++) {
+        final tok = stream.tokens[i];
+        final dur = stream.durations[i] / max(1, tok.length);
+        for (int c = 0; c < tok.length; c++) {
+          charDurations.add(dur);
+        }
+      }
+
       _alignmentIsolate.syncStream(
-        stream.tokens,
-        stream.durations,
+        asrText,
+        charDurations,
         isNewSegment,
         _currentMatch?.verse.ayah ?? 0,
       );
