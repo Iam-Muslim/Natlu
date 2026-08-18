@@ -93,7 +93,9 @@ class QuranDictationMatcher {
     final int n = refEnd - refStart;
     if (m == 0 || n <= 0) return null;
 
-    // ── Buffer management ──
+    // ═════════════════════════════════════════════════════════════════════════
+    // 1. BUFFER MANAGEMENT & ENCODING
+    // ═════════════════════════════════════════════════════════════════════════
     final int stride = n + 1;
     final int cells = (m + 1) * stride;
     if (_dp.length < cells) {
@@ -113,7 +115,10 @@ class QuranDictationMatcher {
     final double costDel = config.costDel;
     final double costIns = config.costIns;
 
-    // ── Row 0: reference deletions (word phonemes with no ASR) ──
+    // ═════════════════════════════════════════════════════════════════════════
+    // 2. MATRIX INITIALIZATION
+    // ═════════════════════════════════════════════════════════════════════════
+    // Row 0: reference deletions (word phonemes with no ASR)
     dp[0] = 0.0;
     bt[0] = 0;
     for (int j = 1; j <= n; j++) {
@@ -121,13 +126,15 @@ class QuranDictationMatcher {
       bt[j] = 1; // delete
     }
 
-    // ── Column 0: FREE START (skip leading ASR tokens at zero cost) ──
+    // Column 0: FREE START (skip leading ASR tokens at zero cost)
     for (int i = 1; i <= m; i++) {
       dp[i * stride] = 0.0;
       bt[i * stride] = 2; // free insert
     }
 
-    // ── Core DP fill ──
+    // ═════════════════════════════════════════════════════════════════════════
+    // 3. CORE DP FILL (DYNAMIC TIME WARPING)
+    // ═════════════════════════════════════════════════════════════════════════
     for (int i = 1; i <= m; i++) {
       final int pId = _pIds[i - 1];
       final int row = i * stride;
@@ -156,7 +163,10 @@ class QuranDictationMatcher {
       }
     }
 
-    // ── Endpoint: best row i where dp[i][n]/n <= threshold ──
+    // ═════════════════════════════════════════════════════════════════════════
+    // 4. ENDPOINT DETECTION
+    // ═════════════════════════════════════════════════════════════════════════
+    // Endpoint: best row i where dp[i][n]/n <= threshold
     int bestI = -1;
     double bestCost = double.infinity;
 
@@ -245,7 +255,9 @@ class QuranDictationMatcher {
     // If it failed both the full match and the partial match, the word is completely rejected.
     if (bestI < 0) return null;
 
-    // ── Traceback from (bestI, n) ──
+    // ═════════════════════════════════════════════════════════════════════════
+    // 6. TRACEBACK & RESULTS
+    // ═════════════════════════════════════════════════════════════════════════
     int ci = bestI, cj = n;
     final List<PhonemeGroupAlignment> rawTrace = [];
     final List<String> asrChars = [];
