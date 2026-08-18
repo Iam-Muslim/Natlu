@@ -56,11 +56,15 @@ class AlignmentConfig {
   /// Cost of an ASR insertion (extra phoneme in stream).
   final double costIns;
 
+  /// Whether Tajweed mode is on. If false, massive word partial checking is skipped for speed.
+  final bool isTajweedEnabled;
+
   const AlignmentConfig({
     this.maxPathCost = 0.28,
     this.maxSkipWords = 2,
     this.costDel = 1.0,
     this.costIns = 1.0,
+    this.isTajweedEnabled = true,
   });
 
   factory AlignmentConfig.defaultConfig({bool isTajweed = false}) =>
@@ -155,7 +159,7 @@ class QuranDictationMatcher {
     // ── Endpoint: best row i where dp[i][n]/n <= threshold ──
     int bestI = -1;
     double bestCost = double.infinity;
-    
+
     // Dynamic threshold: short words require higher confidence to prevent false positives from noise.
     double threshold = config.maxPathCost;
     if (n <= 2) {
@@ -175,34 +179,71 @@ class QuranDictationMatcher {
       }
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // PARTIAL MATCHING LOGIC
+    // We must detect if the microphone buffer chopped a word in half.
+    // ═════════════════════════════════════════════════════════════════════════
+    bool isPartial = false;
+
     if (bestI < 0) {
-      // ── Check for Partial Match (Cost > threshold) ──
-      // If the word isn't fully matched yet, check if a prefix of the reference
-      // strongly aligns with the END of the current ASR buffer (row m).
-      // If so, the reciter is likely still speaking the word, and we should WAIT
-      // rather than skipping ahead to the next word.
-      bool isPartial = false;
-      int minJ = n > 2 ? 2 : 1; // Require at least 2 phonemes (or 1 for tiny words)
-      for (int j = minJ; j < n; j++) {
-        final double norm = dp[m * stride + j] / j;
-        if (norm <= config.maxPathCost) {
-          isPartial = true;
-          break;
+      // ── 1. Prefix Match (For words that failed the full cost threshold) ──
+      // Check if a prefix of the reference strongly aligns with the END of the ASR buffer.
+      // We check the last 3 ASR tokens (m-2 to m) to make it immune to trailing noise/spaces!
+      int minJ = n > 2 ? 2 : 1;
+      int startI = max(1, m - 2); 
+      for (int i = startI; i <= m; i++) {
+        for (int j = minJ; j < n; j++) {
+          if (dp[i * stride + j] / j <= config.maxPathCost) {
+            isPartial = true;
+            break;
+          }
+        }
+        if (isPartial) break;
+      }
+    } else if (config.isTajweedEnabled && (m - bestI) <= 3) {
+      // ── 2. Massive Word Check (For long words that mathematically passed) ──
+      // ONLY active if Tajweed is ON. If OFF, we commit instantly for UI speed.
+      // We trace backwards to count exact errors at the trailing edge of the word.
+      int trailingErrors = 0;
+      int ci = bestI, cj = n;
+
+      while (ci > 0 && cj > 0) {
+        int op = bt[ci * stride + cj];
+        if (op == 1) { // Deletion
+          trailingErrors++; cj--;
+        } else if (op == 2) { // Insertion
+          trailingErrors++; ci--;
+        } else { // Match or Sub
+          int rId = (refEncodedIds != null && (refStart + cj - 1) < refEncodedIds.length)
+              ? refEncodedIds[refStart + cj - 1]
+              : PhonemeMatrix.encode(refChunks[refStart + cj - 1]);
+          if (PhonemeMatrix.getCost(_pIds[ci - 1], rId) > 0.0) {
+            trailingErrors++; ci--; cj--;
+          } else {
+            break; // We found the end of the properly spoken word!
+          }
         }
       }
-
-      if (isPartial) {
-        return const WordMatchResult(
-          pathCost: 0.0,
-          tokensConsumed: 0,
-          cleanAsr: '',
-          timestamps: [],
-          trace: [],
-          isPartial: true,
-        );
+      
+      // If 3 or more errors are at the very end, it was chopped by the mic.
+      if (trailingErrors >= 3) {
+        isPartial = true;
       }
-      return null;
     }
+
+    if (isPartial) {
+      return const WordMatchResult(
+        pathCost: 0.0,
+        tokensConsumed: 0,
+        cleanAsr: '',
+        timestamps: [],
+        trace: [],
+        isPartial: true,
+      );
+    }
+
+    // If it failed both the full match and the partial match, the word is completely rejected.
+    if (bestI < 0) return null;
 
     // ── Traceback from (bestI, n) ──
     int ci = bestI, cj = n;
@@ -213,8 +254,13 @@ class QuranDictationMatcher {
     while (cj > 0) {
       if (ci == 0) {
         // Remaining reference deletions at the start
-        rawTrace.add(PhonemeGroupAlignment(
-            opType: 'delete', refIdx: refStart + cj - 1, predIdx: -1));
+        rawTrace.add(
+          PhonemeGroupAlignment(
+            opType: 'delete',
+            refIdx: refStart + cj - 1,
+            predIdx: -1,
+          ),
+        );
         cj--;
         continue;
       }
@@ -228,23 +274,28 @@ class QuranDictationMatcher {
             ? refEncodedIds[gRef]
             : PhonemeMatrix.encode(refChunks[gRef]);
         final double sc = PhonemeMatrix.getCost(_pIds[ci - 1], rId);
-        rawTrace.add(PhonemeGroupAlignment(
+        rawTrace.add(
+          PhonemeGroupAlignment(
             opType: sc == 0.0 ? 'match' : 'replace',
             refIdx: gRef,
-            predIdx: ci - 1));
+            predIdx: ci - 1,
+          ),
+        );
         asrChars.add(asrTokens[ci - 1]);
         if (ci - 1 < asrTimestamps.length) ts.add(asrTimestamps[ci - 1]);
         ci--;
         cj--;
       } else if (op == 1) {
         // Reference deletion
-        rawTrace.add(PhonemeGroupAlignment(
-            opType: 'delete', refIdx: gRef, predIdx: -1));
+        rawTrace.add(
+          PhonemeGroupAlignment(opType: 'delete', refIdx: gRef, predIdx: -1),
+        );
         cj--;
       } else {
         // ASR insertion (noise within the alignment)
-        rawTrace.add(PhonemeGroupAlignment(
-            opType: 'insert', refIdx: -1, predIdx: ci - 1));
+        rawTrace.add(
+          PhonemeGroupAlignment(opType: 'insert', refIdx: -1, predIdx: ci - 1),
+        );
         ci--;
       }
     }

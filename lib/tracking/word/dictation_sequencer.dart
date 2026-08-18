@@ -54,8 +54,7 @@ class DictationSequencer {
     final buf = (asrTokenAnchor < currentSegmentAsrTokens.length)
         ? currentSegmentAsrTokens.sublist(asrTokenAnchor).join('')
         : '';
-    mainSendPort
-        .send(DebugLogEvent(message: message, asrBuffer: buf).toMap());
+    mainSendPort.send(DebugLogEvent(message: message, asrBuffer: buf).toMap());
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -82,8 +81,9 @@ class DictationSequencer {
           : phonemes.length;
       if (start >= phonemes.length) break;
       final int safeEnd = min(end, phonemes.length);
-      final chunks =
-          QuranNormalizer.chunkPhonemes(phonemes.substring(start, safeEnd));
+      final chunks = QuranNormalizer.chunkPhonemes(
+        phonemes.substring(start, safeEnd),
+      );
 
       wordStartChunk[w] = refChunks.length;
       for (final ch in chunks) {
@@ -112,7 +112,8 @@ class DictationSequencer {
     lastMatchedPhoneme = null;
 
     debugLog(
-        '📖 Surah $currentSurahNumber | $wordCount words | cursor=$targetWordCursor | tajweed=$isTajweed');
+      '📖 Surah $currentSurahNumber | $wordCount words | cursor=$targetWordCursor | tajweed=$isTajweed',
+    );
 
     if (!cmd.forceClear && currentSegmentAsrTokens.isNotEmpty) {
       _processSequence();
@@ -152,17 +153,20 @@ class DictationSequencer {
     while (asrTokenAnchor < currentSegmentAsrTokens.length &&
         targetWordCursor < wordCount) {
       final unconsumed = currentSegmentAsrTokens.sublist(asrTokenAnchor);
-      final int tsStart =
-          min(asrTokenAnchor, currentSegmentTimestamps.length);
+      final int tsStart = min(asrTokenAnchor, currentSegmentTimestamps.length);
       final unconsumedTs = currentSegmentTimestamps.sublist(tsStart);
 
       bool matched = false;
       bool waitingForPartial = false;
 
       // Outer loop: how many words to SKIP (0 = no skip, 1 = skip W, etc.)
-      for (int skip = 0; skip <= config.maxSkipWords && targetWordCursor + skip < wordCount; skip++) {
+      for (
+        int skip = 0;
+        skip <= config.maxSkipWords && targetWordCursor + skip < wordCount;
+        skip++
+      ) {
         final int startW = targetWordCursor + skip;
-        
+
         // Inner loop: try single word first, then try merging with the next word (Wasl handling)
         for (int merge = 1; merge <= 2; merge++) {
           final int endW = startW + merge - 1;
@@ -175,7 +179,7 @@ class DictationSequencer {
             refStart: wordStartChunk[startW],
             refEnd: wordEndChunk[endW],
             refEncodedIds: refEncodedIds,
-            config: config,
+            config: AlignmentConfig(isTajweedEnabled: isTajweed),
           );
 
           if (result != null) {
@@ -191,7 +195,8 @@ class DictationSequencer {
             if (result.tokensConsumed > 0) {
               // Ensure that merged words are actually legitimate boundary-merges (Wasl/Idgham)
               // and not just a hallucinated word hiding behind a perfect word.
-              if (merge > 1 && !_isValidMerge(result, startW, endW, unconsumed)) {
+              if (merge > 1 &&
+                  !_isValidMerge(result, startW, endW, unconsumed)) {
                 continue; // Reject this merge and try another combination
               }
 
@@ -212,7 +217,7 @@ class DictationSequencer {
             }
           }
         }
-        
+
         if (matched || waitingForPartial) break;
       }
 
@@ -224,8 +229,12 @@ class DictationSequencer {
   // Commit Helpers
   // ─────────────────────────────────────────────────────────────────────────────
 
-  void _commitGreen(int w, WordMatchResult result, List<String> slicedTokens,
-      List<double> slicedTs) {
+  void _commitGreen(
+    int w,
+    WordMatchResult result,
+    List<String> slicedTokens,
+    List<double> slicedTs,
+  ) {
     if (committedGreenWords.contains(w)) return;
     committedGreenWords.add(w);
     committedRedWords.remove(w);
@@ -253,16 +262,19 @@ class DictationSequencer {
 
     final String refText = _getWordReference(w);
     debugLog(
-        '✅ [GREEN] Word $w (Ref: "$refText") -> ASR: "${result.cleanAsr}" (cost=${result.pathCost.toStringAsFixed(2)})');
+      '✅ [GREEN] Word $w (Ref: "$refText") -> ASR: "${result.cleanAsr}" (cost=${result.pathCost.toStringAsFixed(2)})',
+    );
 
-    mainSendPort.send(WordMatchedEvent(
-      wordId: w,
-      score: max(0.0, 1.0 - result.pathCost),
-      cleanAsr: result.cleanAsr,
-      isRed: false,
-      isNeutral: false,
-      tajweedErrors: tajweedErrors,
-    ).toMap());
+    mainSendPort.send(
+      WordMatchedEvent(
+        wordId: w,
+        score: max(0.0, 1.0 - result.pathCost),
+        cleanAsr: result.cleanAsr,
+        isRed: false,
+        isNeutral: false,
+        tajweedErrors: tajweedErrors,
+      ).toMap(),
+    );
 
     if (w < wordEndChunk.length && wordEndChunk[w] - 1 < refChunks.length) {
       lastMatchedPhoneme = refChunks[wordEndChunk[w] - 1];
@@ -277,24 +289,34 @@ class DictationSequencer {
 
     final String refText = _getWordReference(w);
     final String matchedRefText = _getWordReference(matchedWordIndex);
-    
-    debugLog('❌ [RED] Word $w (Ref: "$refText") skipped because lookahead matched Word $matchedWordIndex (Ref: "$matchedRefText")');
 
-    mainSendPort.send(WordMatchedEvent(
-      wordId: w,
-      score: 0.0,
-      cleanAsr: '',
-      isRed: true,
-      isNeutral: false,
-    ).toMap());
+    debugLog(
+      '❌ [RED] Word $w (Ref: "$refText") skipped because lookahead matched Word $matchedWordIndex (Ref: "$matchedRefText")',
+    );
+
+    mainSendPort.send(
+      WordMatchedEvent(
+        wordId: w,
+        score: 0.0,
+        cleanAsr: '',
+        isRed: true,
+        isNeutral: false,
+      ).toMap(),
+    );
   }
 
   String _getWordReference(int w) {
-    if (w < 0 || w >= wordStartChunk.length || w >= wordEndChunk.length) return "";
+    if (w < 0 || w >= wordStartChunk.length || w >= wordEndChunk.length)
+      return "";
     return refChunks.sublist(wordStartChunk[w], wordEndChunk[w]).join('');
   }
 
-  bool _isValidMerge(WordMatchResult result, int startW, int endW, List<String> asrTokens) {
+  bool _isValidMerge(
+    WordMatchResult result,
+    int startW,
+    int endW,
+    List<String> asrTokens,
+  ) {
     if (startW == endW) return true;
 
     // The merge feature is specifically for Idgham, Iqlab, Wasl, etc., which happen at the BOUNDARIES.
@@ -304,15 +326,15 @@ class DictationSequencer {
       final int refStart = wordStartChunk[w];
       final int refEnd = wordEndChunk[w];
       final int wordLen = refEnd - refStart;
-      
+
       // We forgive up to 2 phonemes at the junction (Idgham/Wasl zones).
       final int forgiveStart = (w > startW) ? min(2, wordLen ~/ 3) : 0;
       final int forgiveEnd = (w < endW) ? min(2, wordLen ~/ 3) : 0;
-      
+
       final int coreStart = refStart + forgiveStart;
       final int coreEnd = refEnd - forgiveEnd;
       final int coreLen = coreEnd - coreStart;
-      
+
       if (coreLen <= 0) continue; // Word too short to have a distinct core
 
       double coreCost = 0.0;
@@ -322,17 +344,19 @@ class DictationSequencer {
           if (align.opType == 'delete') {
             coreCost += config.costDel;
           } else if (align.opType == 'replace') {
-             if (align.predIdx >= 0 && align.refIdx >= 0 && align.predIdx < asrTokens.length) {
-                final rId = refEncodedIds[align.refIdx];
-                final pId = PhonemeMatrix.encode(asrTokens[align.predIdx]);
-                coreCost += PhonemeMatrix.getCost(pId, rId);
-             } else {
-                coreCost += config.costIns; // Fallback
-             }
+            if (align.predIdx >= 0 &&
+                align.refIdx >= 0 &&
+                align.predIdx < asrTokens.length) {
+              final rId = refEncodedIds[align.refIdx];
+              final pId = PhonemeMatrix.encode(asrTokens[align.predIdx]);
+              coreCost += PhonemeMatrix.getCost(pId, rId);
+            } else {
+              coreCost += config.costIns; // Fallback
+            }
           }
         }
       }
-      
+
       // If the core of any individual word exceeds the threshold, the whole merge is INVALID.
       // This stops "المبين" from hiding behind "أكان".
       if ((coreCost / coreLen) > config.maxPathCost) {
