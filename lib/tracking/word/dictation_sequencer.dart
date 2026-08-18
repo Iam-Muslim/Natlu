@@ -190,11 +190,11 @@ class DictationSequencer {
 
           if (result.tokensConsumed > 0) {
             // Mark skipped words RED
-          for (int s = 0; s < skip; s++) {
-            _commitRed(targetWordCursor + s);
-          }
-          // Mark matched word GREEN
-          _commitGreen(w, result, unconsumed, unconsumedTs);
+            for (int s = 0; s < skip; s++) {
+              _commitRed(targetWordCursor + s, w);
+            }
+            // Mark matched word GREEN
+            _commitGreen(w, result, unconsumed, unconsumedTs);
 
           asrTokenAnchor += result.tokensConsumed;
           targetWordCursor = w + 1;
@@ -239,8 +239,9 @@ class DictationSequencer {
       }
     }
 
+    final String refText = _getWordReference(w);
     debugLog(
-        '✅ [GREEN] Word $w: "${result.cleanAsr}" (cost=${result.pathCost.toStringAsFixed(2)})');
+        '✅ [GREEN] Word $w (Ref: "$refText") -> ASR: "${result.cleanAsr}" (cost=${result.pathCost.toStringAsFixed(2)})');
 
     mainSendPort.send(WordMatchedEvent(
       wordId: w,
@@ -256,13 +257,16 @@ class DictationSequencer {
     }
   }
 
-  void _commitRed(int w) {
+  void _commitRed(int w, int matchedWordIndex) {
     if (committedRedWords.contains(w) || committedGreenWords.contains(w)) {
       return;
     }
     committedRedWords.add(w);
 
-    debugLog('❌ [RED] Word $w skipped');
+    final String refText = _getWordReference(w);
+    final String matchedRefText = _getWordReference(matchedWordIndex);
+    
+    debugLog('❌ [RED] Word $w (Ref: "$refText") skipped because lookahead matched Word $matchedWordIndex (Ref: "$matchedRefText")');
 
     mainSendPort.send(WordMatchedEvent(
       wordId: w,
@@ -271,5 +275,10 @@ class DictationSequencer {
       isRed: true,
       isNeutral: false,
     ).toMap());
+  }
+
+  String _getWordReference(int w) {
+    if (w < 0 || w >= wordStartChunk.length || w >= wordEndChunk.length) return "";
+    return refChunks.sublist(wordStartChunk[w], wordEndChunk[w]).join('');
   }
 }

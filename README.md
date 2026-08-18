@@ -128,7 +128,7 @@ When you start speaking, it chunks audio into perfectly sized 160ms arrays and s
 
 **File:** `lib/engine/sherpa_engine.dart`
 
-Sherpa-ONNX runs the `zipformer_p_arabic_v2.int8.onnx` model inside a **Dart Isolate**. 
+Sherpa-ONNX runs the `zipformer_p_arabic_v3.int8.onnx` model inside a **Dart Isolate**. 
 
 ### Length-Aware Phonetic Encoding
 The advanced Zipformer model is trained to be **Tajweed and Madd aware**. It does NOT output clean text. It outputs frame-level phonetic alignments where **time duration is encoded as repeated characters**. 

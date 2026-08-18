@@ -108,7 +108,7 @@ class SherpaEngine {
 
   /// Pre-extract model assets from bundle to app documents directory.
   Future<void> preExtractAssets() async {
-    await _extractAsset('assets/model/zipformer_p_arabic_v2.int8.onnx');
+    await _extractAsset('assets/model/zipformer_p_arabic_v3.int8.onnx');
     await _extractAsset('assets/model/tokens.txt');
   }
 
@@ -133,7 +133,7 @@ class SherpaEngine {
     _sendPort = null;
 
     final String modelPath = await _extractAsset(
-      'assets/model/zipformer_p_arabic_v2.int8.onnx',
+      'assets/model/zipformer_p_arabic_v3.int8.onnx',
     );
     final String tokensPath = await _extractAsset('assets/model/tokens.txt');
 
@@ -294,7 +294,9 @@ class SherpaEngine {
               );
             }
 
-            final File lockFile = File('${File(modelPath).parent.path}/xnnpack_lock');
+            final File lockFile = File(
+              '${File(modelPath).parent.path}/xnnpack_lock',
+            );
             String provider = 'cpu';
 
             if (Platform.isAndroid) {
@@ -304,7 +306,7 @@ class SherpaEngine {
                 provider = 'cpu';
               } else {
                 // First attempt. Create the poison pill lock file.
-                // If XNNPACK natively aborts, this file will remain on disk, 
+                // If XNNPACK natively aborts, this file will remain on disk,
                 // protecting the next startup.
                 lockFile.createSync();
                 provider = 'xnnpack';

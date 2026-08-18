@@ -48,7 +48,7 @@ app.*.map.json
 *.jks
 android/key.properties
 pubspec.lock
-assets/model/zipformer_p_arabic_v2.int8.onnx
+assets/model/zipformer_p_arabic_v3.int8.onnx
 
 # --- iOS Specific Rules ---
 **/dgph

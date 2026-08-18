@@ -58,7 +58,7 @@ jobs:
           pip install -U "huggingface_hub[cli]"
           
           # Added the token environment variable to authenticate the request
-          hf download Muno459/zipformer_p-arabic-v2 zipformer_p_arabic_v2.int8.onnx --local-dir assets/model --token $HF_TOKEN
+          hf download Muno459/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model --token $HF_TOKEN
           
       # --- BUILD STEP ---
       # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts
@@ -92,4 +92,4 @@ jobs:
             build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a.apk
             build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a.apk
             build/app/outputs/flutter-apk/ReciteQuran-x86_64.apk
-            assets/model/zipformer_p_arabic_v2.int8.onnx
+            assets/model/zipformer_p_arabic_v3.int8.onnx

@@ -152,20 +152,31 @@ class QuranDictationMatcher {
       }
     }
 
-    // ── Endpoint: first row i where dp[i][n]/n <= threshold ──
+    // ── Endpoint: best row i where dp[i][n]/n <= threshold ──
     int bestI = -1;
     double bestCost = double.infinity;
+    
+    // Dynamic threshold: short words require higher confidence to prevent false positives from noise.
+    double threshold = config.maxPathCost;
+    if (n <= 2) {
+      threshold = min(threshold, 0.10);
+    } else if (n <= 4) {
+      threshold = min(threshold, 0.20);
+    }
+
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / n;
-      if (norm <= config.maxPathCost) {
-        bestI = i;
-        bestCost = norm;
-        break; // first valid = minimum token consumption
+      if (norm <= threshold) {
+        // Find the absolute minimum cost. Use < to avoid consuming trailing noise.
+        if (norm < bestCost) {
+          bestI = i;
+          bestCost = norm;
+        }
       }
     }
 
     if (bestI < 0) {
-      // ── Check for Partial Match ──
+      // ── Check for Partial Match (Cost > threshold) ──
       // If the word isn't fully matched yet, check if a prefix of the reference
       // strongly aligns with the END of the current ASR buffer (row m).
       // If so, the reciter is likely still speaking the word, and we should WAIT
@@ -191,6 +202,21 @@ class QuranDictationMatcher {
         );
       }
       return null;
+    } else {
+      // ── Check for Partial Match (Cost <= threshold) ──
+      // If the best match consumes the ENTIRE ASR buffer (bestI == m), 
+      // AND the reference still has trailing deletions (bt == 1),
+      // it means the reciter is likely still speaking the end of the word.
+      if (bestI == m && bt[m * stride + n] == 1) {
+        return const WordMatchResult(
+          pathCost: 0.0,
+          tokensConsumed: 0,
+          cleanAsr: '',
+          timestamps: [],
+          trace: [],
+          isPartial: true,
+        );
+      }
     }
 
     // ── Traceback from (bestI, n) ──
