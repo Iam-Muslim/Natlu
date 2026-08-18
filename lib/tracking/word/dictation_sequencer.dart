@@ -157,51 +157,57 @@ class DictationSequencer {
       final unconsumedTs = currentSegmentTimestamps.sublist(tsStart);
 
       bool matched = false;
+      bool waitingForPartial = false;
 
-      // Try current word → skip+1 → skip+2
-      for (int skip = 0;
-          skip <= config.maxSkipWords &&
-              targetWordCursor + skip < wordCount;
-          skip++) {
-        final int w = targetWordCursor + skip;
-        if (w >= wordStartChunk.length || w >= wordEndChunk.length) break;
+      // Outer loop: how many words to SKIP (0 = no skip, 1 = skip W, etc.)
+      for (int skip = 0; skip <= config.maxSkipWords && targetWordCursor + skip < wordCount; skip++) {
+        final int startW = targetWordCursor + skip;
+        
+        // Inner loop: try single word first, then try merging with the next word (Wasl handling)
+        for (int merge = 1; merge <= 2; merge++) {
+          final int endW = startW + merge - 1;
+          if (endW >= wordCount) break;
 
-        final result = _matcher.matchWord(
-          asrTokens: unconsumed,
-          asrTimestamps: unconsumedTs,
-          refChunks: refChunks,
-          refStart: wordStartChunk[w],
-          refEnd: wordEndChunk[w],
-          refEncodedIds: refEncodedIds,
-          config: config,
-        );
+          final result = _matcher.matchWord(
+            asrTokens: unconsumed,
+            asrTimestamps: unconsumedTs,
+            refChunks: refChunks,
+            refStart: wordStartChunk[startW],
+            refEnd: wordEndChunk[endW],
+            refEncodedIds: refEncodedIds,
+            config: config,
+          );
 
-        if (result != null) {
-          if (result.isPartial) {
-            // The word is partially matched (still being spoken).
-            // We MUST wait for more audio to prevent jumping ahead prematurely.
-            if (skip == 0) {
-              matched = false;
-              break; // Stop looking ahead, wait for next segment
-            } else {
-              continue; // A future word is partially matched, ignore for now
+          if (result != null) {
+            if (result.isPartial) {
+              if (skip == 0) {
+                waitingForPartial = true;
+                break; // Stop looking ahead, wait for next segment
+              } else {
+                continue; // A future word is partially matched, ignore for now
+              }
+            }
+
+            if (result.tokensConsumed > 0) {
+              // 1. Mark skipped words RED
+              for (int s = 0; s < skip; s++) {
+                _commitRed(targetWordCursor + s, startW);
+              }
+              // 2. Mark the matched (or merged) words GREEN
+              for (int m = 0; m < merge; m++) {
+                final w = startW + m;
+                _commitGreen(w, result, unconsumed, unconsumedTs);
+              }
+
+              asrTokenAnchor += result.tokensConsumed;
+              targetWordCursor = endW + 1;
+              matched = true;
+              break;
             }
           }
-
-          if (result.tokensConsumed > 0) {
-            // Mark skipped words RED
-            for (int s = 0; s < skip; s++) {
-              _commitRed(targetWordCursor + s, w);
-            }
-            // Mark matched word GREEN
-            _commitGreen(w, result, unconsumed, unconsumedTs);
-
-          asrTokenAnchor += result.tokensConsumed;
-          targetWordCursor = w + 1;
-          matched = true;
-          break;
         }
-        }
+        
+        if (matched || waitingForPartial) break;
       }
 
       if (!matched) break; // Wait for more ASR tokens

@@ -202,21 +202,6 @@ class QuranDictationMatcher {
         );
       }
       return null;
-    } else {
-      // ── Check for Partial Match (Cost <= threshold) ──
-      // If the best match consumes the ENTIRE ASR buffer (bestI == m), 
-      // AND the reference still has trailing deletions (bt == 1),
-      // it means the reciter is likely still speaking the end of the word.
-      if (bestI == m && bt[m * stride + n] == 1) {
-        return const WordMatchResult(
-          pathCost: 0.0,
-          tokensConsumed: 0,
-          cleanAsr: '',
-          timestamps: [],
-          trace: [],
-          isPartial: true,
-        );
-      }
     }
 
     // ── Traceback from (bestI, n) ──
