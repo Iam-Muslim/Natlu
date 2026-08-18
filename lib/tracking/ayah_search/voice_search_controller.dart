@@ -15,7 +15,6 @@
 //
 // See also: docs/voice_navigation.md
 
-import '../common/quran_normalizer.dart';
 import '../../engine/sherpa_engine.dart';
 import 'phonetic_search.dart';
 import '../../utils/debug_logger.dart';
@@ -90,14 +89,14 @@ class VoiceSearchController {
   Future<AnchorResult?> processRealtime(String partialText) async {
     if (_search == null) return null;
 
-    String normText = QuranNormalizer.normalizeWithTashkeel(partialText);
+    final text = partialText.trim();
     
     // Safety guard: Don't run search on very short strings (e.g. just "بسم")
     // as it will match thousands of verses and is too ambiguous.
-    if (normText.length < 8) return null;
+    if (text.length < 8) return null;
 
     if (_isSearching) {
-      _queuedText = normText;
+      _queuedText = text;
       return null;
     }
     
@@ -105,7 +104,7 @@ class VoiceSearchController {
     AnchorResult? finalResult;
 
     try {
-      String textToSearch = normText;
+      String textToSearch = text;
       
       while (true) {
         final results = await _search!.searchIsolated(textToSearch, errorRatio: 0.18);
@@ -148,7 +147,7 @@ class VoiceSearchController {
 
   /// Called when the user releases the long-press, OR when VAD silence is detected.
   ///
-  /// Takes the raw ASR text accumulated during the press, normalizes it,
+  /// Takes the raw ASR text accumulated during the press
   /// and runs fuzzy phonetic search to find the best match.
   ///
   /// Returns the matched [AnchorResult] (surah + ayah), or null if:
@@ -161,18 +160,17 @@ class VoiceSearchController {
       return null;
     }
 
-    // Normalize input text.
-    String normText = QuranNormalizer.normalizeWithTashkeel(finalAsrText);
-    DebugLogger.log('VoiceSearch', 'Normalized input: "$normText"');
+    final text = finalAsrText.trim();
+    DebugLogger.log('VoiceSearch', 'Search input: "$text"');
     
     // If we're forcing a stop (VAD/button), we still want to guard against completely empty/garbage searches
-    if (normText.length < 4) {
-      DebugLogger.log('VoiceSearch', 'Search aborted: input too short after normalization.');
+    if (text.length < 4) {
+      DebugLogger.log('VoiceSearch', 'Search aborted: input too short.');
       return null;
     }
 
     // Run PhoneticSearch (allow ~18% error ratio to account for ASR misrecognitions)
-    final results = await _search!.searchIsolated(normText, errorRatio: 0.18);
+    final results = await _search!.searchIsolated(text, errorRatio: 0.18);
 
     if (results.isEmpty) {
       DebugLogger.log('VoiceSearch', 'No match found.');

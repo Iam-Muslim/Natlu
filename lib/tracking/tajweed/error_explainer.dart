@@ -13,7 +13,7 @@
 //
 // This app avoids expensive JSON parsing in the hot loop by encoding Tajweed
 // rules directly into the string lengths of `ordered_quran_phonemes.json`.
-// `QuranNormalizer.chunkPhonemes()` isolates repeating characters. This file
+// `PhonemeTokenizer.tokenize()` segments tokens. This file
 // then routes the chunk to the correct rule based on its length and identity:
 //
 // 1. QALQALAH (Bounce):

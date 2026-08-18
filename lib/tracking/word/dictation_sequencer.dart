@@ -2,7 +2,7 @@ import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
-import '../common/quran_normalizer.dart';
+import 'phoneme_tokenizer.dart';
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'phoneme_alignment_isolate.dart';
@@ -81,7 +81,7 @@ class DictationSequencer {
           : phonemes.length;
       if (start >= phonemes.length) break;
       final int safeEnd = min(end, phonemes.length);
-      final chunks = QuranNormalizer.chunkPhonemes(
+      final chunks = PhonemeTokenizer.tokenize(
         phonemes.substring(start, safeEnd),
       );
 

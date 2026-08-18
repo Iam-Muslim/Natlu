@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
 import '../../utils/debug_logger.dart';
-import '../common/quran_normalizer.dart';
+import 'phoneme_tokenizer.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
 
@@ -95,7 +95,7 @@ class AsrTokenProcessor {
     double lastBlankTs = _filteredLastBlanks.isNotEmpty ? _filteredLastBlanks.last : -1.0;
 
     for (int i = commonLen; i < maxCount; i++) {
-      final String tok = result.tokens[i].replaceAll(' ', '');
+      final String tok = result.tokens[i];
       final double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
 
       if (tok.isEmpty ||
@@ -112,7 +112,6 @@ class AsrTokenProcessor {
       _filteredLastBlanks.add(lastBlankTs);
 
       final int fIdx = _filteredTokens.length - 1;
-      final String token = _filteredTokens[fIdx];
       final double spikeTime = _filteredSpikeTimes[fIdx];
       final double lastBlankBefore = _filteredLastBlanks[fIdx];
 
@@ -124,43 +123,7 @@ class AsrTokenProcessor {
       }
 
       final double rawGap = max(0.04, spikeTime - prevSpikeTime);
-
-      final bool isMaddCarrier = token.contains('ا') ||
-          token.contains('و') ||
-          token.contains('ي') ||
-          token.contains('ۥ') ||
-          token.contains('ۦ');
-
-      final bool isDoubledOrNasal =
-          (token.length >= 2 && token[0] == token[1]) ||
-              token.contains('ن') ||
-              token.contains('م') ||
-              token.contains('ں') ||
-              token.contains('۾');
-
-      int baseCount = 0;
-      for (int j = 0; j < token.length; j++) {
-        if (!QuranNormalizer.isResidual(token[j])) {
-          baseCount++;
-        }
-      }
-      if (baseCount == 0) baseCount = 1;
-
-      final double maxAllowedDur;
-      if (isMaddCarrier) {
-        maxAllowedDur = (baseCount * 0.45) + 0.20;
-      } else if (isDoubledOrNasal) {
-        if (baseCount >= 3) {
-          maxAllowedDur = 1.10;
-        } else {
-          maxAllowedDur = 0.55;
-        }
-      } else {
-        maxAllowedDur = 0.35;
-      }
-
-      final double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
-      _tokenDurations.add(tokenDur);
+      _tokenDurations.add(rawGap);
     }
 
     return ProcessedAudioStream(
@@ -263,7 +226,7 @@ class HighlightingController extends ChangeNotifier {
         }
       }
       _alignmentIsolate.setup(tokens);
-      QuranNormalizer.initVocabulary(tokens);
+      PhonemeTokenizer.initVocabulary(tokens);
     } catch (e) {
       DebugLogger.logSimple(
         'HighlightingController',
