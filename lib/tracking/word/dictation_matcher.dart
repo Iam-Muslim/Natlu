@@ -29,12 +29,16 @@ class WordMatchResult {
   /// Full alignment trace for Tajweed evaluation.
   final List<PhonemeGroupAlignment> trace;
 
+  /// Indicates if this is a partial match (word is still being spoken).
+  final bool isPartial;
+
   const WordMatchResult({
     required this.pathCost,
     required this.tokensConsumed,
     required this.cleanAsr,
     required this.timestamps,
     required this.trace,
+    this.isPartial = false,
   });
 }
 
@@ -159,7 +163,35 @@ class QuranDictationMatcher {
         break; // first valid = minimum token consumption
       }
     }
-    if (bestI < 0) return null;
+
+    if (bestI < 0) {
+      // ── Check for Partial Match ──
+      // If the word isn't fully matched yet, check if a prefix of the reference
+      // strongly aligns with the END of the current ASR buffer (row m).
+      // If so, the reciter is likely still speaking the word, and we should WAIT
+      // rather than skipping ahead to the next word.
+      bool isPartial = false;
+      int minJ = n > 2 ? 2 : 1; // Require at least 2 phonemes (or 1 for tiny words)
+      for (int j = minJ; j < n; j++) {
+        final double norm = dp[m * stride + j] / j;
+        if (norm <= config.maxPathCost) {
+          isPartial = true;
+          break;
+        }
+      }
+
+      if (isPartial) {
+        return const WordMatchResult(
+          pathCost: 0.0,
+          tokensConsumed: 0,
+          cleanAsr: '',
+          timestamps: [],
+          trace: [],
+          isPartial: true,
+        );
+      }
+      return null;
+    }
 
     // ── Traceback from (bestI, n) ──
     int ci = bestI, cj = n;

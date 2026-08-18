@@ -176,8 +176,20 @@ class DictationSequencer {
           config: config,
         );
 
-        if (result != null && result.tokensConsumed > 0) {
-          // Mark skipped words RED
+        if (result != null) {
+          if (result.isPartial) {
+            // The word is partially matched (still being spoken).
+            // We MUST wait for more audio to prevent jumping ahead prematurely.
+            if (skip == 0) {
+              matched = false;
+              break; // Stop looking ahead, wait for next segment
+            } else {
+              continue; // A future word is partially matched, ignore for now
+            }
+          }
+
+          if (result.tokensConsumed > 0) {
+            // Mark skipped words RED
           for (int s = 0; s < skip; s++) {
             _commitRed(targetWordCursor + s);
           }
@@ -188,6 +200,7 @@ class DictationSequencer {
           targetWordCursor = w + 1;
           matched = true;
           break;
+        }
         }
       }
 
