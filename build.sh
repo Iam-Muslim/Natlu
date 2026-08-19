@@ -11,6 +11,8 @@ fi
 
 # 2. Build Flutter Web
 echo "=== [1/3] Building Flutter Web ==="
+mkdir -p assets/model
+touch assets/model/zipformer_p_arabic_v3.int8.onnx
 flutter pub get
 flutter build web --release --base-href "/recite/"
 

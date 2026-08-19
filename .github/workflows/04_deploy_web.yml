@@ -39,6 +39,11 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Create asset placeholder for Web
+        run: |
+          mkdir -p assets/model
+          touch assets/model/zipformer_p_arabic_v3.int8.onnx
+
       - name: Build Flutter Web
         run: flutter build web --release --base-href "/recite/"
 
