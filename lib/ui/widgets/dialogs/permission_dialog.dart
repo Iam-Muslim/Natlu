@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../state/app_state.dart';
@@ -132,7 +133,9 @@ class PermissionDialog extends StatelessWidget {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
-                            openAppSettings();
+                            if (!kIsWeb) {
+                              openAppSettings();
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: c.gold,

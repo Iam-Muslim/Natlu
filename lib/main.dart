@@ -18,7 +18,6 @@
 ///   matches words against expected Quran text → updates highlighting
 library;
 
-import 'dart:io';
 import 'dart:async';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
@@ -51,7 +50,7 @@ void main() async {
       WidgetsFlutterBinding.ensureInitialized();
 
       // Initialize iOS audio session to disable VPIO processing for accurate ASR
-      if (Platform.isIOS) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
         try {
           final session = await AudioSession.instance;
           await session.configure(
@@ -78,16 +77,16 @@ void main() async {
         };
       }
 
-      // Transparent system bars for immersive experience
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          systemNavigationBarColor: Colors.transparent,
-        ),
-      );
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-
+      if (!kIsWeb) {
+        // Transparent system bars for immersive experience
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+          ),
+        );
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
 
       await AppState.instance.load();
       runApp(const QuranApp());
@@ -124,6 +123,7 @@ class QuranApp extends StatelessWidget {
         final isDark = AppState.instance.isDarkMode;
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+          title: 'Recite Quran - اتلو القران',
           theme: ThemeData(
             brightness: isDark ? Brightness.dark : Brightness.light,
             scaffoldBackgroundColor: c.bg,
@@ -131,7 +131,29 @@ class QuranApp extends StatelessWidget {
                 ? ColorScheme.dark(primary: c.gold, surface: c.surface)
                 : ColorScheme.light(primary: c.gold, surface: c.surface),
           ),
-          home: const _Orchestrator(),
+          home: Scaffold(
+            backgroundColor: isDark ? Colors.black : const Color(0xFFE5E7EB),
+            body: kIsWeb
+                ? Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: c.bg,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 25,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: const _Orchestrator(),
+                      ),
+                    ),
+                  )
+                : const _Orchestrator(),
+          ),
         );
       },
     );
@@ -200,7 +222,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     // during the critical startup window.
     Future.delayed(const Duration(seconds: 5), _checkForUpdates);
 
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         try {
           await FlutterDisplayMode.setHighRefreshRate();
@@ -215,7 +237,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   }
 
   Future<void> _checkForUpdates() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
       const platform = MethodChannel('com.recitequran.app/playstore');
       final bool hasPlayStore = await platform.invokeMethod('isPlayStoreInstalled');
@@ -324,17 +346,19 @@ class _OrchestratorState extends State<_Orchestrator> {
             _isRecording = false;
           });
       } else {
-        final status = await Permission.microphone.request();
-        if (status != PermissionStatus.granted) {
-          if (mounted) {
-            showDialog(
-              context: context,
-              builder: (ctx) =>
-                  const PermissionDialog(reason: PermissionReason.tracking),
-            );
+        if (!kIsWeb) {
+          final status = await Permission.microphone.request();
+          if (status != PermissionStatus.granted) {
+            if (mounted) {
+              showDialog(
+                context: context,
+                builder: (ctx) =>
+                    const PermissionDialog(reason: PermissionReason.tracking),
+              );
+            }
+            _isToggling = false;
+            return;
           }
-          _isToggling = false;
-          return;
         }
 
         // Ensure engine is ready (may still be initializing in background)
@@ -396,17 +420,19 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
-      final status = await Permission.microphone.request();
-      if (status != PermissionStatus.granted) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (ctx) =>
-                const PermissionDialog(reason: PermissionReason.voiceSearch),
-          );
+      if (!kIsWeb) {
+        final status = await Permission.microphone.request();
+        if (status != PermissionStatus.granted) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (ctx) =>
+                  const PermissionDialog(reason: PermissionReason.voiceSearch),
+            );
+          }
+          _isToggling = false;
+          return;
         }
-        _isToggling = false;
-        return;
       }
 
       if (!_engine.isInitialized) {

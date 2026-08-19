@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -608,18 +606,22 @@ class _TrackingScreenState extends State<TrackingScreen>
                       onLongPress: () async {
                         try {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Preparing logs...', textDirection: TextDirection.ltr)),
+                            const SnackBar(
+                              content: Text(
+                                'Preparing logs...',
+                                textDirection: TextDirection.ltr,
+                              ),
+                            ),
                           );
-                          String allLogs = globalSessionLogs.join('\n');
-                          final directory = await getTemporaryDirectory();
-                          final logFile = File(
-                            '${directory.path}/recite_quran_logs.txt',
+                          final String allLogs = globalSessionLogs.join('\n');
+                          await SharePlus.instance.share(
+                            ShareParams(
+                              text: allLogs.isNotEmpty
+                                  ? allLogs
+                                  : 'No logs recorded.',
+                              subject: 'ReciteQuran Logs',
+                            ),
                           );
-                          await logFile.writeAsString(allLogs);
-                          // ignore: deprecated_member_use
-                          await Share.shareXFiles([
-                            XFile(logFile.path),
-                          ], text: 'Logs');
                         } catch (e) {
                           DebugLogger.logSimple(
                             'TrackingScreen',

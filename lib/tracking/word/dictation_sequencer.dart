@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'dart:math';
 
 import '../../data/quran_data.dart';
@@ -18,7 +17,7 @@ import 'phoneme_alignment_isolate.dart';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class DictationSequencer {
-  final SendPort mainSendPort;
+  final void Function(Map<String, dynamic> event) onEvent;
 
   // ── Reference ──
   List<int> wordBoundaries = [];
@@ -41,7 +40,7 @@ class DictationSequencer {
   final QuranDictationMatcher _matcher = QuranDictationMatcher();
   final AlignmentConfig config = const AlignmentConfig();
 
-  DictationSequencer(this.mainSendPort);
+  DictationSequencer(this.onEvent);
 
   int get _wordCount => max(0, wordBoundaries.length - 1);
 
@@ -49,7 +48,7 @@ class DictationSequencer {
     final buf = (asrCharAnchor < currentSegmentAsrText.length)
         ? currentSegmentAsrText.substring(asrCharAnchor)
         : '';
-    mainSendPort.send(DebugLogEvent(message: message, asrBuffer: buf).toMap());
+    onEvent(DebugLogEvent(message: message, asrBuffer: buf).toMap());
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +237,7 @@ class DictationSequencer {
       '✅ [GREEN] Word $w (Ref: "$refText") -> ASR: "${result.cleanAsr}" (cost=${result.pathCost.toStringAsFixed(2)})',
     );
 
-    mainSendPort.send(
+    onEvent(
       WordMatchedEvent(
         wordId: w,
         score: max(0.0, 1.0 - result.pathCost),
@@ -267,7 +266,7 @@ class DictationSequencer {
       '❌ [RED] Word $w (Ref: "$refText") skipped because lookahead matched Word $matchedWordIndex (Ref: "$matchedRefText")',
     );
 
-    mainSendPort.send(
+    onEvent(
       WordMatchedEvent(
         wordId: w,
         score: 0.0,

@@ -1,0 +1,65 @@
+name: Build and Deploy Web App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'landing_page/**'
+      - 'assets/**'
+      - 'functions/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/deploy_web.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: Build Flutter Web & Landing Page
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: landing_page/package-lock.json
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Flutter Web
+        run: flutter build web --release --base-href "/recite/"
+
+      - name: Prepare Landing Page with Flutter Web App
+        run: |
+          mkdir -p landing_page/public/recite
+          cp -R build/web/* landing_page/public/recite/
+
+      - name: Install Node dependencies & Build Landing Page
+        working-directory: landing_page
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy landing_page/dist --project-name=recitequran
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
