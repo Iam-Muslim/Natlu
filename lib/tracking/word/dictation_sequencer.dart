@@ -102,18 +102,6 @@ class DictationSequencer {
       asrCharAnchor = 0;
       debugLog('🔄 New segment');
     }
-    
-    // DEBUG: Print raw ASR tokens and their individual durations from the model
-    if (cmd.asrText.isNotEmpty && cmd.asrText != currentSegmentAsrText) {
-      final List<String> tokenDurations = [];
-      for (int i = 0; i < cmd.asrText.length; i++) {
-        final char = cmd.asrText[i];
-        final dur = i < cmd.timestamps.length ? cmd.timestamps[i].toStringAsFixed(2) : "?";
-        tokenDurations.add("'$char':${dur}s");
-      }
-      debugLog('Raw ASR Stream: [${tokenDurations.join(', ')}]');
-    }
-
     currentSegmentAsrText = cmd.asrText;
     currentSegmentTimestamps = cmd.timestamps;
     _processSequence();
