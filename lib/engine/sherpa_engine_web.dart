@@ -102,7 +102,7 @@ class SherpaEngine {
     );
 
     try {
-      const String modelFileName = 'zipformer_p_arabic_v2.int8.onnx';
+      const String modelFileName = 'zipformer_p_arabic_v3.int8.onnx';
       JSUint8Array modelBytes;
       final host = Uri.base.host;
       final String modelUrl;
