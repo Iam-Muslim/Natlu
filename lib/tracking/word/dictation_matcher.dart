@@ -335,10 +335,10 @@ class QuranDictationMatcher {
     // 5. PARTIAL MATCHING LOGIC
     // ═════════════════════════════════════════════════════════════════════════
     bool isPartial = false;
-
-    if (isTajweed && bestI > 0 && bestI == m && bt[bestI * stride + n] == 1) {
-      // The best match consumes the entire ASR buffer, but ends by deleting trailing reference characters.
-      // Wait for more text (e.g. Madd is still being spoken).
+    // Strict Frontier Rule: If Tajweed is ON, and we consumed the entire buffer (bestI == m),
+    // and there is ANY error (bestCost > 0.0), we WAIT.
+    // We no longer rely on bt == 1 because the matrix can substitute garbage characters.
+    if (isTajweed && bestCost > 0.0 && bestI > 0 && bestI == m) {
       isPartial = true;
     } else if (bestI < 0) {
       // ── 1. Prefix Match (For words that failed the full cost threshold) ──
@@ -354,7 +354,7 @@ class QuranDictationMatcher {
         if (isPartial) break;
       }
     }
-
+    
     if (isPartial) {
       return const WordMatchResult(
         pathCost: 0.0,
@@ -366,7 +366,10 @@ class QuranDictationMatcher {
       );
     }
 
-    if (bestI < 0) return null;
+    // If no full match was found and prefix match also failed, it's a complete mismatch
+    if (bestI < 0) {
+      return null;
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 6. TRACEBACK & RESULTS
