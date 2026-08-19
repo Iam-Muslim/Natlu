@@ -86,7 +86,7 @@ jobs:
         run: flutter pub get
 
       - name: Create assets directory
-        run: mkdir assets\model
+        run: if (!(Test-Path -Path "assets\model")) { New-Item -ItemType Directory -Force -Path "assets\model" }
 
       - name: Download Model from GitHub Cache
         env:
