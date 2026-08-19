@@ -147,7 +147,7 @@ class DictationSequencer {
             fullPhonemes: fullPhonemes,
             refStart: refStart,
             refEnd: refEnd,
-            config: AlignmentConfig(isTajweedEnabled: isTajweed),
+            config: config,
           );
 
           if (result != null) {

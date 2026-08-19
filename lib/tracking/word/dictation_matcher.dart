@@ -59,19 +59,14 @@ class AlignmentConfig {
   /// Cost of an ASR insertion (extra phoneme in stream).
   final double costIns;
 
-  /// Whether Tajweed mode is on. If false, massive word partial checking is skipped for speed.
-  final bool isTajweedEnabled;
-
   const AlignmentConfig({
     this.maxPathCost = 0.30,
     this.maxSkipWords = 2,
     this.costDel = 1.0,
     this.costIns = 1.0,
-    this.isTajweedEnabled = true,
   });
 
-  factory AlignmentConfig.defaultConfig({bool isTajweed = false}) =>
-      const AlignmentConfig();
+  factory AlignmentConfig.defaultConfig() => const AlignmentConfig();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -352,35 +347,6 @@ class QuranDictationMatcher {
           }
         }
         if (isPartial) break;
-      }
-    } else if (config.isTajweedEnabled && (m - bestI) <= 3) {
-      // ── 2. Massive Word Check (For long words that mathematically passed) ──
-      int trailingErrors = 0;
-      int ci = bestI, cj = n;
-
-      while (ci > 0 && cj > 0) {
-        int op = bt[ci * stride + cj];
-        if (op == 1) { // Deletion
-          trailingErrors++;
-          cj--;
-        } else if (op == 2) { // Insertion
-          trailingErrors++;
-          ci--;
-        } else { // Match or Sub
-          final int asrCode = asrText.codeUnitAt(ci - 1);
-          final int refCode = fullPhonemes.codeUnitAt(refStart + cj - 1);
-          if (PhoneticCostEngine.getSubstitutionCost(asrCode, refCode) > 0.0) {
-            trailingErrors++;
-            ci--;
-            cj--;
-          } else {
-            break;
-          }
-        }
-      }
-
-      if (trailingErrors >= 3) {
-        isPartial = true;
       }
     }
 

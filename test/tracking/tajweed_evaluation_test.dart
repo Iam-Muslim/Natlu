@@ -46,7 +46,7 @@ void main() {
 
     test('1. Perfect Recitation of Al-Fatihah 1:1 produces ZERO false errors', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       // Sliced ASR for Word 2 ("ررَحمَاانِ" -> 10 chars)
       const asrWord2 = 'ررَحمَاانِ';
@@ -85,7 +85,7 @@ void main() {
 
     test('2. Shortened Aared Madd produces EXACTLY ONE defect error without duplicates', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       // Sliced ASR for Word 3 ("ررَحِۦۦۦۦم") where reciter shortened the Madd to only 0.25s ("ررَحِۦم")
       const asrWord3 = 'ررَحِۦم';
@@ -131,7 +131,7 @@ void main() {
 
     test('3. Missing Shaddah doubling produces EXACTLY ONE Shaddah defect error', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       // Reciter said "رَحمَاانِ" (single 'رَ' instead of 'ررَ', but Madd "اا" is valid >= 0.50s)
       const asrWord2 = 'رَحمَاانِ';
@@ -174,7 +174,7 @@ void main() {
 
     test('4. Mushaddad Ghunnah on "ءِننننَ" evaluates duration and doubling', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       const String fullPhonemes2_6 = 'ءِننننَللَذِۦۦنَ';
       final List<int> boundaries2_6 = [0, 7, 16];
@@ -258,7 +258,7 @@ void main() {
 
     test('5. Wrong Tashkeel diacritic produces Tashkeel error', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       // Reciter said "بِسمُ" (Damma instead of Kasra on Meem)
       const asrWord0 = 'بِسمُ';
@@ -296,7 +296,7 @@ void main() {
 
     test('6. Multi-rule evaluation isolates independent defects accurately', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       final List<WordTajweedRule> word1Rules = [
         const WordTajweedRule(
@@ -385,7 +385,7 @@ void main() {
 
     test('7. Lazem Madd (6 beats = 1.50s) on Surah 2:1 "الٓمٓ"', () {
       final matcher = QuranDictationMatcher();
-      const config = AlignmentConfig(isTajweedEnabled: true);
+      const config = AlignmentConfig();
 
       // Surah 2:1: "ءَلِفلَااااااممممِۦۦۦۦۦۦم" (25 chars)
       const String fullPhonemes2_1 = 'ءَلِفلَااااااممممِۦۦۦۦۦۦم';
