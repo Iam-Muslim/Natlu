@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# If Flutter is not present in the environment (e.g. Cloudflare Pages runner), install it
+# 1. Install Flutter if not present (for Cloudflare Pages runner)
 if ! command -v flutter &> /dev/null; then
     echo "=== Installing Flutter SDK on Cloudflare Runner ==="
     git clone https://github.com/flutter/flutter.git -b stable --depth 1 $HOME/flutter
@@ -9,5 +9,23 @@ if ! command -v flutter &> /dev/null; then
     flutter --version
 fi
 
-# Run the standard web build
-bash build_web.sh
+# 2. Build Flutter Web
+echo "=== [1/3] Building Flutter Web ==="
+flutter pub get
+flutter build web --release --base-href "/recite/"
+
+# 3. Copy Flutter App to Landing Page Public Folder
+echo "=== [2/3] Copying Flutter App into React Landing Page ==="
+mkdir -p landing_page/public/recite
+cp -R build/web/* landing_page/public/recite/
+
+# 4. Copy Cloudflare Functions into place
+mkdir -p landing_page/functions
+cp web/download-model.js landing_page/functions/download-model.js
+
+# 5. Build React Landing Page
+echo "=== [3/3] Building React Landing Page ==="
+cd landing_page
+npm ci
+npm run build
+echo "=== Build Complete! Output is in landing_page/dist ==="
