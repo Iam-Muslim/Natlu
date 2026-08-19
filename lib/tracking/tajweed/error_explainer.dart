@@ -223,6 +223,10 @@ class ErrorExplainer {
         expectedWordRules: expectedWordRules,
       );
 
+      // DEBUG: Print raw alignments to trace timing attribution
+      final traceStr = alignments.map((a) => '${a.opType}(R:${a.refIdx}, P:${a.predIdx})').join(', ');
+      DebugLogger.log('DurationTrace', 'Word $w Alignments: $traceStr');
+
       final List<ReciterError> wordErrors = [];
 
       // 2. Evaluate each span with aggregated ASR alignments and durations
@@ -487,6 +491,12 @@ class ErrorExplainer {
 
       final double req = rule.getRequiredDuration();
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration);
+
+      // DEBUG: Trace Madd duration
+      DebugLogger.log(
+        'DurationTrace',
+        'Madd Span [${span.refText}] -> ASR Chunk: "$predText" | Duration: ${spanDuration.toStringAsFixed(2)}s | Target: ${req.toStringAsFixed(2)}s',
+      );
 
       if (durStatus == TajweedDurationStatus.defect) {
         errors.add(

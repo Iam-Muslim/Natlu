@@ -291,7 +291,11 @@ class QuranDictationMatcher {
         final double del = dp[row + j - 1] + delCost;
         final double ins = dp[prev + j] + insCost;
 
-        if (sub <= del && sub <= ins) {
+        // We use `sub < del` instead of `sub <= del` to break ties in favor of deletions.
+        // This forces the DP to match EARLY and delete LATE, ensuring trailing omissions
+        // are correctly represented as `op == 1` (Deletion) at the end of the path,
+        // which makes the Strict Frontier rule work reliably.
+        if (sub < del && sub <= ins) {
           dp[row + j] = sub;
           bt[row + j] = 0; // match/sub
         } else if (del <= ins) {
@@ -336,10 +340,21 @@ class QuranDictationMatcher {
     // ═════════════════════════════════════════════════════════════════════════
     bool isPartial = false;
     // Strict Frontier Rule: If Tajweed is ON, and we consumed the entire buffer (bestI == m),
-    // and there is ANY error (bestCost > 0.0), we WAIT.
-    // We no longer rely on bt == 1 because the matrix can substitute garbage characters.
-    if (isTajweed && bestCost > 0.0 && bestI > 0 && bestI == m) {
-      isPartial = true;
+    // we ONLY wait if the error is at the very trailing edge of the word (a deletion or substitution of the last character).
+    // If the error was earlier in the word but the end matches perfectly, we commit immediately.
+    if (isTajweed && bestI > 0 && bestI == m) {
+      int op = bt[bestI * stride + n];
+      if (op == 1) {
+        // Deletion at the end
+        isPartial = true;
+      } else if (op == 0) {
+        // Substitution at the end
+        int asrCode = asrText.codeUnitAt(bestI - 1);
+        int refCode = fullPhonemes.codeUnitAt(refStart + n - 1);
+        if (PhoneticCostEngine.getSubstitutionCost(asrCode, refCode) > 0.0) {
+          isPartial = true;
+        }
+      }
     } else if (bestI < 0) {
       // ── 1. Prefix Match (For words that failed the full cost threshold) ──
       int minJ = n > 2 ? 2 : 1;
@@ -415,7 +430,7 @@ class QuranDictationMatcher {
         cj--;
       } else {
         rawTrace.add(
-          PhonemeGroupAlignment(opType: 'insert', refIdx: -1, predIdx: ci - 1),
+          PhonemeGroupAlignment(opType: 'insert', refIdx: gRef, predIdx: ci - 1),
         );
         ci--;
       }
