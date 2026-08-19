@@ -1,17 +1,24 @@
 <div align="center">
 
-# ما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
+# وما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
 
 <p align="center">
   <i>"And We have certainly made the Quran easy for remembrance, so is there any who will remember?"</i><br>
   <b>— Surah Al-Qamar (54:17)</b>
 </p>
 
-اني برئ مما تعملون (برئ من استعمال للبرنامج او الاكواد او الافكار او البروجكت في غير سبيل الله سبحانه و تعالى ) - (برئ من اخذ الاموال او وضع الاعلانات او ان يشتري به احد ثمنا )
 
 # Recite Quran — اتلو القران
-### Real-Time Quran Recitation Tracker, Tajweed Verifier & Voice Search Engine
 
+
+
+<p align="center">
+  <img height="280" src="docs/screenshots/5-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/3-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/4-ar.png" alt="ReciteQuran Preview" />
+</p>
+
+</div>
+
+---
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank">
     <img src="docs/badges/google_play.svg" height="45" alt="Get it on Google Play" />
@@ -26,19 +33,6 @@
   </a>
 </p>
 <br>
-<p align="center">
-  <img src="https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20Web-0F172A?style=for-the-badge" alt="Platforms" />
-</p>
-<br>
-
-<p align="center">
-  <img height="280" src="docs/screenshots/5-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/3-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/4-ar.png" alt="ReciteQuran Preview" />
-</p>
-
-</div>
-
----
-
 
 ## Overview
 
@@ -83,7 +77,7 @@ Unlike other applications that transmit your audio to remote servers, ReciteQura
 - **Visual Feedback**:
   - **Green**: Correct recitation (Consonants and Harakat match).
   - **Red**: Word skipped, substituted, or mispronounced.
-  - **Yellow**: Tajweed duration defect/surplus or diacritical variation.
+  - **Yellow**: Tajweed Mistake . 
 
 ---
 
@@ -102,22 +96,13 @@ Unlike other applications that transmit your audio to remote servers, ReciteQura
 ---
 
 ### 3. Instant Voice Ayah Search
-- Speak any verse or fragment in Arabic.
-- The offline phonetic matcher locates the verse and jumps directly to it in the Mushaf.
-
+- The offline phonetic matcher locates the verse and jumps directly to it .
 ---
 
-### 4. Hifz Memorization & Blur Mode
-- Enable Blur Mode in settings to conceal upcoming verses for memorization self-testing.
-- Verses reveal themselves as you recite them correctly.
-
+### 4. Hifz Memorization & Hide Mode
+- Words reveal themselves as you recite them correctly.
 ---
 
-### 5. 100% Offline & Private
-- All speech recognition and phoneme alignment algorithms execute locally on your device.
-- No network connection required, and no voice recordings are transmitted to external servers.
-
----
 
 ## Developer Guide
 
@@ -210,7 +195,7 @@ lib/
 
 ---
 
-## Sacred License & Terms of Use (لوجه الله تعالى)
+## (لوجه الله تعالى)
 
 ### **ما أسألكم عليه من أجر إن أجري إلا على رب العالمين**
 
@@ -227,11 +212,9 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 ---
 
-## Acknowledgments
-
 *Alhamdulillah (الحمد لله رب العالمين)* — This project builds on research and work from the following open-source projects:
 
-- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by [Quran-Lab](https://huggingface.co/Quran-Lab)
+- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by [Quran-Lab](https://huggingface.co/Quran-Lab) Brother - Mustafa 
 - **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by [obadx](https://github.com/OmarMuhammedAli)
 - **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by [Hetchy](https://huggingface.co/hetchyy)
 
