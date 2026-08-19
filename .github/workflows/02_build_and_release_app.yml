@@ -1,0 +1,142 @@
+name: 02 - Build & Release App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Strict Tag Name (NO SPACES! e.g., v2.0.0)'
+        required: true
+        default: 'v2.0.0'
+      release_title:
+        description: 'Display Title (Can include spaces/Arabic! e.g., الحمد لله رب العالمين)'
+        required: true
+        default: 'الحمد لله رب العالمين'
+
+permissions:
+  contents: write
+
+jobs:
+  build_android:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Create assets directory
+        run: mkdir -p assets/model
+
+      - name: Download Model from GitHub Cache
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download models-latest -p "*.onnx" --dir assets/model
+          
+      - name: Build Split APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Rename APKs
+        run: |
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ReciteQuran-arm64-v8a.apk
+          mv build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ReciteQuran-armeabi-v7a.apk
+          mv build/app/outputs/flutter-apk/app-x86_64-release.apk ReciteQuran-x86_64.apk
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            ReciteQuran-arm64-v8a.apk
+            ReciteQuran-armeabi-v7a.apk
+            ReciteQuran-x86_64.apk
+          retention-days: 1
+
+  build_windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Create assets directory
+        run: mkdir assets\model
+
+      - name: Download Model from GitHub Cache
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download models-latest -p "*.onnx" --dir assets\model
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Zip Windows Build
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath ReciteQuran_Windows.zip
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: ReciteQuran_Windows.zip
+          retention-days: 1
+
+  publish_release:
+    name: Publish Unified GitHub Release
+    needs: [build_android, build_windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apks
+          path: release_assets/
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: release_assets/
+
+      - name: Download Model from GitHub Cache
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release_assets
+          # We don't checkout code here, just download the model directly via gh CLI
+          # To use gh CLI without checkout, we need to specify the repo
+          gh release download models-latest -p "*.onnx" --dir release_assets/ -R Iam-Muslim/ReciteQuran-ElhamduleAllah
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.release_title }}
+          draft: false
+          prerelease: false
+          files: release_assets/*

@@ -28,7 +28,6 @@ class TranscriptionResult {
   final int startTime;
   final List<String> tokens;
   final List<double> timestamps;
-  final List<double> ysProbs;
   final int streamEpoch;
 
   TranscriptionResult({
@@ -37,7 +36,6 @@ class TranscriptionResult {
     this.startTime = 0,
     this.tokens = const [],
     this.timestamps = const [],
-    this.ysProbs = const [],
     this.streamEpoch = 0,
   });
 }

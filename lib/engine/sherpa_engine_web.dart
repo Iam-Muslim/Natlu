@@ -14,7 +14,6 @@ class TranscriptionResult {
   final int startTime;
   final List<String> tokens;
   final List<double> timestamps;
-  final List<double> ysProbs;
   final int streamEpoch;
 
   TranscriptionResult({
@@ -23,7 +22,6 @@ class TranscriptionResult {
     this.startTime = 0,
     this.tokens = const [],
     this.timestamps = const [],
-    this.ysProbs = const [],
     this.streamEpoch = 0,
   });
 }
@@ -32,7 +30,10 @@ class TranscriptionResult {
 external JSBoolean _isWasmModuleLoaded();
 
 @JS('writeSherpaAssetToVFS')
-external JSBoolean _writeSherpaAssetToVFS(JSString filename, JSUint8Array bytes);
+external JSBoolean _writeSherpaAssetToVFS(
+  JSString filename,
+  JSUint8Array bytes,
+);
 
 @JS('initSherpaRecognizer')
 external JSBoolean _initSherpaRecognizer();
@@ -65,16 +66,6 @@ class SherpaEngine {
       try {
         final Map<String, dynamic> data = jsonDecode(jsonStr.toDart);
         final tokensList = List<String>.from(data['tokens'] ?? []);
-        final probsList = List<double>.from(
-          (data['ys_probs'] ?? []).map((e) => (e as num).toDouble()),
-        );
-
-        if (probsList.isNotEmpty) {
-          DebugLogger.logSimple(
-            'SherpaDart',
-            '🎯 Tokens: $tokensList | Confidence (ysProbs): $probsList',
-          );
-        }
 
         _outputController.add(
           TranscriptionResult(
@@ -85,7 +76,6 @@ class SherpaEngine {
             timestamps: List<double>.from(
               (data['timestamps'] ?? []).map((e) => (e as num).toDouble()),
             ),
-            ysProbs: probsList,
             streamEpoch: _currentStreamEpoch,
           ),
         );

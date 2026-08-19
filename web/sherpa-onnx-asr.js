@@ -621,7 +621,7 @@ function createOnlineRecognizer(Module, myConfig) {
       break;
     case 2:
       // zipformer2Ctc
-      onlineZipformer2CtcModelConfig.model = './zipformer_p_arabic_v2.int8.onnx';
+      onlineZipformer2CtcModelConfig.model = (Module && Module.modelPath) ? Module.modelPath : './zipformer_p_arabic_v2.int8.onnx';
       break;
     case 3:
       // nemoCtc

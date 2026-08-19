@@ -1,4 +1,4 @@
-name: Build and Deploy Web App
+name: 05 - Build & Deploy Web App
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
       - 'assets/**'
       - 'functions/**'
       - 'pubspec.yaml'
-      - '.github/workflows/deploy_web.yml'
+      - '.github/workflows/05_deploy_web.yml'
   workflow_dispatch:
 
 jobs:
@@ -43,9 +43,14 @@ jobs:
         run: flutter build web --release --base-href "/recite/"
 
       - name: Prepare Landing Page with Flutter Web App
+        env:
+          SUBHAN_ALLAH: ${{ secrets.SUBHAN_ALLAH }}
         run: |
           mkdir -p landing_page/public/recite
           cp -R build/web/* landing_page/public/recite/
+          mkdir -p landing_page/functions
+          cp web/download-model.js landing_page/functions/download-model.js
+          sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" landing_page/functions/download-model.js
 
       - name: Install Node dependencies & Build Landing Page
         working-directory: landing_page

@@ -1,7 +1,10 @@
-name: iOS Build
+name: 03 - Build iOS
 
 on:
-  workflow_dispatch: # Triggers manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build_ios:
@@ -24,12 +27,11 @@ jobs:
       - name: Create assets directory
         run: mkdir -p assets/model
 
-      - name: Download ONNX Model from Hugging Face
+      - name: Download Model from GitHub Cache (models-latest)
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pip3 install -U "huggingface_hub[cli]" --break-system-packages
-          hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model --token $HF_TOKEN
+          gh release download models-latest -p "*.onnx" --dir assets/model
 
       - name: Build iOS Archive (No Codesign)
         run: flutter build ipa --release --no-codesign

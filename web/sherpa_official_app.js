@@ -47,8 +47,11 @@ window.writeSherpaAssetToVFS = function(filename, bytes) {
 };
 
 // Called by Dart after writing the model files to initialize the engine
-window.initSherpaRecognizer = function() {
+window.initSherpaRecognizer = function(modelFilename) {
     try {
+        if (modelFilename) {
+            Module.modelPath = modelFilename.startsWith('./') ? modelFilename : ('./' + modelFilename);
+        }
         recognizer = createOnlineRecognizer(Module);
         isRecognizerReady = true;
         console.log("[Sherpa] Recognizer created successfully!");

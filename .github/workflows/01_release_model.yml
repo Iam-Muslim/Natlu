@@ -1,0 +1,36 @@
+name: 01 - Download & Release ONNX Model
+
+on:
+  workflow_dispatch: # Run manually when the model updates on HF
+
+permissions:
+  contents: write
+
+jobs:
+  download-and-release:
+    name: Cache Model in GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create temporary assets directory
+        run: mkdir -p assets/model
+
+      - name: Download ONNX Model from Hugging Face
+        env:
+          SUBHAN_ALLAH: ${{ secrets.SUBHAN_ALLAH }}
+        run: |
+          pip install -U "huggingface_hub[cli]"
+          hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model --token $SUBHAN_ALLAH
+
+      - name: Update GitHub Release (models-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models-latest
+          name: "Cached ONNX Models"
+          body: "This release serves as a permanent cache for the heavy ONNX models to speed up Android, iOS, and Windows builds."
+          draft: false
+          prerelease: false
+          files: assets/model/zipformer_p_arabic_v3.int8.onnx
