@@ -155,7 +155,33 @@ class PhonemeGroupAlignment {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 2: ERROR EXPLAINER ENGINE (DIRECT EVALUATION)
+// SECTION 2: REFERENCE PHONETIC SPAN MODEL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _PhoneticSpan {
+  final int refStart; // absolute index in fullPhonemes
+  final int refEnd;   // absolute index in fullPhonemes
+  final String refText;
+  final String baseChar;
+  final bool isMadd;
+  final bool isShaddah;
+  final bool isGhunnah;
+  final WordTajweedRule? matchedWordRule;
+
+  _PhoneticSpan({
+    required this.refStart,
+    required this.refEnd,
+    required this.refText,
+    required this.baseChar,
+    required this.isMadd,
+    required this.isShaddah,
+    required this.isGhunnah,
+    this.matchedWordRule,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3: ERROR EXPLAINER ENGINE (SPAN-LEVEL TOKEN & DURATION EVALUATION)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ErrorExplainer {
@@ -174,291 +200,422 @@ class ErrorExplainer {
     List<WordTajweedRule> expectedWordRules = const [],
   }) {
     final Map<int, List<ReciterError>> errorsByWord = {};
-    final Map<int, List<String>> wordErrorDescMap = {};
 
-    int getWordIndex(int charIdx) {
-      if (wordBoundaries.isEmpty) return 0;
-      for (int w = 0; w < wordBoundaries.length - 1; w++) {
-        if (charIdx >= wordBoundaries[w] && charIdx < wordBoundaries[w + 1]) {
-          return w;
-        }
-      }
-      return max(0, wordBoundaries.length - 2);
-    }
+    for (int w = startWordId; w < nextWordId; w++) {
+      if (w < 0 || w >= wordBoundaries.length - 1) continue;
 
-    String getWordText(int wIdx) {
-      if (wIdx < 0 || wIdx >= wordBoundaries.length - 1) return '';
-      final start = wordBoundaries[wIdx];
-      final end = (wIdx + 1 < wordBoundaries.length)
-          ? wordBoundaries[wIdx + 1]
+      final int wordRefStart = wordBoundaries[w];
+      final int wordRefEnd = (w + 1 < wordBoundaries.length)
+          ? wordBoundaries[w + 1]
           : fullPhonemes.length;
-      return fullPhonemes.substring(start, min(end, fullPhonemes.length));
-    }
+      if (wordRefStart >= wordRefEnd) continue;
 
-    for (var align in alignments) {
-      if (align.refIdx < 0 && align.predIdx < 0) continue;
-      int absRefIdx = targetCharCursor + align.refIdx;
-      int wIdx = -1;
-      if (absRefIdx >= 0 && absRefIdx < fullPhonemes.length) {
-        wIdx = getWordIndex(absRefIdx);
-      } else if (align.refIdx == -1 && targetCharCursor < fullPhonemes.length) {
-        wIdx = getWordIndex(targetCharCursor);
-      }
-      if (wIdx < startWordId || wIdx >= nextWordId) {
-        continue; // Out of bounds of the committed match
-      }
-
-      String refChunk = '';
-      if (absRefIdx >= 0 && absRefIdx < fullPhonemes.length) {
-        refChunk = fullPhonemes[absRefIdx];
-      }
-
-      int absPredIdx = bestAsrStartIdx + align.predIdx;
-      String predChunk = '';
-      if (absPredIdx >= 0 && absPredIdx < currentAsrText.length) {
-        predChunk = currentAsrText[absPredIdx];
-      }
-
-      // Calculate chunk duration
-      double chunkDuration = 0.0;
-      if (absPredIdx >= 0 && absPredIdx < trackingTimestamps.length) {
-        chunkDuration = trackingTimestamps[absPredIdx];
-      }
-      if (chunkDuration <= 0.0) chunkDuration = 0.15;
-
-      wordErrorDescMap.putIfAbsent(wIdx, () => []);
-      List<ReciterError> chunkErrors = _evaluateChunkAlignment(
-        align: align,
-        refChunk: refChunk,
-        predChunk: predChunk,
-        chunkDuration: chunkDuration,
-        wordIdx: wIdx,
-        wordErrorDesc: wordErrorDescMap[wIdx]!,
-        expectedWordRules: expectedWordRules,
-        wordText: getWordText(wIdx),
+      final String wordText = fullPhonemes.substring(
+        wordRefStart,
+        min(wordRefEnd, fullPhonemes.length),
       );
 
-      if (chunkErrors.isNotEmpty) {
-        errorsByWord.putIfAbsent(wIdx, () => []).addAll(chunkErrors);
+      // 1. Build cohesive phonetic spans for this word
+      final List<_PhoneticSpan> spans = _buildWordSpans(
+        fullPhonemes: fullPhonemes,
+        wordRefStart: wordRefStart,
+        wordRefEnd: wordRefEnd,
+        expectedWordRules: expectedWordRules,
+      );
+
+      final List<ReciterError> wordErrors = [];
+
+      // 2. Evaluate each span with aggregated ASR alignments and durations
+      for (final span in spans) {
+        // Collect all alignment items belonging to this reference span
+        final spanAlignments = alignments.where((a) {
+          final absRef = targetCharCursor + a.refIdx;
+          return absRef >= span.refStart && absRef < span.refEnd;
+        }).toList();
+
+        if (spanAlignments.isEmpty) continue;
+
+        // Collect matched predicted characters and sum actual acoustic duration
+        final List<String> predChunks = [];
+        final Set<int> usedPredIndices = {};
+        double totalSpanDuration = 0.0;
+        bool hasDelete = false;
+
+        for (final a in spanAlignments) {
+          if (a.opType == 'delete') {
+            hasDelete = true;
+          }
+          final absPred = bestAsrStartIdx + a.predIdx;
+          if (absPred >= 0 && absPred < currentAsrText.length) {
+            predChunks.add(currentAsrText[absPred]);
+            if (!usedPredIndices.contains(absPred)) {
+              usedPredIndices.add(absPred);
+              if (absPred < trackingTimestamps.length) {
+                totalSpanDuration += trackingTimestamps[absPred];
+              }
+            }
+          }
+        }
+
+        final String predText = predChunks.join('');
+
+        // Evaluate the span against Madd, Shaddah, Ghunnah, Tashkeel, or Consonants
+        final spanErrors = _evaluateSpan(
+          span: span,
+          predText: predText,
+          spanDuration: totalSpanDuration,
+          hasDelete: hasDelete,
+          wordText: wordText,
+        );
+
+        wordErrors.addAll(spanErrors);
+      }
+
+      if (wordErrors.isNotEmpty) {
+        // Sort errors by UI priority
+        wordErrors.sort(
+          (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
+        );
+
+        // Filter out normal phoneme substitutions and surplus duration (keep only defects & tashkeel)
+        wordErrors.removeWhere((e) {
+          return e.errorType == ErrorCategory.normal ||
+              e.durationStatus == TajweedDurationStatus.surplus;
+        });
+
+        // Deduplicate identical errors on the same rule/phoneme
+        final List<ReciterError> deduplicated = [];
+        final Set<String> seenKeys = {};
+        for (final e in wordErrors) {
+          final key = '${e.errorType.name}_${e.expectedRule?.runtimeType}_${e.expectedPh}';
+          if (!seenKeys.contains(key)) {
+            seenKeys.add(key);
+            deduplicated.add(e);
+          }
+        }
+
+        if (deduplicated.isNotEmpty) {
+          errorsByWord[w] = deduplicated;
+
+          for (var e in deduplicated) {
+            String ruleInfo = e.expectedRule != null
+                ? ' | Rule: ${e.expectedRule!.name.en} (req: ${e.expectedDuration?.toStringAsFixed(2)}s, got: ${e.actualDuration?.toStringAsFixed(2)}s)'
+                : '';
+            DebugLogger.log(
+              'Error',
+              '🚨 [ERROR LOG] Word "$wordText" ($w) | ${e.errorType.name.toUpperCase()} -> ${e.speechErrorType.name.toUpperCase()} (Exp: "${e.expectedPh}" vs Got: "${e.predictedPh}")$ruleInfo',
+            );
+          }
+        }
       }
     }
 
-    // Sort errors by UI priority
-    errorsByWord.forEach(
-      (_, list) => list.sort(
-        (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
-      ),
-    );
-
-    // Filter out normal phoneme substitutions and surplus duration
-    errorsByWord.forEach((wIdx, list) {
-      list.removeWhere((e) {
-        return e.errorType == ErrorCategory.normal ||
-            e.durationStatus == TajweedDurationStatus.surplus;
-      });
-    });
-
-    errorsByWord.forEach((wIdx, list) {
-      final String wordStr = getWordText(wIdx);
-      for (var e in list) {
-        String ruleInfo = e.expectedRule != null
-            ? ' | Rule: ${e.expectedRule!.name.en} (req: ${e.expectedDuration?.toStringAsFixed(2)}s, got: ${e.actualDuration?.toStringAsFixed(2)}s)'
-            : '';
-        DebugLogger.log(
-          'Error',
-          '🚨 [ERROR LOG] Word "$wordStr" ($wIdx) | ${e.errorType.name.toUpperCase()} -> ${e.speechErrorType.name.toUpperCase()} (Exp: "${e.expectedPh}" vs Got: "${e.predictedPh}")$ruleInfo',
-        );
-      }
-    });
-
-    errorsByWord.removeWhere((wIdx, list) => list.isEmpty);
     return errorsByWord;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 2.2 DIRECT CHUNK EVALUATION PIPELINE
+  // 3.2 REFERENCE SPAN BUILDER
+  // Groups contiguous repeating characters (Madd, Shaddah, Ghunnah) into spans
   // ───────────────────────────────────────────────────────────────────────────
-  static List<ReciterError> _evaluateChunkAlignment({
-    required PhonemeGroupAlignment align,
-    required String refChunk,
-    required String predChunk,
-    required double chunkDuration,
-    required int wordIdx,
-    required List<String> wordErrorDesc,
+  static List<_PhoneticSpan> _buildWordSpans({
+    required String fullPhonemes,
+    required int wordRefStart,
+    required int wordRefEnd,
     required List<WordTajweedRule> expectedWordRules,
+  }) {
+    final List<_PhoneticSpan> spans = [];
+    int cursor = wordRefStart;
+
+    while (cursor < wordRefEnd) {
+      final String ch = fullPhonemes[cursor];
+
+      // ── 1. Madd Span (Consecutive Madd vowels: ا, ۦ, ۥ) ──
+      if ('اۥۦ'.contains(ch)) {
+        int end = cursor;
+        while (end < wordRefEnd && fullPhonemes[end] == ch) {
+          end++;
+        }
+        final refText = fullPhonemes.substring(cursor, end);
+
+        // Find matching Madd rule in expectedWordRules
+        WordTajweedRule? matchedRule;
+        for (final r in expectedWordRules) {
+          if (r.ruleId >= 1 && r.ruleId <= 7) {
+            matchedRule = r;
+            break;
+          }
+        }
+
+        spans.add(
+          _PhoneticSpan(
+            refStart: cursor,
+            refEnd: end,
+            refText: refText,
+            baseChar: ch,
+            isMadd: true,
+            isShaddah: false,
+            isGhunnah: false,
+            matchedWordRule: matchedRule,
+          ),
+        );
+        cursor = end;
+        continue;
+      }
+
+      // ── 2. Mushaddad Ghunnah Span (نننن or مممم) ──
+      if ('نم'.contains(ch) &&
+          cursor + 1 < wordRefEnd &&
+          fullPhonemes[cursor + 1] == ch &&
+          cursor + 2 < wordRefEnd &&
+          fullPhonemes[cursor + 2] == ch) {
+        int end = cursor;
+        while (end < wordRefEnd && fullPhonemes[end] == ch) {
+          end++;
+        }
+        // Include attached Harakah if present
+        if (end < wordRefEnd && 'َُِ'.contains(fullPhonemes[end])) {
+          end++;
+        }
+        final refText = fullPhonemes.substring(cursor, end);
+
+        WordTajweedRule? matchedRule;
+        for (final r in expectedWordRules) {
+          if (r.ruleId == 10) {
+            matchedRule = r;
+            break;
+          }
+        }
+
+        spans.add(
+          _PhoneticSpan(
+            refStart: cursor,
+            refEnd: end,
+            refText: refText,
+            baseChar: ch,
+            isMadd: false,
+            isShaddah: false,
+            isGhunnah: true,
+            matchedWordRule: matchedRule ??
+                WordTajweedRule(
+                  ruleId: 10,
+                  nameAr: ch == 'ن' ? 'النون المشددة' : 'الميم المشددة',
+                  nameEn: ch == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
+                  goldenLen: 2,
+                ),
+          ),
+        );
+        cursor = end;
+        continue;
+      }
+
+      // ── 3. Shaddah Span (Doubled consonants: رر, لل, تت, etc.) ──
+      if (cursor + 1 < wordRefEnd &&
+          fullPhonemes[cursor + 1] == ch &&
+          !'اۥۦ'.contains(ch)) {
+        int end = cursor;
+        while (end < wordRefEnd && fullPhonemes[end] == ch) {
+          end++;
+        }
+        // Include attached Harakah if present
+        if (end < wordRefEnd && 'َُِ'.contains(fullPhonemes[end])) {
+          end++;
+        }
+        final refText = fullPhonemes.substring(cursor, end);
+
+        spans.add(
+          _PhoneticSpan(
+            refStart: cursor,
+            refEnd: end,
+            refText: refText,
+            baseChar: ch,
+            isMadd: false,
+            isShaddah: true,
+            isGhunnah: false,
+            matchedWordRule: const WordTajweedRule(
+              ruleId: 9,
+              nameAr: 'الشدة',
+              nameEn: 'Shaddah',
+              goldenLen: 1,
+            ),
+          ),
+        );
+        cursor = end;
+        continue;
+      }
+
+      // ── 4. Single Consonant + Harakah / Diacritic Span ──
+      int end = cursor + 1;
+      while (end < wordRefEnd && 'َُِڇؙ۪ۜـ'.contains(fullPhonemes[end])) {
+        end++;
+      }
+      final refText = fullPhonemes.substring(cursor, end);
+
+      spans.add(
+        _PhoneticSpan(
+          refStart: cursor,
+          refEnd: end,
+          refText: refText,
+          baseChar: ch,
+          isMadd: false,
+          isShaddah: false,
+          isGhunnah: false,
+        ),
+      );
+      cursor = end;
+    }
+
+    return spans;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3.3 SPAN EVALUATION PIPELINE
+  // ───────────────────────────────────────────────────────────────────────────
+  static List<ReciterError> _evaluateSpan({
+    required _PhoneticSpan span,
+    required String predText,
+    required double spanDuration,
+    required bool hasDelete,
     required String wordText,
   }) {
-    // ── Phase 1A: Complete Insertion Error ──
-    if (align.opType == 'insert') {
-      return [
-        ReciterError(
-          errorType: ErrorCategory.normal,
-          speechErrorType: SpeechErrorType.insert,
-          expectedPh: '',
-          predictedPh: predChunk,
-        ),
-      ];
-    }
+    final List<ReciterError> errors = [];
 
-    // ── Phase 1B: Complete Deletion Error ──
-    if (align.opType == 'delete') {
-      wordErrorDesc.add('Delete(ref:$refChunk)');
-      return [
-        ReciterError(
-          errorType: ErrorCategory.normal,
-          speechErrorType: SpeechErrorType.delete,
-          expectedPh: refChunk,
-          predictedPh: '',
-        ),
-      ];
-    }
+    // ── 1. Madd Rule Evaluation ──
+    if (span.isMadd) {
+      final rule = span.matchedWordRule != null
+          ? _instantiateTajweedRule(span.matchedWordRule!)
+          : _deriveMaddRuleFromLength(span.refText.length);
 
-    List<ReciterError> chunkErrors = [];
+      final double req = rule.getRequiredDuration();
+      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration);
 
-    // ── Phase 1C: Base Consonant Replacement Error ──
-    if (refChunk.isNotEmpty &&
-        predChunk.isNotEmpty &&
-        refChunk[0] != predChunk[0]) {
-      if (_getSubCost(refChunk[0], predChunk[0]) > 6) {
-        wordErrorDesc.add('Replace(ref:$refChunk got:$predChunk)');
-        return [
+      if (durStatus == TajweedDurationStatus.defect) {
+        errors.add(
           ReciterError(
-            errorType: ErrorCategory.normal,
-            speechErrorType: SpeechErrorType.replace,
-            expectedPh: refChunk,
-            predictedPh: predChunk,
+            errorType: ErrorCategory.tajweed,
+            speechErrorType: hasDelete
+                ? SpeechErrorType.delete
+                : SpeechErrorType.replace,
+            durationStatus: durStatus,
+            expectedPh: span.refText,
+            predictedPh: predText,
+            expectedRule: rule,
+            expectedDuration: req,
+            actualDuration: spanDuration,
           ),
-        ];
-      } else {
-        wordErrorDesc.add('Replace(ref:$refChunk got:$predChunk)');
-        chunkErrors.add(
+        );
+      }
+      return errors;
+    }
+
+    // ── 2. Mushaddad Ghunnah Evaluation ──
+    if (span.isGhunnah) {
+      final rule = span.matchedWordRule != null
+          ? _instantiateTajweedRule(span.matchedWordRule!)
+          : MushaddadGhunnahRule.withNames(
+              nameAr: span.baseChar == 'ن' ? 'النون المشددة' : 'الميم المشددة',
+              nameEn: span.baseChar == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
+            );
+
+      final double req = rule.getRequiredDuration();
+      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration);
+
+      if (durStatus == TajweedDurationStatus.defect) {
+        errors.add(
           ReciterError(
-            errorType: ErrorCategory.normal,
+            errorType: ErrorCategory.tajweed,
+            speechErrorType: hasDelete
+                ? SpeechErrorType.delete
+                : SpeechErrorType.replace,
+            durationStatus: durStatus,
+            expectedPh: span.refText,
+            predictedPh: predText,
+            expectedRule: rule,
+            expectedDuration: req,
+            actualDuration: spanDuration,
+          ),
+        );
+      }
+      return errors;
+    }
+
+    // ── 3. Shaddah Evaluation ──
+    if (span.isShaddah) {
+      const rule = ShaddahRule();
+      final double req = rule.getRequiredDuration();
+
+      // Check if ASR output contains consonant doubling
+      final int predBaseCount = _countBaseOccurrences(predText, span.baseChar);
+      final bool predDoubled = predBaseCount >= 2;
+      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration);
+
+      // Shaddah fails if consonant wasn't doubled or closure duration was too short
+      if (!predDoubled || durStatus == TajweedDurationStatus.defect) {
+        errors.add(
+          ReciterError(
+            errorType: ErrorCategory.tajweed,
+            speechErrorType: hasDelete
+                ? SpeechErrorType.delete
+                : SpeechErrorType.replace,
+            durationStatus: durStatus,
+            expectedPh: span.refText,
+            predictedPh: predText,
+            expectedRule: rule,
+            expectedDuration: req,
+            actualDuration: spanDuration,
+          ),
+        );
+      }
+      return errors;
+    }
+
+    // ── 4. Tashkeel / Harakat Evaluation on Base Consonants ──
+    if (span.refText.isNotEmpty && predText.isNotEmpty) {
+      final String refVowels = _extractVowels(span.refText);
+      final String predVowels = _extractVowels(predText);
+
+      // If base consonants match but vowel marks differ
+      if (span.baseChar == predText[0] && (refVowels.isNotEmpty || predVowels.isNotEmpty) && refVowels != predVowels) {
+        errors.add(
+          ReciterError(
+            errorType: ErrorCategory.tashkeel,
             speechErrorType: SpeechErrorType.replace,
-            expectedPh: refChunk,
-            predictedPh: predChunk,
+            expectedPh: span.refText,
+            predictedPh: predText,
           ),
         );
       }
     }
 
-    // ── Phase 2: Tashkeel & Harakat Verification ──
-    if (refChunk.isNotEmpty &&
-        predChunk.isNotEmpty &&
-        refChunk[0] == predChunk[0] &&
-        refChunk.replaceAll(refChunk[0], '') !=
-            predChunk.replaceAll(predChunk[0], '')) {
-      wordErrorDesc.add('Tashkeel(ref:$refChunk got:$predChunk)');
-      chunkErrors.add(
-        ReciterError(
-          errorType: ErrorCategory.tashkeel,
-          speechErrorType: SpeechErrorType.replace,
-          expectedPh: refChunk,
-          predictedPh: predChunk,
-        ),
-      );
-    }
-
-    // ── Phase 3: Direct Duration & Doubling Tajweed Evaluation ──
-    // Match the active chunk against pre-assigned rules for this word
-    final bool isMaddChunk = refChunk.isNotEmpty && 'اۥۦ'.contains(refChunk[0]);
-    final bool isNasalChunk = refChunk.isNotEmpty && 'نم'.contains(refChunk[0]);
-    final bool isDoubledChunk =
-        refChunk.length >= 2 && refChunk[1] == refChunk[0];
-
-    for (final wRule in expectedWordRules) {
-      final rule = _instantiateTajweedRule(wRule);
-
-      // 1. Madd duration check
-      if (rule is MaddRule && isMaddChunk) {
-        final TajweedDurationStatus durStatus =
-            rule.checkDurationStatus(chunkDuration);
-        final double req = rule.getRequiredDuration();
-
-        if (durStatus == TajweedDurationStatus.defect) {
-          wordErrorDesc.add(
-            '${rule.name.en}Defect(got:${chunkDuration.toStringAsFixed(2)}s need:>=${req.toStringAsFixed(2)}s)',
-          );
-          chunkErrors.add(
-            ReciterError(
-              errorType: ErrorCategory.tajweed,
-              speechErrorType: align.opType == 'delete'
-                  ? SpeechErrorType.delete
-                  : SpeechErrorType.replace,
-              durationStatus: durStatus,
-              expectedPh: refChunk,
-              predictedPh: predChunk,
-              expectedRule: rule,
-              expectedDuration: req,
-              actualDuration: chunkDuration,
-            ),
-          );
-        }
-      }
-
-      // 2. Mushaddad Noon & Meem Ghunnah duration check
-      if (rule is MushaddadGhunnahRule && isNasalChunk) {
-        final TajweedDurationStatus durStatus =
-            rule.checkDurationStatus(chunkDuration);
-        final double req = rule.getRequiredDuration();
-
-        if (durStatus == TajweedDurationStatus.defect) {
-          wordErrorDesc.add(
-            '${rule.name.en}Defect(got:${chunkDuration.toStringAsFixed(2)}s need:>=${req.toStringAsFixed(2)}s)',
-          );
-          chunkErrors.add(
-            ReciterError(
-              errorType: ErrorCategory.tajweed,
-              speechErrorType: align.opType == 'delete'
-                  ? SpeechErrorType.delete
-                  : SpeechErrorType.replace,
-              durationStatus: durStatus,
-              expectedPh: refChunk,
-              predictedPh: predChunk,
-              expectedRule: rule,
-              expectedDuration: req,
-              actualDuration: chunkDuration,
-            ),
-          );
-        }
-      }
-
-      // 3. Shaddah closure & duration check
-      if (rule is ShaddahRule && isDoubledChunk && !isMaddChunk && !isNasalChunk) {
-        final bool predDoubled =
-            predChunk.length >= 2 && predChunk[1] == predChunk[0];
-        final TajweedDurationStatus durStatus =
-            rule.checkDurationStatus(chunkDuration);
-        final double req = rule.getRequiredDuration();
-
-        if (!predDoubled || durStatus == TajweedDurationStatus.defect) {
-          wordErrorDesc.add(
-            '${rule.name.en}Defect(doubled:$predDoubled, got:${chunkDuration.toStringAsFixed(2)}s need:>=${req.toStringAsFixed(2)}s)',
-          );
-          chunkErrors.add(
-            ReciterError(
-              errorType: ErrorCategory.tajweed,
-              speechErrorType: align.opType == 'delete'
-                  ? SpeechErrorType.delete
-                  : SpeechErrorType.replace,
-              durationStatus: durStatus,
-              expectedPh: refChunk,
-              predictedPh: predChunk,
-              expectedRule: rule,
-              expectedDuration: req,
-              actualDuration: chunkDuration,
-            ),
-          );
-        }
-      }
-    }
-
-    return chunkErrors;
+    return errors;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 2.3 HELPER METHODS
+  // 3.4 HELPER METHODS
   // ───────────────────────────────────────────────────────────────────────────
+
+  static TajweedRule _deriveMaddRuleFromLength(int len) {
+    if (len >= 6) return const LazemMaddRule();
+    if (len >= 4) return const AaredMaddRule();
+    return const NormalMaddRule();
+  }
+
+  static int _countBaseOccurrences(String text, String base) {
+    int count = 0;
+    for (int i = 0; i < text.length; i++) {
+      if (text[i] == base) count++;
+    }
+    return count;
+  }
+
+  static String _extractVowels(String text) {
+    final sb = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      if ('َُِ'.contains(text[i])) {
+        sb.write(text[i]);
+      }
+    }
+    return sb.toString();
+  }
 
   static TajweedRule _instantiateTajweedRule(WordTajweedRule wRule) {
     switch (wRule.ruleId) {
@@ -498,25 +655,5 @@ class ErrorExplainer {
     if (e.expectedRule is ShaddahRule) return 4;
     return 5;
   }
-
-  static int _getSubCost(String c1, String c2) {
-    if (c1 == c2) return 0;
-    if (c1.isEmpty || c2.isEmpty) return 10;
-    const groups = [
-      "ذدضتط",
-      "ظزذصسث",
-      "جزش",
-      "ءأإآاهعحغخ",
-      "ةهت",
-      "ۦي",
-      "ۥو",
-      "ںن۾م",
-      "قكغ",
-      "فبم",
-    ];
-    for (final g in groups) {
-      if (g.contains(c1) && g.contains(c2)) return 6;
-    }
-    return 12;
-  }
 }
+
