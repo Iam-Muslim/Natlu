@@ -227,6 +227,8 @@ class HighlightingController extends ChangeNotifier {
 
     final List<String> phonemeWords =
         _currentSurahWords.map((w) => w.phoneme).toList();
+    final List<List<WordTajweedRule>> wordRules =
+        _currentSurahWords.map((w) => w.rules).toList();
     _currentSurahBoundaries = _calculateBoundaries(phonemeWords);
     final String fullPhonemes = phonemeWords.join('');
 
@@ -237,6 +239,7 @@ class HighlightingController extends ChangeNotifier {
       forceClear: forceClear,
       startGlobalWord: startGlobalWord,
       surahNumber: _targetSurah,
+      wordRules: wordRules,
     );
   }
 

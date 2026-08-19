@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import '../../data/quran_data.dart';
 import '../../utils/debug_logger.dart';
 import 'dictation_sequencer.dart';
 
@@ -18,6 +19,13 @@ sealed class IsolateCommand {
     final command = map['command'] as String?;
     switch (command) {
       case 'set_surah_reference':
+        final rawRules = map['wordRules'] as List?;
+        final List<List<WordTajweedRule>>? wordRules = rawRules?.map((l) {
+          return (l as List)
+              .map((r) => WordTajweedRule.fromMap(r as Map))
+              .toList();
+        }).toList();
+
         return SetSurahReferenceCommand(
           fullPhonemes: map['phonemes'] as String,
           boundaries: (map['boundaries'] as List).cast<int>(),
@@ -25,6 +33,7 @@ sealed class IsolateCommand {
           isTajweed: map['isTajweed'] as bool? ?? false,
           forceClear: map['forceClear'] as bool? ?? false,
           startGlobalWord: map['startGlobalWord'] as int? ?? 0,
+          wordRules: wordRules,
         );
 
       case 'sync_stream':
@@ -61,6 +70,7 @@ class SetSurahReferenceCommand extends IsolateCommand {
   final bool isTajweed;
   final bool forceClear;
   final int startGlobalWord;
+  final List<List<WordTajweedRule>>? wordRules;
 
   const SetSurahReferenceCommand({
     required this.fullPhonemes,
@@ -69,6 +79,7 @@ class SetSurahReferenceCommand extends IsolateCommand {
     this.isTajweed = false,
     this.forceClear = false,
     this.startGlobalWord = 0,
+    this.wordRules,
   });
 
   @override
@@ -80,6 +91,9 @@ class SetSurahReferenceCommand extends IsolateCommand {
         'isTajweed': isTajweed,
         'forceClear': forceClear,
         'startGlobalWord': startGlobalWord,
+        'wordRules': wordRules
+            ?.map((list) => list.map((r) => r.toMap()).toList())
+            .toList(),
       };
 }
 
@@ -324,6 +338,7 @@ class PhonemeAlignmentIsolate {
     bool forceClear = false,
     int startGlobalWord = 0,
     int surahNumber = 0,
+    List<List<WordTajweedRule>>? wordRules,
   }) {
     send(
       SetSurahReferenceCommand(
@@ -333,6 +348,7 @@ class PhonemeAlignmentIsolate {
         isTajweed: isTajweed,
         forceClear: forceClear,
         startGlobalWord: startGlobalWord,
+        wordRules: wordRules,
       ),
     );
   }

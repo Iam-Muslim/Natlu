@@ -1,6 +1,7 @@
 import 'dart:isolate';
 import 'dart:math';
 
+import '../../data/quran_data.dart';
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'phoneme_alignment_isolate.dart';
@@ -24,6 +25,7 @@ class DictationSequencer {
   String fullPhonemes = '';
   bool isTajweed = false;
   int currentSurahNumber = 0;
+  List<List<WordTajweedRule>>? surahWordRules;
 
   // ── ASR Stream ──
   String currentSegmentAsrText = '';
@@ -55,11 +57,11 @@ class DictationSequencer {
   // ─────────────────────────────────────────────────────────────────────────────
 
   void setSurahReference(SetSurahReferenceCommand cmd) {
-    _matcher.reset();
     currentSurahNumber = cmd.surahNumber;
     fullPhonemes = cmd.fullPhonemes.replaceAll(' ', '');
     wordBoundaries = cmd.boundaries;
     isTajweed = cmd.isTajweed;
+    surahWordRules = cmd.wordRules;
 
     committedGreenWords.clear();
     committedRedWords.clear();
@@ -207,6 +209,11 @@ class DictationSequencer {
     // Tajweed evaluation
     List<Map<String, dynamic>>? tajweedErrors;
     if (isTajweed && result.trace.isNotEmpty) {
+      final List<WordTajweedRule> expectedWordRules =
+          (surahWordRules != null && w < surahWordRules!.length)
+              ? surahWordRules![w]
+              : const [];
+
       final errors = ErrorExplainer.evaluatePreAlignedWords(
         alignments: result.trace,
         fullPhonemes: fullPhonemes,
@@ -218,7 +225,7 @@ class DictationSequencer {
         startWordId: w,
         nextWordId: w + 1,
         totalAyahWords: max(1, _wordCount),
-        previousWordTail: lastMatchedPhoneme,
+        expectedWordRules: expectedWordRules,
       );
       if (errors.containsKey(w)) {
         tajweedErrors = errors[w]!.map((e) => e.toMap()).toList();
@@ -314,9 +321,9 @@ class DictationSequencer {
             if (align.predIdx >= 0 &&
                 align.refIdx >= 0 &&
                 align.predIdx < asrText.length) {
-              final bool isMatch = fullPhonemes.codeUnitAt(align.refIdx) ==
-                  asrText.codeUnitAt(align.predIdx);
-              coreCost += (isMatch ? 0.0 : 1.0);
+              final int asrCode = asrText.codeUnitAt(align.predIdx);
+              final int refCode = fullPhonemes.codeUnitAt(align.refIdx);
+              coreCost += PhoneticCostEngine.getSubstitutionCost(asrCode, refCode);
             } else {
               coreCost += config.costIns;
             }

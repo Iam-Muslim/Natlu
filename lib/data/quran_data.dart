@@ -7,6 +7,34 @@ import 'package:flutter/services.dart';
 // quran_data.dart
 // ---------------------------------------------------------------------------
 
+class WordTajweedRule {
+  final int ruleId; // 1-7 (Madd), 9 (Shaddah), 10 (Mushaddad Ghunnah)
+  final String nameAr;
+  final String nameEn;
+  final int goldenLen; // in Harakat (1, 2, 4, 6)
+
+  const WordTajweedRule({
+    required this.ruleId,
+    required this.nameAr,
+    required this.nameEn,
+    required this.goldenLen,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'ruleId': ruleId,
+        'nameAr': nameAr,
+        'nameEn': nameEn,
+        'goldenLen': goldenLen,
+      };
+
+  factory WordTajweedRule.fromMap(Map map) => WordTajweedRule(
+        ruleId: map['ruleId'] as int? ?? 0,
+        nameAr: map['nameAr'] as String? ?? '',
+        nameEn: map['nameEn'] as String? ?? '',
+        goldenLen: map['goldenLen'] as int? ?? 0,
+      );
+}
+
 class QuranVerse {
   /// The surah (chapter) number, 1-indexed.
   final int surah;
@@ -32,6 +60,9 @@ class QuranVerse {
   /// Per-word Phonetic strings. Index [i] corresponds to the i-th word.
   final List<String> phonemeWords;
 
+  /// Pre-assigned Tajweed duration rules per word (Madds 1-7, Shaddah, Mushaddad Ghunnah).
+  final List<List<WordTajweedRule>> wordRules;
+
   /// Maps an index in [uthmaniWords] to the corresponding index in [phonemeWords].
   /// This fixes UI drifting when idgham/wasl merges multiple Uthmani words into one phoneme word.
   List<int>? _wordMap;
@@ -52,6 +83,7 @@ class QuranVerse {
     required this.uthmaniWords,
     required this.textPhoneme,
     required this.phonemeWords,
+    this.wordRules = const [],
     List<int>? wordMap,
   }) : _wordMap = wordMap;
 
@@ -60,8 +92,9 @@ class QuranVerse {
   factory QuranVerse.fromJson(
     int surahNum,
     int ayahNum,
-    Map<String, dynamic> json,
-  ) {
+    Map<String, dynamic> json, {
+    Map<String, dynamic>? globalRuleNames,
+  }) {
     final rawUthmani = json['aya_ui'] as String? ?? '';
     final rawWords = rawUthmani.trim().split(' ');
 
@@ -90,6 +123,88 @@ class QuranVerse {
       phonemeWords = List.filled(uthmaniWords.length, '');
     }
 
+    // ── Build Word Tajweed Rules directly from V2 JSON and reference phonemes ──
+    final List<List<WordTajweedRule>> wordRules = List.generate(
+      uthmaniWords.length,
+      (_) => [],
+    );
+
+    final rawText = json['aya_text'] as String? ?? '';
+    final textWords = rawText.trim().split(' ');
+    final rawRules = json['rules'] as List? ?? const [];
+
+    int curOffset = 0;
+    for (int w = 0; w < uthmaniWords.length; w++) {
+      final int textLen = (w < textWords.length) ? textWords[w].length : 0;
+      final int start = curOffset;
+      final int end = curOffset + textLen;
+      curOffset = end + 1; // space
+
+      // 1. Direct Madd Rules (IDs 1-7) from V2 rules array
+      for (var r in rawRules) {
+        if (r is List && r.length >= 3) {
+          final int pos = r[0] as int;
+          final int rId = r[1] as int;
+          final int harakat = r[2] as int;
+
+          // Only keep Madd rules (1-7)
+          if (rId >= 1 && rId <= 7 && pos >= start && pos < end) {
+            final meta = globalRuleNames?[rId.toString()] as Map? ?? const {};
+            final String nameAr = meta['ar'] as String? ?? 'مد';
+            final String nameEn = meta['en'] as String? ?? 'Madd';
+            wordRules[w].add(
+              WordTajweedRule(
+                ruleId: rId,
+                nameAr: nameAr,
+                nameEn: nameEn,
+                goldenLen: harakat,
+              ),
+            );
+          }
+        }
+      }
+
+      // 2. Direct Ghunnah (~2 beats) on Mushaddad Noon & Meem only
+      final String ph = (w < phonemeWords.length) ? phonemeWords[w] : '';
+
+      if (ph.contains('نننن')) {
+        wordRules[w].add(
+          const WordTajweedRule(
+            ruleId: 10,
+            nameAr: 'النون المشددة',
+            nameEn: 'Mushaddad Noon',
+            goldenLen: 2,
+          ),
+        );
+      } else if (ph.contains('مممم')) {
+        wordRules[w].add(
+          const WordTajweedRule(
+            ruleId: 10,
+            nameAr: 'الميم المشددة',
+            nameEn: 'Mushaddad Meem',
+            goldenLen: 2,
+          ),
+        );
+      } else {
+        // 3. Direct Shaddah (~1-1.5 beats) on any other doubled consonant
+        for (int i = 0; i < ph.length - 1; i++) {
+          final c1 = ph[i];
+          final c2 = ph[i + 1];
+          if (c1 == c2 && !'اۥۦ'.contains(c1)) {
+            wordRules[w].add(
+              const WordTajweedRule(
+                ruleId: 9,
+                nameAr: 'الشدة',
+                nameEn: 'Shaddah',
+                goldenLen: 1,
+              ),
+            );
+            break;
+          }
+        }
+      }
+    }
+
     return QuranVerse(
       surah: surahNum,
       ayah: ayahNum,
@@ -99,6 +214,7 @@ class QuranVerse {
       uthmaniWords: uthmaniWords,
       textPhoneme: phonemeStr,
       phonemeWords: phonemeWords,
+      wordRules: wordRules,
     );
   }
 }
@@ -140,6 +256,7 @@ class ContinuousQuranWord {
   final int wordInAyah;
   final String uthmani;
   final String phoneme;
+  final List<WordTajweedRule> rules;
 
   const ContinuousQuranWord({
     required this.globalIndex,
@@ -148,6 +265,7 @@ class ContinuousQuranWord {
     required this.wordInAyah,
     required this.uthmani,
     required this.phoneme,
+    this.rules = const [],
   });
 }
 
@@ -169,11 +287,22 @@ class QuranRepository {
     // We lazily parse Surah 1 verse 1 for each Surah to get the metadata
     // (surahName, surahNameEn, etc.) without parsing the whole Surah.
     if (_fallbackMetadata.isEmpty && _service.rawJson != null) {
+      final raw = _service.rawJson!;
+      final versesMap = (raw['verses'] as Map<String, dynamic>?) ?? raw;
+      final ruleNames = raw['rule_names'] as Map<String, dynamic>?;
+
       for (int i = 1; i <= 114; i++) {
         final key = '$i:1';
-        final obj = _service.rawJson![key];
+        final obj = versesMap[key];
         if (obj != null) {
-          _fallbackMetadata.add(QuranVerse.fromJson(i, 1, obj));
+          _fallbackMetadata.add(
+            QuranVerse.fromJson(
+              i,
+              1,
+              obj as Map<String, dynamic>,
+              globalRuleNames: ruleNames,
+            ),
+          );
         }
       }
     }
@@ -194,14 +323,24 @@ class QuranRepository {
     final rawJson = _service.rawJson;
     if (rawJson == null) return;
 
+    final versesMap = (rawJson['verses'] as Map<String, dynamic>?) ?? rawJson;
+    final ruleNames = rawJson['rule_names'] as Map<String, dynamic>?;
+
     final List<QuranVerse> verses = [];
 
     // Most surahs have < 300 ayahs (Al-Baqarah has 286).
     for (int ayah = 1; ayah <= 300; ayah++) {
       final key = '$surah:$ayah';
-      final phonemeObj = rawJson[key];
+      final phonemeObj = versesMap[key];
       if (phonemeObj != null) {
-        verses.add(QuranVerse.fromJson(surah, ayah, phonemeObj));
+        verses.add(
+          QuranVerse.fromJson(
+            surah,
+            ayah,
+            phonemeObj as Map<String, dynamic>,
+            globalRuleNames: ruleNames,
+          ),
+        );
       } else {
         break; // Assume ayahs are contiguous and we reached the end
       }
@@ -234,6 +373,7 @@ class QuranRepository {
         final uthmani = i < verse.uthmaniWords.length
             ? verse.uthmaniWords[i]
             : '';
+        final rules = (i < verse.wordRules.length) ? verse.wordRules[i] : const <WordTajweedRule>[];
         words.add(
           ContinuousQuranWord(
             globalIndex: globalIdx++,
@@ -242,6 +382,7 @@ class QuranRepository {
             wordInAyah: i,
             uthmani: uthmani,
             phoneme: verse.phonemeWords[i],
+            rules: rules,
           ),
         );
       }
