@@ -230,6 +230,7 @@ class QuranDictationMatcher {
     required int refStart,
     required int refEnd,
     required AlignmentConfig config,
+    bool isTajweed = false,
   }) {
     final int m = asrText.length;
     final int n = refEnd - refStart;
@@ -323,7 +324,7 @@ class QuranDictationMatcher {
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / n;
       if (norm <= threshold) {
-        if (norm < bestCost) {
+        if (norm <= bestCost) { // Changed to <= to consume trailing vowels on tie
           bestI = i;
           bestCost = norm;
         }
@@ -335,7 +336,11 @@ class QuranDictationMatcher {
     // ═════════════════════════════════════════════════════════════════════════
     bool isPartial = false;
 
-    if (bestI < 0) {
+    if (isTajweed && bestI > 0 && bestI == m && bt[bestI * stride + n] == 1) {
+      // The best match consumes the entire ASR buffer, but ends by deleting trailing reference characters.
+      // Wait for more text (e.g. Madd is still being spoken).
+      isPartial = true;
+    } else if (bestI < 0) {
       // ── 1. Prefix Match (For words that failed the full cost threshold) ──
       int minJ = n > 2 ? 2 : 1;
       int startI = max(1, m - 2);

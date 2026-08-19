@@ -148,6 +148,7 @@ class DictationSequencer {
             refStart: refStart,
             refEnd: refEnd,
             config: config,
+            isTajweed: isTajweed,
           );
 
           if (result != null) {
