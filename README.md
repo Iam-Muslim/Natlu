@@ -1,48 +1,244 @@
-> *"And We have certainly made the Quran easy for remembrance, so is there any who will remember?"* — Al-Qamar 54:17
+<div align="center">
 
 # ما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
 
-<br>
-<div align="center">
-  <a href="https://recitequran.pages.dev/">
-    <img src="https://img.shields.io/badge/Download-For android-2ea44f?style=for-the-badge&logo=download" alt="Recite Quran Download" />
+<p align="center">
+  <i>"And We have certainly made the Quran easy for remembrance, so is there any who will remember?"</i><br>
+  <b>— Surah Al-Qamar (54:17)</b>
+</p>
+
+اني برئ مما تعملون (برئ من استعمال للبرنامج او الاكواد او الافكار او البروجكت في غير سبيل الله سبحانه و تعالى ) - (برئ من اخذ الاموال او وضع الاعلانات او ان يشتري به احد ثمنا )
+
+# Recite Quran — اتلو القران
+### Real-Time Quran Recitation Tracker, Tajweed Verifier & Voice Search Engine
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank">
+    <img src="docs/badges/google_play.svg" height="45" alt="Get it on Google Play" />
   </a>
+  &nbsp;&nbsp;
+  <a href="https://recitequran.pages.dev/recite" target="_blank">
+    <img src="docs/badges/web_app.svg" height="45" alt="Web App" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://recitequran.pages.dev/" target="_blank">
+    <img src="docs/badges/official_site.svg" height="45" alt="Official Website" />
+  </a>
+</p>
+<br>
+<p align="center">
+  <img src="https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20Web-0F172A?style=for-the-badge" alt="Platforms" />
+</p>
+<br>
+
+<p align="center">
+  <img height="280" src="docs/screenshots/5-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/3-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/4-ar.png" alt="ReciteQuran Preview" />
+</p>
+
 </div>
 
-<br>
+---
 
-before using any single character of codes here , you agree to this :
-**For The Sake Of Allah only** if you used this app or the source code in any other work you aren't allowed to get from it any money or make profit from it and you have to mention that this app is for the sake of Allah only .
- (never sell or gain money from any work has any of this project )
- 
-(1) you may use and redistribute it ONLY in applications that are FREE to end users
 
-(2) you are NOT allowed to sell it, place it behind a paid subscription or paywall, monetize it with ads, or earn any revenue from an app or service that uses this model or its outputs or this app or this codes or logics;
+## Overview
 
-(3) these terms pass on to anyone you share it with.
+**ReciteQuran** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
+
+Unlike other applications that transmit your audio to remote servers, ReciteQuran runs an acoustic streaming neural network directly on your device. Your voice never leaves your phone, computer, or browser.
 
 ---
 
-<img width="139" height="292" alt="Screenshot_20260628-164337_Recite Quran" src="https://github.com/user-attachments/assets/42fc7e30-8a39-44bf-a4b9-9a3b48135e94" /><img width="139" height="292" alt="Screenshot_20260628-164253_Recite Quran" src="https://github.com/user-attachments/assets/357b58a4-3a84-4880-bce6-856c0092f211" /><img width="139" height="292" alt="Screenshot_20260628-164411_Recite Quran" src="https://github.com/user-attachments/assets/71bc8cb1-0c01-4eee-8053-3427fa0e0f99" /><img width="139" height="292" alt="Screenshot_20260628-164242_Recite Quran" src="https://github.com/user-attachments/assets/ce275229-65fd-435d-921e-de590eeecba6" />
+## Available Platforms
+
+### Android
+
+- **Google Play Store**: Install directly from [Google Play](https://play.google.com/store/apps/details?id=com.recitequran.app).
+- **Direct APK**: Download pre-built APKs from the [Official Website](https://recitequran.pages.dev/).
 
 ---
 
-## What Is This Project?
+### Web Browser
 
-**ReciteQuran** is a Flutter mobile application that listens to a user reciting the Holy Quran, word by word, and highlights each word as **correct (green)**, **wrong (red)**, or **has a Tajweed error (yellow)**.
-
-It runs **entirely on-device**, with no internet connection needed. An Arabic ASR (Automatic Speech Recognition) model runs live in the background, converting your voice into phonetic Arabic text in real-time.
+- Use ReciteQuran directly in any modern desktop or mobile browser without installing anything:
+  👉 **[recitequran.pages.dev/recite](https://recitequran.pages.dev/recite)**
 
 ---
 
-## Reference Repositories
-Elhamdule Allah
-This project is built on research and code from the following open-source projects:
+### iOS (iPhone & iPad)
 
-| Project | Author / Source |
-|---|---|
-| [Quran-streaming-model](https://huggingface.co/Muno459/zipformer_p-arabic-v2) | Muno459 |
-| [quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript) | obadx |
-| [qua_sdk](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner) | Hetchy |
+- Download the IPA build artifact from the [GitHub Actions iOS Workflow](https://github.com/Iam-Muslim/ReciteQuran-ElhamduleAllah/actions/workflows/ios_build.yml) and install via AltStore, SideStore, or TrollStore, or deploy via Xcode.
 
-# هذا من فضل ربي - ربنا تقبل منا انك انت السميع العليم
+---
+
+### Windows (Desktop)
+
+- ReciteQuran runs natively on Windows 10/11 (64-bit). You can run or build the desktop version directly from source using Flutter.
+
+---
+
+## Features
+
+### 1. Real-Time Word Tracking
+- High-speed acoustic tracking follows your speech word by word.
+- **Visual Feedback**:
+  - **Green**: Correct recitation (Consonants and Harakat match).
+  - **Red**: Word skipped, substituted, or mispronounced.
+  - **Yellow**: Tajweed duration defect/surplus or diacritical variation.
+
+---
+
+### 2. Acoustic Tajweed & Madd Engine
+- Evaluates acoustic vowel holding durations against Quranic Tadweer timing standards:
+  - **Madd Elongation (المدود)**:
+    - Natural Madd (المد الطبيعي) — 2 Harakat
+    - Separated / Connected Madd (المد المنفصل والمتصل) — 4 Harakat
+    - Presented for Sukoon (المد العارض للسكون) — 2/4/6 Harakat
+    - Leen Madd (مد اللين) — 2/4/6 Harakat
+    - Compulsory Madd (المد اللازم) — 6 Harakat
+  - **Mushaddad Ghunnah (غنة النون والميم المشددتين)** — 2 Harakat nasal hold.
+  - **Shaddah Doubling (الشدة)** — Consonant closure duration (~1.5 Harakat).
+- Tap any highlighted word to inspect expected versus recited duration in milliseconds.
+
+---
+
+### 3. Instant Voice Ayah Search
+- Speak any verse or fragment in Arabic.
+- The offline phonetic matcher locates the verse and jumps directly to it in the Mushaf.
+
+---
+
+### 4. Hifz Memorization & Blur Mode
+- Enable Blur Mode in settings to conceal upcoming verses for memorization self-testing.
+- Verses reveal themselves as you recite them correctly.
+
+---
+
+### 5. 100% Offline & Private
+- All speech recognition and phoneme alignment algorithms execute locally on your device.
+- No network connection required, and no voice recordings are transmitted to external servers.
+
+---
+
+## Developer Guide
+
+### Repository Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Iam-Muslim/ReciteQuran-ElhamduleAllah.git
+   cd ReciteQuran-ElhamduleAllah
+   ```
+
+2. Fetch Flutter packages:
+   ```bash
+   flutter pub get
+   ```
+
+3. Download the quantized ONNX neural model:
+   ```bash
+   pip install -U "huggingface_hub[cli]"
+   hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model
+   ```
+
+---
+
+### Running on Android
+
+```bash
+flutter run -d android
+flutter build apk --release --split-per-abi
+```
+
+---
+
+### Running on iOS
+
+```bash
+cd ios
+pod install
+cd ..
+flutter run -d ios
+```
+
+---
+
+### Running on Windows
+
+```bash
+flutter run -d windows
+```
+
+---
+
+### Running on Web
+
+```bash
+flutter run -d chrome
+```
+
+---
+
+### Architecture
+
+```
+lib/
+├── audio/                     # 16 kHz PCM chunk capture and buffering
+│   └── audio_processor.dart
+├── data/                      # Quranic text dataset and rule definitions
+│   └── quran_data.dart
+├── engine/                    # Streaming Zipformer inference in background Isolate
+│   ├── models/                # Inter-isolate communication protocols
+│   └── sherpa_engine.dart
+├── state/                     # Global settings and theme management
+│   └── app_state.dart
+├── tracking/
+│   ├── ayah_search/           # Offline phonetic verse search
+│   ├── tajweed/               # Tajweed duration validator and explainer
+│   │   ├── error_explainer.dart
+│   │   └── tajweed_rules.dart
+│   └── word/                  # Real-time phoneme alignment and highlight sequencing
+│       ├── dictation_matcher.dart
+│       ├── dictation_sequencer.dart
+│       ├── highlighting_controller.dart
+│       └── phoneme_alignment_isolate.dart
+├── ui/                        # UI screens, dialogs, and Mushaf view
+│   ├── tracking_screen.dart
+│   └── widgets/
+└── utils/                     # Logging and debug helpers
+    └── debug_logger.dart
+```
+
+---
+
+## Sacred License & Terms of Use (لوجه الله تعالى)
+
+### **ما أسألكم عليه من أجر إن أجري إلا على رب العالمين**
+
+> **THIS APPLICATION AND SOURCE CODE ARE FOR THE SAKE OF ALLAH ALONE.**
+
+Before viewing, using, distributing, or modifying any part of this repository, you explicitly agree to the following sacred covenants:
+
+1. **100% Free to End Users**:
+   You may use, study, and redistribute this software or its logic **ONLY** in applications and services that are completely free of charge to all end users forever.
+2. **Strict Prohibition on Commercialization & Profit**:
+   You are **STRICTLY FORBIDDEN** from selling this application, placing it behind paywalls, subscription models, in-app purchases, charging download fees, monetizing it with advertisements (AdMob, Unity Ads, etc.), or extracting any financial revenue from this codebase, models, or outputs.
+3. **Perpetual Waqf Pass-Through**:
+   These terms are immutable and strictly pass on to any fork, derivative work, or redistributed component.
+
+---
+
+## Acknowledgments
+
+*Alhamdulillah (الحمد لله رب العالمين)* — This project builds on research and work from the following open-source projects:
+
+- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by [Quran-Lab](https://huggingface.co/Quran-Lab)
+- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by [obadx](https://github.com/OmarMuhammedAli)
+- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by [Hetchy](https://huggingface.co/hetchyy)
+
+---
+
+<div align="center">
+
+**هذا من فضل ربي — ربنا تقبل منا إنك أنت السميع العليم**
+
+</div>

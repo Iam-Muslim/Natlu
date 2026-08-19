@@ -58,7 +58,7 @@ jobs:
           pip install -U "huggingface_hub[cli]"
           
           # Added the token environment variable to authenticate the request
-          hf download Muno459/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model --token $HF_TOKEN
+          hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model --token $HF_TOKEN
           
       # --- BUILD STEP ---
       # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts

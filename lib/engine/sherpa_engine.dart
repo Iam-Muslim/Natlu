@@ -1,5 +1,5 @@
 // lib/engine/sherpa_engine.dart
-// Cache-aware streaming CTC engine for Muno459/quran_phoneme_zipformer (Muno459/zipformer_p-arabic)
+// Cache-aware streaming CTC engine for Quran-Lab/quran_phoneme_zipformer (Quran-Lab/zipformer_p-arabic)
 //
 // Model specs:
 //   Architecture     = Zipformer2 causal streaming CTC (~65.5M parameters)
