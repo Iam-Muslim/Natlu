@@ -370,38 +370,51 @@ window.fetchSherpaModel = async function(url) {
             }, { once: true });
         });
 
-        console.log(`[Sherpa] Starting fetch from ${url}...`);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        console.log(`[Sherpa] Starting XHR download from ${url}...`);
         
-        const contentLength = response.headers.get('content-length') || 72705392;
-        const total = parseInt(contentLength, 10);
-        let loaded = 0;
-
-        const reader = response.body.getReader();
-        const chunks = [];
-        let lastUiUpdate = 0;
-        const fill = document.getElementById('progress-bar-fill');
-        const text = document.getElementById('progress-text');
-
-        while(true) {
-            const {done, value} = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            loaded += value.length;
+        const arrayBuffer = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.responseType = 'arraybuffer';
             
-            const now = performance.now();
-            if (now - lastUiUpdate > 80) {
-                lastUiUpdate = now;
-                const percent = Math.min(100, Math.round((loaded / total) * 100));
-                if (fill) fill.style.width = percent + '%';
-                if (text) text.innerText = percent + '% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(total/1024/1024) + 'MB)';
-            }
-        }
-
-        // Ensure 100% is displayed upon completion
-        if (fill) fill.style.width = '100%';
-        if (text) text.innerText = '100% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(loaded/1024/1024) + 'MB)';
+            let lastUiUpdate = 0;
+            const fill = document.getElementById('progress-bar-fill');
+            const text = document.getElementById('progress-text');
+            
+            xhr.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const total = event.total;
+                    const loaded = event.loaded;
+                    const now = performance.now();
+                    if (now - lastUiUpdate > 80 || loaded === total) {
+                        lastUiUpdate = now;
+                        const percent = Math.min(100, Math.round((loaded / total) * 100));
+                        if (fill) fill.style.width = percent + '%';
+                        if (text) text.innerText = percent + '% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(total/1024/1024) + 'MB)';
+                    }
+                } else {
+                    const loaded = event.loaded;
+                    const now = performance.now();
+                    if (now - lastUiUpdate > 80) {
+                        lastUiUpdate = now;
+                        if (text) text.innerText = 'Downloading... (' + Math.round(loaded/1024/1024) + 'MB)';
+                    }
+                }
+            };
+            
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (fill) fill.style.width = '100%';
+                    if (text) text.innerText = '100% (' + Math.round(xhr.response.byteLength/1024/1024) + 'MB / ' + Math.round(xhr.response.byteLength/1024/1024) + 'MB)';
+                    resolve(xhr.response);
+                } else {
+                    reject(new Error(`HTTP error! status: ${xhr.status}`));
+                }
+            };
+            
+            xhr.onerror = () => reject(new Error('Network Error'));
+            xhr.send();
+        });
 
         // Change text to initializing after download hits 100%
         const progressTitle = document.querySelector('#progress-container .splash-title');
@@ -409,16 +422,9 @@ window.fetchSherpaModel = async function(url) {
         if (progressTitle) progressTitle.innerText = 'Initializing AI Engine...';
         if (progressDesc) progressDesc.innerText = 'Loading into memory. Almost ready!';
 
-        const arrayBuffer = new Uint8Array(loaded);
-        let position = 0;
-        for(let chunk of chunks) {
-            arrayBuffer.set(chunk, position);
-            position += chunk.length;
-        }
-        
         // 2. Save it to IndexedDB so they NEVER have to download it again!
         console.log(`[Sherpa] Saving model to IndexedDB for future offline access...`);
-        await cacheModel(url, arrayBuffer.buffer);
+        await cacheModel(url, arrayBuffer);
         
         console.log(`[Sherpa] Successfully fetched model: ${arrayBuffer.byteLength} bytes`);
         if (arrayBuffer.byteLength < 10000) {
@@ -427,7 +433,7 @@ window.fetchSherpaModel = async function(url) {
             console.error('[DEBUG] The downloaded file is too small! Here are the exact contents of the 637 bytes:', fileText);
             throw new Error('Downloaded file is too small to be a valid ONNX model. See console for contents.');
         }
-        return arrayBuffer;
+        return new Uint8Array(arrayBuffer);
     } catch (e) {
         console.error('[Sherpa] Failed to fetch model:', e);
         const text = document.getElementById('progress-text');
