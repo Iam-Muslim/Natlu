@@ -5,7 +5,12 @@ on:
     branches:
       - main
       - 'ReciteQuran-*'
-      - '**'
+    paths:
+      - 'web/**'
+      - 'landing_page/**'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/04_deploy_web.yml'
   workflow_dispatch:
 
 jobs:

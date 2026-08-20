@@ -219,7 +219,7 @@ window.startOfficialSherpa = function() {
 
       // Send intermediate results to Dart
       if (resultText.length > 0 && lastResult != resultText) {
-        console.log(`[Sherpa] Partial result: ${resultText}`);
+        console.log(`%c[Sherpa ASR] 🗣️ Partial: "${resultText}" (tokens: ${fullResult.tokens ? fullResult.tokens.length : 0})`, 'color: #059669; font-weight: bold;');
         lastResult = resultText;
         if (window.dartSherpaOnResult) {
             window.dartSherpaOnResult(JSON.stringify(fullResult), false);
@@ -229,14 +229,13 @@ window.startOfficialSherpa = function() {
       }
 
       if (isEndpoint) {
-        console.log(`[Sherpa] Endpoint detected. Final result: ${lastResult}`);
+        console.log(`%c[Sherpa ASR] ⚡ Endpoint detected (pause/breath). Accumulated text: "${lastResult}"`, 'color: #0284c7; font-weight: bold;');
         if (window.dartSherpaOnResult) {
-            window.dartSherpaOnResult(JSON.stringify(fullResult), true); // Finalize word
+            window.dartSherpaOnResult(JSON.stringify(fullResult), true); // Notify final segment
         }
-        lastResult = '';
-        recognizer.reset(recognizer_stream);
-        primeRecognizer();
-        console.log('[Sherpa] Engine reset and primed. Returning to IDLE state.');
+        // Continuous decoding: DO NOT wipe recognizer stream on pause/endpoint!
+        // The stream runs continuously across Ayahs just like in native Android.
+        // It is only reset when Dart explicitly calls window.resetOfficialSherpaBuffer().
       }
     };
 
