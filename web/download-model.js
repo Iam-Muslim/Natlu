@@ -1,45 +1,62 @@
 export async function onRequest(context) {
-    const { request } = context;
+    const { request, env } = context;
     const urlObj = new URL(request.url);
     const modelParam = urlObj.searchParams.get('model') || 'zipformer_p_arabic_v3.int8.onnx';
     
     const cache = caches.default;
-    // Cloudflare requires the cache key to be a Request object with a valid HTTP URL
     const cacheKey = new Request(urlObj.toString(), request);
     
-    // Check if Cloudflare's Edge CDN already has the model cached
+    // 1. Check Cloudflare Edge CDN Cache first
     let cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
         return cachedResponse;
     }
     
-    // If not cached, fetch it from Hugging Face using your token
+    // 2. Determine Token (from Cloudflare Environment Variable or CI build injection)
+    const token = env.SUBHAN_ALLAH || env.HF_TOKEN || 'INJECT_TOKEN_HERE';
+    
     const targetUrl = `https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3/resolve/main/${modelParam}`;
     const headers = { 
         'User-Agent': 'Cloudflare-Worker',
-        'Accept': 'application/octet-stream',
-        'Authorization': `Bearer INJECT_TOKEN_HERE`
+        'Accept': 'application/octet-stream'
     };
-
-    const fetchResponse = await fetch(targetUrl, { headers });
     
-    let finalResponse;
-    if (fetchResponse.status >= 300 && fetchResponse.status < 400 && fetchResponse.headers.has('location')) {
-        const redirectUrl = fetchResponse.headers.get('location');
-        finalResponse = await fetch(redirectUrl); 
-    } else {
-        finalResponse = fetchResponse;
+    if (token && token !== 'INJECT_TOKEN_HERE') {
+        headers['Authorization'] = `Bearer ${token}`;
     }
-    
-    // Create a new response to modify headers
-    const response = new Response(finalResponse.body, finalResponse);
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    // Instruct Cloudflare CDN to cache this file for 1 year
-    response.headers.set('Cache-Control', 'public, s-maxage=31536000, max-age=31536000, immutable');
-    
-    // Save to Cloudflare's global edge cache in the background!
-    context.waitUntil(cache.put(cacheKey, response.clone()));
-    
-    return response;
+
+    try {
+        const fetchResponse = await fetch(targetUrl, { 
+            headers,
+            redirect: 'follow'
+        });
+        
+        // If HF returned an error (e.g. 401 / 404), return the error status directly and DO NOT cache
+        if (!fetchResponse.ok) {
+            const errBody = await fetchResponse.text();
+            return new Response(`HF Error ${fetchResponse.status}: ${errBody}`, {
+                status: fetchResponse.status,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Content-Type': 'text/plain'
+                }
+            });
+        }
+        
+        // Valid model stream: set CORS and Edge caching
+        const response = new Response(fetchResponse.body, fetchResponse);
+        response.headers.set('Access-Control-Allow-Origin', '*');
+        response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        response.headers.set('Cache-Control', 'public, s-maxage=31536000, max-age=31536000, immutable');
+        
+        // Cache valid model on Cloudflare Edge CDN
+        context.waitUntil(cache.put(cacheKey, response.clone()));
+        
+        return response;
+    } catch (err) {
+        return new Response(`Proxy Fetch Error: ${err.message}`, {
+            status: 502,
+            headers: { 'Access-Control-Allow-Origin': '*' }
+        });
+    }
 }
