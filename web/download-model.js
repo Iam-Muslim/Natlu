@@ -12,29 +12,49 @@ export async function onRequest(context) {
         return cachedResponse;
     }
     
-    // 2. Determine Token (from Cloudflare Environment Variable or CI build injection)
-    const token = env.SUBHAN_ALLAH || env.HF_TOKEN || 'INJECT_TOKEN_HERE';
-    
-    const targetUrl = `https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3/resolve/main/${modelParam}`;
+    // 2. Check for tokens in Cloudflare Environment
+    const ghToken = env.GITHUB_PAT || env.GH_TOKEN;
+    const hfToken = env.SUBHAN_ALLAH || env.HF_TOKEN || (('INJECT_TOKEN_HERE' !== 'INJECT_TOKEN_HERE') ? 'INJECT_TOKEN_HERE' : null);
+
+    let targetUrl;
     const headers = { 
-        'User-Agent': 'Cloudflare-Worker',
-        'Accept': 'application/octet-stream'
+        'User-Agent': 'Cloudflare-Worker'
     };
-    
-    if (token && token !== 'INJECT_TOKEN_HERE') {
-        headers['Authorization'] = `Bearer ${token}`;
+
+    // If GITHUB_PAT is set, download from GitHub Release (models-latest)
+    if (ghToken) {
+        targetUrl = `https://github.com/Iam-Muslim/ReciteQuran-ElhamduleAllah/releases/download/models-latest/${modelParam}`;
+        headers['Authorization'] = `Bearer ${ghToken}`;
+        headers['Accept'] = 'application/octet-stream';
+    } else {
+        // Otherwise download from Hugging Face
+        targetUrl = `https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3/resolve/main/${modelParam}`;
+        headers['Accept'] = 'application/octet-stream';
+        if (hfToken) {
+            headers['Authorization'] = `Bearer ${hfToken}`;
+        }
     }
 
     try {
-        const fetchResponse = await fetch(targetUrl, { 
-            headers,
-            redirect: 'follow'
+        // Fetch with manual redirect handling to safely handle GitHub S3 redirects
+        let fetchResponse = await fetch(targetUrl, { 
+            headers, 
+            redirect: 'manual' 
         });
         
-        // If HF returned an error (e.g. 401 / 404), return the error status directly and DO NOT cache
+        // Handle GitHub / HuggingFace redirect (e.g. 302 Found to AWS S3 / CloudFront)
+        if (fetchResponse.status >= 300 && fetchResponse.status < 400 && fetchResponse.headers.has('location')) {
+            const redirectUrl = fetchResponse.headers.get('location');
+            // When following AWS S3 pre-signed URL, omit the Authorization header
+            fetchResponse = await fetch(redirectUrl, {
+                headers: { 'User-Agent': 'Cloudflare-Worker' }
+            });
+        }
+        
+        // If upstream returned an error (e.g. 401 / 404), return it without caching
         if (!fetchResponse.ok) {
-            const errBody = await fetchResponse.text();
-            return new Response(`HF Error ${fetchResponse.status}: ${errBody}`, {
+            const errText = await fetchResponse.text();
+            return new Response(`Upstream Error ${fetchResponse.status} from ${targetUrl}: ${errText}`, {
                 status: fetchResponse.status,
                 headers: {
                     'Access-Control-Allow-Origin': '*',
@@ -43,13 +63,13 @@ export async function onRequest(context) {
             });
         }
         
-        // Valid model stream: set CORS and Edge caching
+        // Valid model stream: set CORS and Edge caching for 1 year
         const response = new Response(fetchResponse.body, fetchResponse);
         response.headers.set('Access-Control-Allow-Origin', '*');
         response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
         response.headers.set('Cache-Control', 'public, s-maxage=31536000, max-age=31536000, immutable');
         
-        // Cache valid model on Cloudflare Edge CDN
+        // Cache valid model on Cloudflare Edge CDN in background
         context.waitUntil(cache.put(cacheKey, response.clone()));
         
         return response;
