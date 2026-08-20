@@ -1,11 +1,12 @@
 {
-    "name": "the_great_quran",
-    "short_name": "the_great_quran",
-    "start_url": ".",
+    "name": "Recite Quran - اتلو القران",
+    "short_name": "اتلو القران",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#fdfaf6",
+    "theme_color": "#059669",
+    "description": "استمع وتتبع تلاوة القرآن الكريم بالذكاء الاصطناعي على جهازك بدون إنترنت.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
