@@ -26,10 +26,17 @@ class DebugLogger {
       logLine += ' | ASR: $_currentAsrBuffer';
     }
     debugPrint(logLine);
+    if (kIsWeb) {
+      print(logLine);
+    }
   }
 
   /// Simple log for things that don't need the ASR buffer context attached.
   static void logSimple(String tag, String message) {
-    debugPrint('[${_timestamp()}] [$tag] $message');
+    final logLine = '[${_timestamp()}] [$tag] $message';
+    debugPrint(logLine);
+    if (kIsWeb) {
+      print(logLine);
+    }
   }
 }
