@@ -6,18 +6,28 @@ export async function onRequest(context) {
     const directUrl = `https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/${modelParam}`;
     
     // Fetch directly from github releases.
-    // GitHub releases stream their response, and passing the body to new Response() streams it to the client.
     const fetchResponse = await fetch(directUrl, {
         headers: {
-            'User-Agent': 'Cloudflare-Worker'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
     });
 
-    const response = new Response(fetchResponse.body, fetchResponse);
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    // Important: Prevent Cloudflare from caching the model
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const headers = new Headers();
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    headers.set('Access-Control-Allow-Headers', '*');
+    headers.set('Content-Type', 'application/octet-stream');
     
-    return response;
+    const contentLength = fetchResponse.headers.get('content-length');
+    if (contentLength) {
+        headers.set('Content-Length', contentLength);
+    }
+    
+    // Enforce no-caching on Cloudflare
+    headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+    return new Response(fetchResponse.body, {
+        status: fetchResponse.status,
+        headers: headers
+    });
 }

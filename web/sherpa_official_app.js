@@ -327,48 +327,62 @@ async function cacheModel(url, buffer) {
     try {
         const db = await openDB();
         return new Promise((resolve) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            store.clear();
-            store.put(buffer, url);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => resolve();
+            try {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.clear();
+                const req = store.put(buffer, url);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+                tx.onabort = () => resolve();
+                req.onerror = () => resolve();
+            } catch(err) {
+                resolve();
+            }
         });
-    } catch(e) {}
+    } catch(e) {
+        console.warn('[Sherpa] IndexedDB caching error:', e);
+    }
 }
+
+let activeModelDownloadPromise = null;
 
 // Fetches the ONNX model from a given URL and returns a Uint8Array
 window.fetchSherpaModel = async function(url) {
-    try {
-        // 1. Check if we already downloaded it previously!
-        const cachedBuffer = await getCachedModel(url);
-        if (cachedBuffer && cachedBuffer.byteLength > 50000000) { // Validate it's a full model (> 50MB)
-            console.log(`[Sherpa] Found model in IndexedDB (${cachedBuffer.byteLength} bytes). Bypassing download prompt!`);
-            // Default HTML is already "Initializing...", so we do nothing to the UI!
-            return new Uint8Array(cachedBuffer);
-        }
+    if (activeModelDownloadPromise) {
+        return activeModelDownloadPromise;
+    }
 
-        // --- MODEL NOT FOUND: SHOW DOWNLOAD PROMPT ---
-        const title = document.querySelector('#prompt-section .splash-title');
-        const desc = document.querySelector('#prompt-section .splash-desc');
-        const btn = document.getElementById('accept-download-btn');
-        
-        if (title) title.innerText = 'AI Engine Required';
-        if (desc) desc.innerText = 'To process your recitation offline with complete privacy, we need to download the AI model (~115MB). This only happens once.';
-        if (btn) btn.style.display = 'block';
+    activeModelDownloadPromise = (async () => {
+        try {
+            // 1. Check if we already downloaded it previously!
+            const cachedBuffer = await getCachedModel(url);
+            if (cachedBuffer && cachedBuffer.byteLength > 50000000) { // Validate it's a full model (> 50MB)
+                console.log(`[Sherpa] Found model in IndexedDB (${cachedBuffer.byteLength} bytes). Bypassing download prompt!`);
+                return new Uint8Array(cachedBuffer);
+            }
 
-        console.log(`[Sherpa] Waiting for user download confirmation for ${url}...`);
-        
-        // Wait for user to click accept
-        await new Promise((resolve) => {
+            // --- MODEL NOT FOUND: SHOW DOWNLOAD PROMPT ---
+            const title = document.querySelector('#prompt-section .splash-title');
+            const desc = document.querySelector('#prompt-section .splash-desc');
             const btn = document.getElementById('accept-download-btn');
-            if (!btn) { resolve(); return; }
-            btn.addEventListener('click', () => {
-                document.getElementById('prompt-section').style.display = 'none';
-                document.getElementById('progress-container').style.display = 'block';
-                resolve();
-            }, { once: true });
-        });
+            
+            if (title) title.innerText = 'AI Engine Required';
+            if (desc) desc.innerText = 'To process your recitation offline with complete privacy, we need to download the AI model (~70MB). This only happens once.';
+            if (btn) btn.style.display = 'block';
+
+            console.log(`[Sherpa] Waiting for user download confirmation for ${url}...`);
+            
+            // Wait for user to click accept
+            await new Promise((resolve) => {
+                const btn = document.getElementById('accept-download-btn');
+                if (!btn) { resolve(); return; }
+                btn.addEventListener('click', () => {
+                    document.getElementById('prompt-section').style.display = 'none';
+                    document.getElementById('progress-container').style.display = 'block';
+                    resolve();
+                }, { once: true });
+            });
 
         console.log(`[Sherpa] Starting XHR download from ${url}...`);
         
@@ -422,9 +436,13 @@ window.fetchSherpaModel = async function(url) {
         if (progressTitle) progressTitle.innerText = 'Initializing AI Engine...';
         if (progressDesc) progressDesc.innerText = 'Loading into memory. Almost ready!';
 
-        // 2. Save it to IndexedDB so they NEVER have to download it again!
+        // 2. Save it to IndexedDB in the background so they NEVER have to download it again!
         console.log(`[Sherpa] Saving model to IndexedDB for future offline access...`);
-        await cacheModel(url, arrayBuffer);
+        cacheModel(url, arrayBuffer).then(() => {
+            console.log(`[Sherpa] Successfully saved model to IndexedDB.`);
+        }).catch(err => {
+            console.warn(`[Sherpa] Failed to save model to IndexedDB:`, err);
+        });
         
         console.log(`[Sherpa] Successfully fetched model: ${arrayBuffer.byteLength} bytes`);
         if (arrayBuffer.byteLength < 10000) {
@@ -434,13 +452,23 @@ window.fetchSherpaModel = async function(url) {
             throw new Error('Downloaded file is too small to be a valid ONNX model. See console for contents.');
         }
         return new Uint8Array(arrayBuffer);
-    } catch (e) {
-        console.error('[Sherpa] Failed to fetch model:', e);
-        const text = document.getElementById('progress-text');
-        if (text) {
-           text.innerText = 'Download Failed!';
-           text.style.color = 'red';
+        } catch (e) {
+            console.error('[Sherpa] Failed to fetch model:', e);
+            const text = document.getElementById('progress-text');
+            if (text) {
+               text.innerText = 'Download Failed!';
+               text.style.color = 'red';
+            }
+            activeModelDownloadPromise = null;
+            return null;
         }
-        return null;
-    }
+    })();
+
+    return activeModelDownloadPromise;
 };
+
+// Immediately check on startup so user sees the download prompt without waiting for WASM compilation
+setTimeout(() => {
+    window.fetchSherpaModel('/download-model?model=zipformer_p_arabic_v3.int8.onnx');
+}, 50);
+

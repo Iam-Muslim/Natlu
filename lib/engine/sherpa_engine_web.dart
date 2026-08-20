@@ -86,31 +86,28 @@ class SherpaEngine {
 
     globalContext.setProperty('dartSherpaOnResult'.toJS, jsOnResult);
 
-    DebugLogger.logSimple(
-      'SherpaDart',
-      'Waiting for Sherpa WebAssembly memory to load...',
-    );
-
-    // Wait for the WASM engine to start
-    while (!_isWasmModuleLoaded().toDart) {
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    DebugLogger.logSimple(
-      'SherpaDart',
-      'WASM Memory loaded. Loading models from Flutter assets...',
-    );
-
     try {
       const String modelFileName = 'zipformer_p_arabic_v3.int8.onnx';
-      JSUint8Array modelBytes;
       const String modelUrl = '/download-model?model=$modelFileName';
       DebugLogger.logSimple(
         'SherpaDart',
-        'Fetching ONNX model from $modelUrl...',
+        'Fetching ONNX model from $modelUrl (in parallel with WASM load)...',
       );
-      modelBytes =
-          await _fetchSherpaModel(modelUrl.toJS).toDart as JSUint8Array;
+
+      // Start fetching the model in parallel with WASM memory compilation
+      final modelFuture = _fetchSherpaModel(modelUrl.toJS).toDart;
+
+      // Concurrently wait for the WASM engine to start
+      while (!_isWasmModuleLoaded().toDart) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      DebugLogger.logSimple(
+        'SherpaDart',
+        'WASM Memory loaded. Awaiting model bytes...',
+      );
+
+      final JSUint8Array modelBytes = (await modelFuture) as JSUint8Array;
 
       _writeSherpaAssetToVFS(modelFileName.toJS, modelBytes);
       DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');
