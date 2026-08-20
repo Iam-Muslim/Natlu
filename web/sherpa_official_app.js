@@ -116,9 +116,11 @@ function primeRecognizer() {
     }
 }
 
+let activeMicrophoneStream = null;
+
 window.startOfficialSherpa = function() {
   console.log('[Sherpa] startOfficialSherpa called from Dart');
-  if (!navigator.mediaDevices.getUserMedia) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     console.error('[Sherpa] getUserMedia not supported on your browser!');
     return;
   }
@@ -133,9 +135,22 @@ window.startOfficialSherpa = function() {
 
   let onSuccess = function(stream) {
     console.log('[Sherpa] Microphone access granted. Initializing AudioContext...');
+    activeMicrophoneStream = stream;
+    
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!audioCtx) {
-      audioCtx = new AudioContext({sampleRate: 16000});
+      try {
+        audioCtx = new AudioContextClass({sampleRate: 16000});
+      } catch(e) {
+        // Fallback for iOS Safari / WebKit which requires hardware sampleRate
+        audioCtx = new AudioContextClass();
+      }
     }
+    
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(console.warn);
+    }
+
     recordSampleRate = audioCtx.sampleRate;
     mediaStream = audioCtx.createMediaStreamSource(stream);
 
@@ -163,10 +178,8 @@ window.startOfficialSherpa = function() {
           return;
       }
 
-      let samples = new Float32Array(e.inputBuffer.getChannelData(0))
+      let samples = new Float32Array(e.inputBuffer.getChannelData(0));
       samples = downsampleBuffer(samples, expectedSampleRate);
-
-
 
       if (recognizer_stream == null) {
         console.log('[Sherpa] Creating recognizer stream...');
@@ -242,20 +255,23 @@ window.startOfficialSherpa = function() {
 window.stopOfficialSherpa = function() {
   console.log('[Sherpa] stopOfficialSherpa called from Dart');
   if (recorder && audioCtx) {
-    recorder.disconnect(audioCtx.destination);
+    try { recorder.disconnect(audioCtx.destination); } catch(e) {}
   }
   if (mediaStream && recorder) {
-    mediaStream.disconnect(recorder);
+    try { mediaStream.disconnect(recorder); } catch(e) {}
   }
-  if (mediaStream && mediaStream.mediaStream) {
-    mediaStream.mediaStream.getTracks().forEach(track => track.stop());
+  if (activeMicrophoneStream) {
+    try {
+      activeMicrophoneStream.getTracks().forEach(track => track.stop());
+    } catch(e) {}
+    activeMicrophoneStream = null;
   }
   
   // Flush final word
   if (lastResult.length > 0) {
       console.log(`[Sherpa] Flushing final result: ${lastResult}`);
       if (window.dartSherpaOnResult) {
-          window.dartSherpaOnResult(lastResult, true); 
+          window.dartSherpaOnResult(JSON.stringify({ text: lastResult, isFinal: true }), true); 
       }
   }
   lastResult = '';

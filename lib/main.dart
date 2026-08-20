@@ -293,7 +293,9 @@ class _OrchestratorState extends State<_Orchestrator> {
           // silently discarding the final word's right-context tail every ayah.
         },
       );
-      WakelockPlus.enable(); // No need to await platform channel
+      try {
+        WakelockPlus.enable();
+      } catch (_) {}
 
       if (mounted) setState(() => _isInit = false);
 
@@ -340,7 +342,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
         _engine.resetBuffer();
         _ctrl?.finalize();
-        await WakelockPlus.disable();
+        try { await WakelockPlus.disable(); } catch (_) {}
         if (mounted)
           setState(() {
             _isRecording = false;
@@ -371,7 +373,7 @@ class _OrchestratorState extends State<_Orchestrator> {
           }
         }
 
-        await WakelockPlus.enable();
+        try { await WakelockPlus.enable(); } catch (_) {}
         _engine.resetBuffer();
 
         // Instant UI feedback before hardware mic starts
@@ -456,7 +458,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       }
 
       await _voiceSearchCtrl.startSearch();
-      await WakelockPlus.enable();
+      try { await WakelockPlus.enable(); } catch (_) {}
 
       // We rely entirely on Sherpa's VAD for endpointing (configured for 4.0s).
       // No custom timers needed anymore.
@@ -490,7 +492,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     try {
       await _audio.stop();
       _engine.resetBuffer();
-      await WakelockPlus.disable();
+      try { await WakelockPlus.disable(); } catch (_) {}
 
       if (mounted) {
         setState(() {

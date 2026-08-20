@@ -20,13 +20,11 @@
     return;
   }
 
-  // Check if dismissed in this browser session
-  if (sessionStorage.getItem('pwa_prompt_dismissed') === 'true') {
-    return;
-  }
+  // Detect iOS devices (including modern iPadOS which mimics MacIntel)
+  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-  const isInAppBrowser = /(FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat)/i.test(navigator.userAgent);
-  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()) && !window.MSStream;
+  const isInAppBrowser = /(FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Telegram)/i.test(navigator.userAgent);
 
   // Listen for successful installation by the browser
   window.addEventListener('appinstalled', () => {
@@ -36,19 +34,18 @@
     const iosBanner = document.getElementById('pwa-ios-banner');
     if (banner) banner.style.display = 'none';
     if (iosBanner) iosBanner.style.display = 'none';
-    sessionStorage.setItem('pwa_prompt_dismissed', 'true');
   });
 
-  // 2. Android / Chromium / Desktop Install Prompt (Only fires if NOT already installed)
+  // 2. Android / Chromium / Desktop Install Prompt
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
     console.log('[PWA] beforeinstallprompt captured (app is not installed).');
-    
-    setTimeout(showInstallBanner, 2000);
+    showInstallBanner();
   });
 
   function showInstallBanner() {
+    if (isStandalone) return;
     const banner = document.getElementById('pwa-install-banner');
     const installBtn = document.getElementById('pwa-install-btn');
     const closeBtn = document.getElementById('pwa-close-btn');
@@ -63,25 +60,35 @@
         console.log(`[PWA] User install choice: ${choiceResult.outcome}`);
         deferredInstallPrompt = null;
         banner.style.display = 'none';
-        if (choiceResult.outcome === 'accepted') {
-          sessionStorage.setItem('pwa_prompt_dismissed', 'true');
-        }
+      } else {
+        // If Chrome hasn't fired beforeinstallprompt yet or browser requires manual add:
+        const sub = banner.querySelector('.pwa-subtitle');
+        const subEn = banner.querySelector('.pwa-subtitle-en');
+        if (sub) sub.innerHTML = 'اضغط على قائمة المتصفح <strong>(⋮)</strong> ثم اختر <strong>"تثبيت التطبيق"</strong> أو <strong>"إضافة للشاشة الرئيسية"</strong>';
+        if (subEn) subEn.innerHTML = 'Tap browser menu <strong>(⋮)</strong> then select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>';
+        installBtn.style.display = 'none';
       }
     };
 
     if (closeBtn) {
       closeBtn.onclick = () => {
         banner.style.display = 'none';
-        sessionStorage.setItem('pwa_prompt_dismissed', 'true');
       };
     }
   }
 
+  // Proactively trigger banner after brief delay on Android / Desktop if not standalone
+  if (!isIos && !isStandalone && !isInAppBrowser) {
+    setTimeout(showInstallBanner, 2500);
+  }
+
   // 3. iOS Safari Custom Add to Home Screen Prompt
   if (isIos && !isStandalone && !isInAppBrowser) {
-    const isSafari = /safari/.test(navigator.userAgent.toLowerCase()) && !/crios|fxios/.test(navigator.userAgent.toLowerCase());
+    const isSafari = /safari/.test(navigator.userAgent.toLowerCase()) && 
+                     !/crios|fxios|opios|mercury|edgios/i.test(navigator.userAgent);
     if (isSafari) {
       setTimeout(() => {
+        if (isStandalone) return;
         const iosBanner = document.getElementById('pwa-ios-banner');
         const iosCloseBtn = document.getElementById('pwa-ios-close-btn');
         if (iosBanner) {
@@ -89,7 +96,6 @@
           if (iosCloseBtn) {
             iosCloseBtn.onclick = () => {
               iosBanner.style.display = 'none';
-              sessionStorage.setItem('pwa_prompt_dismissed', 'true');
             };
           }
         }

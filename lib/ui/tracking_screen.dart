@@ -63,7 +63,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WakelockPlus.enable();
+    try { WakelockPlus.enable(); } catch (_) {}
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -94,7 +94,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
-    WakelockPlus.disable();
+    try { WakelockPlus.disable(); } catch (_) {}
     super.dispose();
   }
 
@@ -194,7 +194,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.pixels);
       }
-      WakelockPlus.disable();
+      try { WakelockPlus.disable(); } catch (_) {}
     } else {
       final prefs = await SharedPreferences.getInstance();
       final hasChosenSpeed = prefs.getBool('has_chosen_speed') ?? false;
@@ -217,7 +217,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       widget.controller.finalize();
       setState(() => _isAutoScrolling = true);
       _startAutoScrollLoop();
-      WakelockPlus.enable();
+      try { WakelockPlus.enable(); } catch (_) {}
     }
   }
 
@@ -239,7 +239,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     if (distance <= 0.5) {
       setState(() => _isAutoScrolling = false);
-      WakelockPlus.disable();
+      try { WakelockPlus.disable(); } catch (_) {}
       return;
     }
 
@@ -259,7 +259,7 @@ class _TrackingScreenState extends State<TrackingScreen>
               _startAutoScrollLoop();
             } else {
               setState(() => _isAutoScrolling = false);
-              WakelockPlus.disable();
+              try { WakelockPlus.disable(); } catch (_) {}
             }
           }
         });

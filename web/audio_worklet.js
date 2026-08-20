@@ -30,7 +30,7 @@ class AudioStreamProcessor extends AudioWorkletProcessor {
       
       const chunk = new Uint8Array(int16Buffer.buffer);
       this.port.postMessage(chunk.buffer, [chunk.buffer]);
-      this._buffer = [];
+      this._buffer = this._buffer.slice(this._bufferSize);
     }
 
     return true;
