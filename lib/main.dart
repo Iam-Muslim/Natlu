@@ -293,9 +293,11 @@ class _OrchestratorState extends State<_Orchestrator> {
           // silently discarding the final word's right-context tail every ayah.
         },
       );
-      try {
-        WakelockPlus.enable();
-      } catch (_) {}
+      if (!kIsWeb) {
+        try {
+          WakelockPlus.enable();
+        } catch (_) {}
+      }
 
       if (mounted) setState(() => _isInit = false);
 
@@ -327,26 +329,18 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
-      if (!_isRecording) {
-        // Nothing here anymore, continue below
-      }
-
       if (_isRecording) {
-        // Get any remaining audio in the pipeline
         await _audio.stop();
-        // if (tail.isNotEmpty) {
-        //   _ctrl?.feed(tail, isFinal: true);
-        //   // Allow the background Isolate time to finish inference
-        //   await Future.delayed(const Duration(milliseconds: 500));
-        // }
-
         _engine.resetBuffer();
         _ctrl?.finalize();
-        try { await WakelockPlus.disable(); } catch (_) {}
-        if (mounted)
+        if (!kIsWeb) {
+          try { await WakelockPlus.disable(); } catch (_) {}
+        }
+        if (mounted) {
           setState(() {
             _isRecording = false;
           });
+        }
       } else {
         if (!kIsWeb) {
           final status = await Permission.microphone.request();
@@ -373,7 +367,9 @@ class _OrchestratorState extends State<_Orchestrator> {
           }
         }
 
-        try { await WakelockPlus.enable(); } catch (_) {}
+        if (!kIsWeb) {
+          try { await WakelockPlus.enable(); } catch (_) {}
+        }
         _engine.resetBuffer();
 
         // Instant UI feedback before hardware mic starts
@@ -458,10 +454,9 @@ class _OrchestratorState extends State<_Orchestrator> {
       }
 
       await _voiceSearchCtrl.startSearch();
-      try { await WakelockPlus.enable(); } catch (_) {}
-
-      // We rely entirely on Sherpa's VAD for endpointing (configured for 4.0s).
-      // No custom timers needed anymore.
+      if (!kIsWeb) {
+        try { await WakelockPlus.enable(); } catch (_) {}
+      }
 
       _audio
           .start(
@@ -473,8 +468,6 @@ class _OrchestratorState extends State<_Orchestrator> {
             DebugLogger.logSimple('AUDIO', '❌ ERROR in Voice Search: $e');
             if (mounted) setState(() => _isVoiceSearching = false);
           });
-
-      // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
     } catch (e) {
       DebugLogger.logSimple('VOICE_SEARCH', '❌ START ERROR: $e');
       if (mounted) setState(() => _isVoiceSearching = false);
@@ -487,12 +480,12 @@ class _OrchestratorState extends State<_Orchestrator> {
     if (!_isVoiceSearching || _isToggling) return;
     _isToggling = true;
 
-    // (Old silence timer was removed, relying on Sherpa VAD instead)
-
     try {
       await _audio.stop();
       _engine.resetBuffer();
-      try { await WakelockPlus.disable(); } catch (_) {}
+      if (!kIsWeb) {
+        try { await WakelockPlus.disable(); } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {

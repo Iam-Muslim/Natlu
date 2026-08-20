@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
@@ -63,10 +64,12 @@ class _TrackingScreenState extends State<TrackingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    try { WakelockPlus.enable(); } catch (_) {}
+    if (!kIsWeb) {
+      try { WakelockPlus.enable(); } catch (_) {}
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   @override
@@ -94,7 +97,9 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
-    try { WakelockPlus.disable(); } catch (_) {}
+    if (!kIsWeb) {
+      try { WakelockPlus.disable(); } catch (_) {}
+    }
     super.dispose();
   }
 
@@ -194,7 +199,9 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.pixels);
       }
-      try { WakelockPlus.disable(); } catch (_) {}
+      if (!kIsWeb) {
+        try { WakelockPlus.disable(); } catch (_) {}
+      }
     } else {
       final prefs = await SharedPreferences.getInstance();
       final hasChosenSpeed = prefs.getBool('has_chosen_speed') ?? false;
@@ -217,7 +224,9 @@ class _TrackingScreenState extends State<TrackingScreen>
       widget.controller.finalize();
       setState(() => _isAutoScrolling = true);
       _startAutoScrollLoop();
-      try { WakelockPlus.enable(); } catch (_) {}
+      if (!kIsWeb) {
+        try { WakelockPlus.enable(); } catch (_) {}
+      }
     }
   }
 
@@ -239,7 +248,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     if (distance <= 0.5) {
       setState(() => _isAutoScrolling = false);
-      try { WakelockPlus.disable(); } catch (_) {}
+      if (!kIsWeb) {
+        try { WakelockPlus.disable(); } catch (_) {}
+      }
       return;
     }
 
@@ -259,7 +270,9 @@ class _TrackingScreenState extends State<TrackingScreen>
               _startAutoScrollLoop();
             } else {
               setState(() => _isAutoScrolling = false);
-              try { WakelockPlus.disable(); } catch (_) {}
+              if (!kIsWeb) {
+                try { WakelockPlus.disable(); } catch (_) {}
+              }
             }
           }
         });
