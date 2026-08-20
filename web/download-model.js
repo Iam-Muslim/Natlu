@@ -3,7 +3,21 @@ export async function onRequest(context) {
     const urlObj = new URL(request.url);
     const modelParam = urlObj.searchParams.get('model') || 'zipformer_p_arabic_v3.int8.onnx';
     
-    // Redirect browser directly to the public GitHub release download URL to avoid worker proxy throttling
     const directUrl = `https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/${modelParam}`;
-    return Response.redirect(directUrl, 302);
+    
+    // Fetch directly from github releases.
+    // GitHub releases stream their response, and passing the body to new Response() streams it to the client.
+    const fetchResponse = await fetch(directUrl, {
+        headers: {
+            'User-Agent': 'Cloudflare-Worker'
+        }
+    });
+
+    const response = new Response(fetchResponse.body, fetchResponse);
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    // Important: Prevent Cloudflare from caching the model
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    
+    return response;
 }

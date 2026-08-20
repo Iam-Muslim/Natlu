@@ -104,8 +104,7 @@ class SherpaEngine {
     try {
       const String modelFileName = 'zipformer_p_arabic_v3.int8.onnx';
       JSUint8Array modelBytes;
-      const String modelUrl =
-          'https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/$modelFileName';
+      const String modelUrl = '/download-model?model=$modelFileName';
       DebugLogger.logSimple(
         'SherpaDart',
         'Fetching ONNX model from $modelUrl...',
