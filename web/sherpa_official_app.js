@@ -371,15 +371,18 @@ window.fetchSherpaModel = async function(url) {
         });
 
         console.log(`[Sherpa] Starting fetch from ${url}...`);
-        const response = await fetch(url, { cache: 'no-store' });
+        const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
-        const contentLength = response.headers.get('content-length') || 120000000;
+        const contentLength = response.headers.get('content-length') || 72705392;
         const total = parseInt(contentLength, 10);
         let loaded = 0;
 
         const reader = response.body.getReader();
         const chunks = [];
+        let lastUiUpdate = 0;
+        const fill = document.getElementById('progress-bar-fill');
+        const text = document.getElementById('progress-text');
 
         while(true) {
             const {done, value} = await reader.read();
@@ -387,13 +390,18 @@ window.fetchSherpaModel = async function(url) {
             chunks.push(value);
             loaded += value.length;
             
-            // Update UI Progress Bar
-            const percent = Math.min(100, Math.round((loaded / total) * 100));
-            const fill = document.getElementById('progress-bar-fill');
-            const text = document.getElementById('progress-text');
-            if (fill) fill.style.width = percent + '%';
-            if (text) text.innerText = percent + '% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(total/1024/1024) + 'MB)';
+            const now = performance.now();
+            if (now - lastUiUpdate > 80) {
+                lastUiUpdate = now;
+                const percent = Math.min(100, Math.round((loaded / total) * 100));
+                if (fill) fill.style.width = percent + '%';
+                if (text) text.innerText = percent + '% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(total/1024/1024) + 'MB)';
+            }
         }
+
+        // Ensure 100% is displayed upon completion
+        if (fill) fill.style.width = '100%';
+        if (text) text.innerText = '100% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(loaded/1024/1024) + 'MB)';
 
         // Change text to initializing after download hits 100%
         const progressTitle = document.querySelector('#progress-container .splash-title');

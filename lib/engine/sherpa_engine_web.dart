@@ -104,22 +104,12 @@ class SherpaEngine {
     try {
       const String modelFileName = 'zipformer_p_arabic_v3.int8.onnx';
       JSUint8Array modelBytes;
-      final host = Uri.base.host;
-      final String modelUrl;
-      if (host != 'localhost' && host != '127.0.0.1' && host.isNotEmpty) {
-        DebugLogger.logSimple(
-          'SherpaDart',
-          'Production detected on $host. Fetching ONNX model...',
-        );
-        modelUrl = '/download-model?model=$modelFileName';
-      } else {
-        DebugLogger.logSimple(
-          'SherpaDart',
-          'Local environment detected. Fetching ONNX model...',
-        );
-        modelUrl =
-            'https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/$modelFileName';
-      }
+      const String modelUrl =
+          'https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/$modelFileName';
+      DebugLogger.logSimple(
+        'SherpaDart',
+        'Fetching ONNX model from $modelUrl...',
+      );
       modelBytes =
           await _fetchSherpaModel(modelUrl.toJS).toDart as JSUint8Array;
 
