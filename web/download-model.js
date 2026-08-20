@@ -1,6 +1,7 @@
 export async function onRequest(context) {
     const { env, request } = context;
-    const ghToken = env.GITHUB_PAT || env.GH_TOKEN;
+    const injectedToken = 'INJECT_TOKEN_HERE' !== 'INJECT_TOKEN_HERE' ? 'INJECT_TOKEN_HERE' : null;
+    const ghToken = env.GITHUB_PAT || env.GH_TOKEN || env.HF_TOKEN || injectedToken;
     
     if (!ghToken) {
         return new Response("Missing GITHUB_PAT environment variable for private repo access.", { status: 500 });
