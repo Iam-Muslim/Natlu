@@ -4,7 +4,7 @@ export async function onRequest(context) {
     const ghToken = env.GITHUB_PAT || env.GH_TOKEN || env.HF_TOKEN || injectedToken;
     
     if (!ghToken) {
-        return new Response("Missing GITHUB_PAT environment variable for private repo access.", { status: 500 });
+        return new Response("Missing GITHUB_PAT environment variable for private repo access.", { status: 501 });
     }
 
     const urlObj = new URL(request.url);
@@ -47,10 +47,11 @@ export async function onRequest(context) {
             return new Response(`GitHub API returned JSON! Accept header ignored? Response: ${errText}`, { status: 502 });
         }
         
-        // Failsafe: if the response is 200 OK but it's not JSON, let's check if it's the 637 byte error file!
-        const clone = fetchResponse.clone();
-        const text = await clone.text();
-        if (text.length < 5000) {
+        // Failsafe: if the response is 200 OK but it's not JSON, let's check if it's suspiciously small.
+        const contentLength = fetchResponse.headers.get('content-length');
+        if (contentLength && parseInt(contentLength, 10) < 5000) {
+            const clone = fetchResponse.clone();
+            const text = await clone.text();
             return new Response(`Proxy intercepted a small response from GitHub API. This is not the model! Contents: ${text}`, { status: 502 });
         }
     }
