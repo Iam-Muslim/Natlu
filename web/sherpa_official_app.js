@@ -384,51 +384,140 @@ window.fetchSherpaModel = async function(url) {
                 }, { once: true });
             });
 
-        console.log(`[Sherpa] Starting XHR download from ${url}...`);
+        console.log(`[Sherpa] Starting 4-way parallel chunk download from ${url}...`);
         
-        const arrayBuffer = await new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', url, true);
-            xhr.responseType = 'arraybuffer';
-            
-            let lastUiUpdate = 0;
+        async function downloadSingleStream(targetUrl) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', targetUrl, true);
+                xhr.responseType = 'arraybuffer';
+                
+                let lastUiUpdate = 0;
+                const fill = document.getElementById('progress-bar-fill');
+                const text = document.getElementById('progress-text');
+                
+                xhr.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const total = event.total;
+                        const loaded = event.loaded;
+                        const now = performance.now();
+                        if (now - lastUiUpdate > 80 || loaded === total) {
+                            lastUiUpdate = now;
+                            const percent = Math.min(100, Math.round((loaded / total) * 100));
+                            if (fill) fill.style.width = percent + '%';
+                            if (text) text.innerText = percent + '% (' + Math.round(loaded/1048576) + 'MB / ' + Math.round(total/1048576) + 'MB)';
+                        }
+                    }
+                };
+                
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(xhr.response);
+                    } else {
+                        reject(new Error(`HTTP error! status: ${xhr.status}`));
+                    }
+                };
+                
+                xhr.onerror = () => reject(new Error('Network Error'));
+                xhr.send();
+            });
+        }
+
+        async function downloadParallelStream(targetUrl, numChunks = 4) {
             const fill = document.getElementById('progress-bar-fill');
             const text = document.getElementById('progress-text');
-            
-            xhr.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const total = event.total;
-                    const loaded = event.loaded;
-                    const now = performance.now();
-                    if (now - lastUiUpdate > 80 || loaded === total) {
-                        lastUiUpdate = now;
-                        const percent = Math.min(100, Math.round((loaded / total) * 100));
-                        if (fill) fill.style.width = percent + '%';
-                        if (text) text.innerText = percent + '% (' + Math.round(loaded/1024/1024) + 'MB / ' + Math.round(total/1024/1024) + 'MB)';
-                    }
-                } else {
-                    const loaded = event.loaded;
-                    const now = performance.now();
-                    if (now - lastUiUpdate > 80) {
-                        lastUiUpdate = now;
-                        if (text) text.innerText = 'Downloading... (' + Math.round(loaded/1024/1024) + 'MB)';
-                    }
+            let lastUiUpdate = 0;
+
+            function updateProgress(loaded, total) {
+                const now = performance.now();
+                if (now - lastUiUpdate > 60 || loaded === total) {
+                    lastUiUpdate = now;
+                    const percent = Math.min(100, Math.round((loaded / total) * 100));
+                    if (fill) fill.style.width = percent + '%';
+                    if (text) text.innerText = percent + '% (' + Math.round(loaded / 1048576) + 'MB / ' + Math.round(total / 1048576) + 'MB) [4x Turbo]';
                 }
-            };
-            
-            xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    if (fill) fill.style.width = '100%';
-                    if (text) text.innerText = '100% (' + Math.round(xhr.response.byteLength/1024/1024) + 'MB / ' + Math.round(xhr.response.byteLength/1024/1024) + 'MB)';
-                    resolve(xhr.response);
-                } else {
-                    reject(new Error(`HTTP error! status: ${xhr.status}`));
+            }
+
+            // Probe total file size
+            let totalSize = 72705392;
+            try {
+                const headRes = await fetch(targetUrl, { method: 'HEAD' });
+                const len = headRes.headers.get('content-length');
+                if (len) {
+                    const parsed = parseInt(len, 10);
+                    if (parsed > 10000000) totalSize = parsed;
                 }
-            };
+            } catch(e) {
+                console.log('[Sherpa] HEAD size check skipped:', e);
+            }
+
+            const chunkSize = Math.ceil(totalSize / numChunks);
+            const chunkPromises = [];
+            const loadedPerChunk = new Array(numChunks).fill(0);
+
+            for (let i = 0; i < numChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize - 1, totalSize - 1);
+
+                const chunkPromise = new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', targetUrl, true);
+                    xhr.responseType = 'arraybuffer';
+                    xhr.setRequestHeader('Range', `bytes=${start}-${end}`);
+
+                    xhr.onprogress = (e) => {
+                        loadedPerChunk[i] = e.loaded;
+                        const totalLoaded = loadedPerChunk.reduce((a, b) => a + b, 0);
+                        updateProgress(totalLoaded, totalSize);
+                    };
+
+                    xhr.onload = () => {
+                        if (xhr.status === 200 || xhr.status === 206) {
+                            loadedPerChunk[i] = xhr.response.byteLength;
+                            const totalLoaded = loadedPerChunk.reduce((a, b) => a + b, 0);
+                            updateProgress(totalLoaded, totalSize);
+                            resolve({ index: i, buffer: xhr.response });
+                        } else {
+                            reject(new Error(`Chunk ${i} returned status ${xhr.status}`));
+                        }
+                    };
+
+                    xhr.onerror = () => reject(new Error(`Chunk ${i} network failure`));
+                    xhr.send();
+                });
+
+                chunkPromises.push(chunkPromise);
+            }
+
+            const results = await Promise.all(chunkPromises);
             
-            xhr.onerror = () => reject(new Error('Network Error'));
-            xhr.send();
-        });
+            // Assemble in exact sequence
+            results.sort((a, b) => a.index - b.index);
+            let totalBytes = 0;
+            for (const r of results) totalBytes += r.buffer.byteLength;
+
+            const assembled = new Uint8Array(totalBytes);
+            let offset = 0;
+            for (const r of results) {
+                assembled.set(new Uint8Array(r.buffer), offset);
+                offset += r.buffer.byteLength;
+            }
+
+            return assembled.buffer;
+        }
+
+        let arrayBuffer;
+        try {
+            arrayBuffer = await downloadParallelStream(url, 4);
+        } catch(parallelErr) {
+            console.warn('[Sherpa] 4-Way parallel download encountered an error, falling back to single stream:', parallelErr);
+            arrayBuffer = await downloadSingleStream(url);
+        }
+
+        const fill = document.getElementById('progress-bar-fill');
+        const text = document.getElementById('progress-text');
+        if (fill) fill.style.width = '100%';
+        if (text) text.innerText = '100% (' + Math.round(arrayBuffer.byteLength / 1048576) + 'MB / ' + Math.round(arrayBuffer.byteLength / 1048576) + 'MB)';
 
         // Change text to initializing after download hits 100%
         const progressTitle = document.querySelector('#progress-container .splash-title');
