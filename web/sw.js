@@ -48,6 +48,9 @@ function addCoopCoepHeaders(response) {
   if (!response || response.status === 0 || response.type === 'opaque') {
     return response;
   }
+  if ([101, 204, 205, 304].includes(response.status)) {
+    return response;
+  }
   const newHeaders = new Headers(response.headers);
   newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
   newHeaders.set('Cross-Origin-Embedder-Policy', 'credentialless');
@@ -61,6 +64,10 @@ function addCoopCoepHeaders(response) {
 }
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   const url = new URL(event.request.url);
 
   // 1. Model download endpoint is stored in IndexedDB, do not cache inside ServiceWorker

@@ -9,9 +9,6 @@ external void _startOfficialSherpa();
 @JS('stopOfficialSherpa')
 external void _stopOfficialSherpa();
 
-@JS('resetOfficialSherpaBuffer')
-external void _resetOfficialSherpaBuffer();
-
 class AudioProcessor {
   bool _isRecording = false;
 
@@ -28,7 +25,7 @@ class AudioProcessor {
   }
 
   void clearBuffer() {
-    _resetOfficialSherpaBuffer();
+    // Left for compatibility with Orchestrator (matches audio_processor_io.dart)
   }
 
   Future<void> stop() async {
