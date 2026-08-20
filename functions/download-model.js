@@ -1,0 +1,51 @@
+export async function onRequest(context) {
+    const { env, request } = context;
+    const ghToken = env.GITHUB_PAT || env.GH_TOKEN;
+    
+    if (!ghToken) {
+        return new Response("Missing GITHUB_PAT environment variable for private repo access.", { status: 500 });
+    }
+
+    const urlObj = new URL(request.url);
+    const modelParam = urlObj.searchParams.get('model') || 'zipformer_p_arabic_v3.int8.onnx';
+    
+    // 1. Fetch the release by tag to get the asset ID
+    const releaseUrl = 'https://api.github.com/repos/Iam-Muslim/ReciteQuran-ElhamduleAllah/releases/tags/models-latest';
+    const apiHeaders = {
+        'User-Agent': 'Cloudflare-Worker',
+        'Authorization': `Bearer ${ghToken}`,
+        'Accept': 'application/vnd.github.v3+json'
+    };
+
+    let releaseResponse = await fetch(releaseUrl, { headers: apiHeaders });
+    if (!releaseResponse.ok) {
+        return new Response(`Failed to fetch release info: ${releaseResponse.status}`, { status: releaseResponse.status });
+    }
+
+    const releaseData = await releaseResponse.json();
+    const asset = releaseData.assets.find(a => a.name === modelParam);
+    if (!asset) {
+        return new Response(`Asset ${modelParam} not found in release models-latest.`, { status: 404 });
+    }
+
+    // 2. Fetch the asset using the GitHub API
+    // We must handle redirects manually because passing the Authorization header to AWS S3 causes a signature mismatch error.
+    const assetUrl = asset.url; // This is the API URL for the asset
+    apiHeaders['Accept'] = 'application/octet-stream';
+
+    let fetchResponse = await fetch(assetUrl, { headers: apiHeaders, redirect: 'manual' });
+    
+    if (fetchResponse.status >= 300 && fetchResponse.status < 400 && fetchResponse.headers.has('location')) {
+        const redirectUrl = fetchResponse.headers.get('location');
+        fetchResponse = await fetch(redirectUrl, {
+            headers: { 'User-Agent': 'Cloudflare-Worker' } // No Auth header here!
+        });
+    }
+
+    const response = new Response(fetchResponse.body, fetchResponse);
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    
+    return response;
+}
