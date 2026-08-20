@@ -362,13 +362,17 @@ window.fetchSherpaModel = async function(url) {
                 return new Uint8Array(cachedBuffer);
             }
 
-            // --- MODEL NOT FOUND: SHOW DOWNLOAD PROMPT ---
-            const title = document.querySelector('#prompt-section .splash-title');
-            const desc = document.querySelector('#prompt-section .splash-desc');
+            // --- MODEL NOT FOUND: SHOW BILINGUAL ACCEPTANCE PROMPT ---
+            const titleAr = document.querySelector('#prompt-section .splash-title-ar');
+            const titleEn = document.querySelector('#prompt-section .splash-title-en');
+            const descAr = document.querySelector('#prompt-section .splash-desc-ar');
+            const descEn = document.querySelector('#prompt-section .splash-desc-en');
             const btn = document.getElementById('accept-download-btn');
             
-            if (title) title.innerText = 'AI Engine Required';
-            if (desc) desc.innerText = 'To process your recitation offline with complete privacy, we need to download the AI model (~70MB). This only happens once.';
+            if (titleAr) titleAr.innerText = 'الموافقة مطلوبة';
+            if (titleEn) titleEn.innerText = 'Acceptance Required';
+            if (descAr) descAr.innerText = 'يستهلك تطبيق الويب حوالي 100 ميجابايت من باقة الإنترنت (بيانات الهاتف أو الواي فاي) لأول مرة فقط.';
+            if (descEn) descEn.innerText = 'Web app uses ~100MB internet bandwidth (data or Wi-Fi) for the first time only.';
             if (btn) btn.style.display = 'block';
 
             console.log(`[Sherpa] Waiting for user download confirmation for ${url}...`);
@@ -434,7 +438,7 @@ window.fetchSherpaModel = async function(url) {
                     lastUiUpdate = now;
                     const percent = Math.min(100, Math.round((loaded / total) * 100));
                     if (fill) fill.style.width = percent + '%';
-                    if (text) text.innerText = percent + '% (' + Math.round(loaded / 1048576) + 'MB / ' + Math.round(total / 1048576) + 'MB) [4x Turbo]';
+                    if (text) text.innerText = percent + '% (' + Math.round(loaded / 1048576) + 'MB / ' + Math.round(total / 1048576) + 'MB)';
                 }
             }
 
@@ -519,11 +523,15 @@ window.fetchSherpaModel = async function(url) {
         if (fill) fill.style.width = '100%';
         if (text) text.innerText = '100% (' + Math.round(arrayBuffer.byteLength / 1048576) + 'MB / ' + Math.round(arrayBuffer.byteLength / 1048576) + 'MB)';
 
-        // Change text to initializing after download hits 100%
-        const progressTitle = document.querySelector('#progress-container .splash-title');
-        const progressDesc = document.querySelector('#progress-container .splash-desc');
-        if (progressTitle) progressTitle.innerText = 'Initializing AI Engine...';
-        if (progressDesc) progressDesc.innerText = 'Loading into memory. Almost ready!';
+        // Change text to loading after data transfer hits 100%
+        const pTitleAr = document.querySelector('#progress-container .splash-title-ar');
+        const pTitleEn = document.querySelector('#progress-container .splash-title-en');
+        const pDescAr = document.querySelector('#progress-container .splash-desc-ar');
+        const pDescEn = document.querySelector('#progress-container .splash-desc-en');
+        if (pTitleAr) pTitleAr.innerText = 'جارٍ التحميل...';
+        if (pTitleEn) pTitleEn.innerText = 'Loading...';
+        if (pDescAr) pDescAr.innerText = 'قاربت العملية على الانتهاء...';
+        if (pDescEn) pDescEn.innerText = 'Almost ready...';
 
         // 2. Save it to IndexedDB in the background so they NEVER have to download it again!
         console.log(`[Sherpa] Saving model to IndexedDB for future offline access...`);
@@ -543,10 +551,18 @@ window.fetchSherpaModel = async function(url) {
         return new Uint8Array(arrayBuffer);
         } catch (e) {
             console.error('[Sherpa] Failed to fetch model:', e);
+            const pTitleAr = document.querySelector('#progress-container .splash-title-ar');
+            const pTitleEn = document.querySelector('#progress-container .splash-title-en');
+            const pDescAr = document.querySelector('#progress-container .splash-desc-ar');
+            const pDescEn = document.querySelector('#progress-container .splash-desc-en');
             const text = document.getElementById('progress-text');
+            if (pTitleAr) pTitleAr.innerText = 'تعذر التحميل';
+            if (pTitleEn) pTitleEn.innerText = 'Loading Failed';
+            if (pDescAr) pDescAr.innerText = 'يرجى التحقق من اتصالك بالإنترنت ثم تحديث الصفحة.';
+            if (pDescEn) pDescEn.innerText = 'Please check your internet connection and reload.';
             if (text) {
-               text.innerText = 'Download Failed!';
-               text.style.color = 'red';
+               text.innerText = 'خطأ في الاتصال • Connection error';
+               text.style.color = '#dc2626';
             }
             activeModelDownloadPromise = null;
             return null;

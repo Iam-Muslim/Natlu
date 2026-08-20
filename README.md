@@ -2,11 +2,6 @@
 
 # وما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
 
-<p align="center">
-  <i>"And We have certainly made the Quran easy for remembrance, so is there any who will remember?"</i><br>
-  <b>— Surah Al-Qamar (54:17)</b>
-</p>
-
 
 # Natlu — نتلو
 
@@ -37,9 +32,6 @@
 ## Overview
 
 **Natlu** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
-
-Unlike other applications that transmit your audio to remote servers, ReciteQuran runs an acoustic streaming neural network directly on your device. Your voice never leaves your phone, computer, or browser.
-
 ---
 
 ## Platforms
@@ -65,14 +57,9 @@ Unlike other applications that transmit your audio to remote servers, ReciteQura
 
 ### 2. Acoustic Tajweed & Madd Engine
 - Evaluates acoustic vowel holding durations against Quranic Tadweer timing standards:
-  - **Madd Elongation (المدود)**:
-    - Natural Madd (المد الطبيعي) — 2 Harakat
-    - Separated / Connected Madd (المد المنفصل والمتصل) — 4 Harakat
-    - Presented for Sukoon (المد العارض للسكون) — 2/4/6 Harakat
-    - Leen Madd (مد اللين) — 2/4/6 Harakat
-    - Compulsory Madd (المد اللازم) — 6 Harakat
-  - **Mushaddad Ghunnah (غنة النون والميم المشددتين)** — 2 Harakat nasal hold.
-  - **Shaddah Doubling (الشدة)** — Consonant closure duration (~1.5 Harakat).
+  - **Madd Elongation (المدود)**
+  - **Mushaddad Ghunnah (غنة النون والميم المشددتين)**
+  - **Shaddah (الشدة)**
 - Tap any highlighted word to inspect expected versus recited duration in milliseconds.
 
 ---
@@ -81,7 +68,7 @@ Unlike other applications that transmit your audio to remote servers, ReciteQura
 - The offline phonetic matcher locates the verse and jumps directly to it .
 ---
 
-### 4. Hifz Memorization & Hide Mode
+### 4. Hifz Revision & Hide Mode
 - Words reveal themselves as you recite them correctly.
 ---
 
@@ -196,9 +183,9 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 *Alhamdulillah (الحمد لله رب العالمين)* — This project builds on research and work from the following open-source projects:
 
-- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by [Quran-Lab](https://huggingface.co/Quran-Lab) Brother - Mustafa 
-- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by [obadx](https://github.com/OmarMuhammedAli)
-- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by [Hetchy](https://huggingface.co/hetchyy)
+- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother - Mustafa 
+- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother - Abdullah Aml
+- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother - Ahmad Ibrahim
 
 ---
 

@@ -43,34 +43,55 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
       transition: opacity 0.5s ease;
     }
     .splash-card {
       background: white;
-      padding: 2.5rem;
+      padding: 2.25rem 2rem;
       border-radius: 1.5rem;
-      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-      max-width: 24rem;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
+      max-width: 25rem;
+      width: 90%;
       text-align: center;
       border: 1px solid #f3f4f6;
     }
     .splash-icon {
-      width: 64px;
-      height: 64px;
-      margin: 0 auto 1.5rem auto;
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 1.25rem auto;
     }
-    .splash-title {
-      font-size: 1.25rem;
+    .splash-title-ar {
+      font-size: 1.3rem;
       font-weight: 800;
       color: #171717;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.15rem;
+      direction: rtl;
     }
-    .splash-desc {
-      font-size: 0.875rem;
-      color: #525252;
-      margin-bottom: 2rem;
+    .splash-title-en {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #6b7280;
+      margin-bottom: 0.85rem;
+    }
+    .splash-desc-ar {
+      font-size: 0.9rem;
+      color: #374151;
+      margin-bottom: 0.4rem;
       line-height: 1.6;
+      direction: rtl;
+    }
+    .splash-desc-en {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .desc-divider {
+      height: 1px;
+      background: #f3f4f6;
+      margin: 0.6rem auto;
+      width: 50%;
     }
     .splash-btn {
       background: #059669; /* Emerald 600 */
@@ -119,14 +140,19 @@
       <img src="icons/Icon-192.png" alt="Recite Quran" class="splash-icon" onerror="this.onerror=null; this.src='/app_icon.png';" />
       
       <div id="prompt-section">
-        <h2 class="splash-title">Initializing AI Engine...</h2>
-        <p class="splash-desc">The app requires a one-time setup that will use approximately 100MB of internet bandwidth (from mobile data or Wi-Fi).</p>
-        <button id="accept-download-btn" class="splash-btn" style="display: none;">Accept</button>
+        <h2 class="splash-title-ar">جارٍ التحميل...</h2>
+        <div class="splash-title-en">Loading...</div>
+        <p class="splash-desc-ar">يرجى الانتظار بينما يتم تجهيز التطبيق...</p>
+        <div class="desc-divider"></div>
+        <p class="splash-desc-en">Please wait while the app prepares...</p>
+        <button id="accept-download-btn" class="splash-btn" style="display: none;">موافق • Accept</button>
       </div>
 
       <div id="progress-container">
-        <h2 class="splash-title">Setting up AI Engine...</h2>
-        <p class="splash-desc" style="margin-bottom: 1rem;">Please do not close this tab.</p>
+        <h2 class="splash-title-ar">جارٍ التحميل...</h2>
+        <div class="splash-title-en">Loading...</div>
+        <p class="splash-desc-ar" style="margin-bottom: 0.25rem;">يرجى عدم إغلاق هذه الصفحة.</p>
+        <p class="splash-desc-en" style="margin-bottom: 1rem;">Please do not close this tab.</p>
         <div class="progress-bar-bg">
           <div id="progress-bar-fill"></div>
         </div>
