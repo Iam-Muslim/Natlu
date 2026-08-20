@@ -23,7 +23,7 @@ cp -R build/web/* landing_page/public/recite/
 
 # 4. Copy Cloudflare Functions into place
 mkdir -p landing_page/functions
-cp functions/download-model.js landing_page/functions/download-model.js
+cp web/download-model.js landing_page/functions/download-model.js
 
 # 5. Build React Landing Page
 echo "=== [3/3] Building React Landing Page ==="

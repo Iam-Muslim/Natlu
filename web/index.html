@@ -116,16 +116,16 @@
 <body>
   <div id="splash-overlay">
     <div class="splash-card">
-      <img src="icons/Icon-192.png" alt="Recite Quran" class="splash-icon" />
+      <img src="icons/Icon-192.png" alt="Recite Quran" class="splash-icon" onerror="this.onerror=null; this.src='/app_icon.png';" />
       
       <div id="prompt-section">
         <h2 class="splash-title">Initializing AI Engine...</h2>
-        <p class="splash-desc">Loading the offline model into memory. This takes a few seconds...</p>
-        <button id="accept-download-btn" class="splash-btn" style="display: none;">Download & Start</button>
+        <p class="splash-desc">To run the AI completely offline, the app requires a one-time setup that will use approximately 100MB of internet bandwidth (Wi-Fi or mobile data).</p>
+        <button id="accept-download-btn" class="splash-btn" style="display: none;">Accept</button>
       </div>
 
       <div id="progress-container">
-        <h2 class="splash-title">Downloading Engine...</h2>
+        <h2 class="splash-title">Setting up AI Engine...</h2>
         <p class="splash-desc" style="margin-bottom: 1rem;">Please do not close this tab.</p>
         <div class="progress-bar-bg">
           <div id="progress-bar-fill"></div>
