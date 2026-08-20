@@ -102,7 +102,7 @@ void main() async {
           globalSessionLogs.removeRange(0, 1000);
         }
 
-        if (!kReleaseMode) {
+        if (!kReleaseMode || kIsWeb) {
           parent.print(zone, line);
         }
       },
