@@ -8,7 +8,7 @@
 </p>
 
 
-# Recite Quran — اتلو القران
+# Natlu — نتلو
 
 
 
@@ -36,39 +36,21 @@
 
 ## Overview
 
-**ReciteQuran** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
+**Natlu** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
 
 Unlike other applications that transmit your audio to remote servers, ReciteQuran runs an acoustic streaming neural network directly on your device. Your voice never leaves your phone, computer, or browser.
 
 ---
 
-## Available Platforms
+## Platforms
 
-### Android
+-  Android
+-  Web Browser
+-  iOS (iPhone & iPad)
+-  Windows (Desktop)
+-  Linux - Insha'a Allah
 
-- **Google Play Store**: Install directly from [Google Play](https://play.google.com/store/apps/details?id=com.recitequran.app).
-- **Direct APK**: Download pre-built APKs from the [Official Website](https://recitequran.pages.dev/).
 
----
-
-### Web Browser
-
-- Use ReciteQuran directly in any modern desktop or mobile browser without installing anything:
-  👉 **[recitequran.pages.dev/recite](https://recitequran.pages.dev/recite)**
-
----
-
-### iOS (iPhone & iPad)
-
-- Download the IPA build artifact from the [GitHub Actions iOS Workflow](https://github.com/Iam-Muslim/ReciteQuran-ElhamduleAllah/actions/workflows/ios_build.yml) and install via AltStore, SideStore, or TrollStore, or deploy via Xcode.
-
----
-
-### Windows (Desktop)
-
-- ReciteQuran runs natively on Windows 10/11 (64-bit). You can run or build the desktop version directly from source using Flutter.
-
----
 
 ## Features
 
@@ -110,8 +92,8 @@ Unlike other applications that transmit your audio to remote servers, ReciteQura
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Iam-Muslim/ReciteQuran-ElhamduleAllah.git
-   cd ReciteQuran-ElhamduleAllah
+   git clone https://github.com/Iam-Muslim/Natlu.git
+   cd Natlu
    ```
 
 2. Fetch Flutter packages:

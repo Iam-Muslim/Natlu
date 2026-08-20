@@ -29,17 +29,6 @@ cp web/download-model.js landing_page/functions/download-model.js
 mkdir -p functions
 cp web/download-model.js functions/download-model.js
 
-if [ -n "$GITHUB_PAT" ]; then
-    sed -i "s/INJECT_TOKEN_HERE/$GITHUB_PAT/g" landing_page/functions/download-model.js
-    sed -i "s/INJECT_TOKEN_HERE/$GITHUB_PAT/g" functions/download-model.js
-elif [ -n "$HF_TOKEN" ]; then
-    sed -i "s/INJECT_TOKEN_HERE/$HF_TOKEN/g" landing_page/functions/download-model.js
-    sed -i "s/INJECT_TOKEN_HERE/$HF_TOKEN/g" functions/download-model.js
-elif [ -n "$SUBHAN_ALLAH" ]; then
-    sed -i "s/INJECT_TOKEN_HERE/$SUBHAN_ALLAH/g" landing_page/functions/download-model.js
-    sed -i "s/INJECT_TOKEN_HERE/$SUBHAN_ALLAH/g" functions/download-model.js
-fi
-
 # 5. Build React Landing Page
 echo "=== [3/3] Building React Landing Page ==="
 cd landing_page

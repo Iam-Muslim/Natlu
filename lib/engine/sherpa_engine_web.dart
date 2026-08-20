@@ -118,7 +118,7 @@ class SherpaEngine {
           'Local environment detected. Fetching ONNX model...',
         );
         modelUrl =
-            'https://github.com/Iam-Muslim/ReciteQuran/releases/download/v1.1.0/$modelFileName';
+            'https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/$modelFileName';
       }
       modelBytes =
           await _fetchSherpaModel(modelUrl.toJS).toDart as JSUint8Array;
