@@ -413,6 +413,12 @@ window.fetchSherpaModel = async function(url) {
         await cacheModel(url, arrayBuffer.buffer);
         
         console.log(`[Sherpa] Successfully fetched model: ${arrayBuffer.byteLength} bytes`);
+        if (arrayBuffer.byteLength < 10000) {
+            const textDecoder = new TextDecoder('utf-8');
+            const fileText = textDecoder.decode(arrayBuffer);
+            console.error('[DEBUG] The downloaded file is too small! Here are the exact contents of the 637 bytes:', fileText);
+            throw new Error('Downloaded file is too small to be a valid ONNX model. See console for contents.');
+        }
         return arrayBuffer;
     } catch (e) {
         console.error('[Sherpa] Failed to fetch model:', e);

@@ -44,7 +44,14 @@ export async function onRequest(context) {
         const contentType = fetchResponse.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
             const errText = await fetchResponse.text();
-            return new Response(`GitHub API returned JSON instead of binary! This usually means the 'Accept' header was ignored. Response: ${errText}`, { status: 502 });
+            return new Response(`GitHub API returned JSON! Accept header ignored? Response: ${errText}`, { status: 502 });
+        }
+        
+        // Failsafe: if the response is 200 OK but it's not JSON, let's check if it's the 637 byte error file!
+        const clone = fetchResponse.clone();
+        const text = await clone.text();
+        if (text.length < 5000) {
+            return new Response(`Proxy intercepted a small response from GitHub API. This is not the model! Contents: ${text}`, { status: 502 });
         }
     }
 
