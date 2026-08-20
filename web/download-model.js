@@ -32,15 +32,32 @@ export async function onRequest(context) {
     // 2. Fetch the asset using the GitHub API
     // We must handle redirects manually because passing the Authorization header to AWS S3 causes a signature mismatch error.
     const assetUrl = asset.url; // This is the API URL for the asset
-    apiHeaders['Accept'] = 'application/octet-stream';
+    const binaryHeaders = new Headers();
+    binaryHeaders.set('User-Agent', 'Cloudflare-Worker');
+    binaryHeaders.set('Authorization', `Bearer ${ghToken}`);
+    binaryHeaders.set('Accept', 'application/octet-stream');
 
-    let fetchResponse = await fetch(assetUrl, { headers: apiHeaders, redirect: 'manual' });
+    let fetchResponse = await fetch(assetUrl, { headers: binaryHeaders, redirect: 'manual' });
     
+    // Check if GitHub returned JSON instead of the expected 302 Redirect
+    if (fetchResponse.status === 200) {
+        const contentType = fetchResponse.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const errText = await fetchResponse.text();
+            return new Response(`GitHub API returned JSON instead of binary! This usually means the 'Accept' header was ignored. Response: ${errText}`, { status: 502 });
+        }
+    }
+
     if (fetchResponse.status >= 300 && fetchResponse.status < 400 && fetchResponse.headers.has('location')) {
         const redirectUrl = fetchResponse.headers.get('location');
         fetchResponse = await fetch(redirectUrl, {
             headers: { 'User-Agent': 'Cloudflare-Worker' } // No Auth header here!
         });
+    }
+
+    if (!fetchResponse.ok) {
+        const errText = await fetchResponse.text();
+        return new Response(`Upstream Error: ${fetchResponse.status} - ${errText}`, { status: fetchResponse.status });
     }
 
     const response = new Response(fetchResponse.body, fetchResponse);
