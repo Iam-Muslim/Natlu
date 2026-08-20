@@ -1,51 +1,54 @@
 // PWA Installation & Offline Service Worker Manager for Recite Quran (اتلو القران)
 (function() {
   let deferredInstallPrompt = null;
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-  // 1. Register custom Service Worker for full offline caching and COOP/COEP support
+  // 1. Check if the app is already installed or running as a standalone PWA
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                       window.navigator.standalone === true ||
+                       window.location.search.includes('source=pwa') ||
+                       localStorage.getItem('pwa_installed') === 'true';
+
+  // 2. Register Service Worker for offline functionality & COOP/COEP support
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
-        console.log('[PWA] Offline ServiceWorker active with scope:', reg.scope);
+        console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
       }).catch((err) => {
-        console.warn('[PWA] Offline ServiceWorker failed to register:', err);
+        console.warn('[PWA] ServiceWorker registration failed:', err);
       });
     });
   }
 
-  // If already installed and running as standalone app, do not show prompts
+  // If already installed, NEVER show any install banner or prompt
   if (isStandalone) {
-    console.log('[PWA] Running in installed standalone mode.');
+    console.log('[PWA] Running in standalone/installed mode. Suppressing install prompts.');
     return;
   }
 
-  // Detect iOS devices (including modern iPadOS which mimics MacIntel)
-  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()) || 
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-  const isInAppBrowser = /(FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Telegram)/i.test(navigator.userAgent);
-
-  // Listen for successful installation by the browser
+  // Listen for successful installation from browser
   window.addEventListener('appinstalled', () => {
-    console.log('[PWA] Application successfully installed.');
+    console.log('[PWA] Application successfully installed to home screen.');
     deferredInstallPrompt = null;
+    localStorage.setItem('pwa_installed', 'true');
     const banner = document.getElementById('pwa-install-banner');
     const iosBanner = document.getElementById('pwa-ios-banner');
     if (banner) banner.style.display = 'none';
     if (iosBanner) iosBanner.style.display = 'none';
   });
 
-  // 2. Android / Chromium / Desktop Install Prompt
+  // 3. Android / Windows / Chromium Automatic Install Prompt
+  // Only shows when the browser confirms the app is installable and not installed
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    console.log('[PWA] beforeinstallprompt captured (app is not installed).');
-    showInstallBanner();
+    console.log('[PWA] beforeinstallprompt captured.');
+    
+    // Show banner after brief delay
+    setTimeout(showInstallBanner, 2000);
   });
 
   function showInstallBanner() {
-    if (isStandalone) return;
+    if (localStorage.getItem('pwa_installed') === 'true' || isStandalone) return;
     const banner = document.getElementById('pwa-install-banner');
     const installBtn = document.getElementById('pwa-install-btn');
     const closeBtn = document.getElementById('pwa-close-btn');
@@ -57,16 +60,12 @@
       if (deferredInstallPrompt) {
         deferredInstallPrompt.prompt();
         const choiceResult = await deferredInstallPrompt.userChoice;
-        console.log(`[PWA] User install choice: ${choiceResult.outcome}`);
+        console.log(`[PWA] Install prompt outcome: ${choiceResult.outcome}`);
+        if (choiceResult.outcome === 'accepted') {
+          localStorage.setItem('pwa_installed', 'true');
+        }
         deferredInstallPrompt = null;
         banner.style.display = 'none';
-      } else {
-        // If Chrome hasn't fired beforeinstallprompt yet or browser requires manual add:
-        const sub = banner.querySelector('.pwa-subtitle');
-        const subEn = banner.querySelector('.pwa-subtitle-en');
-        if (sub) sub.innerHTML = 'اضغط على قائمة المتصفح <strong>(⋮)</strong> ثم اختر <strong>"تثبيت التطبيق"</strong> أو <strong>"إضافة للشاشة الرئيسية"</strong>';
-        if (subEn) subEn.innerHTML = 'Tap browser menu <strong>(⋮)</strong> then select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>';
-        installBtn.style.display = 'none';
       }
     };
 
@@ -77,18 +76,18 @@
     }
   }
 
-  // Proactively trigger banner after brief delay on Android / Desktop if not standalone
-  if (!isIos && !isStandalone && !isInAppBrowser) {
-    setTimeout(showInstallBanner, 2500);
-  }
+  // 4. iOS Safari Guided Install Prompt
+  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-  // 3. iOS Safari Custom Add to Home Screen Prompt
+  const isInAppBrowser = /(FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Telegram)/i.test(navigator.userAgent);
+
   if (isIos && !isStandalone && !isInAppBrowser) {
     const isSafari = /safari/.test(navigator.userAgent.toLowerCase()) && 
                      !/crios|fxios|opios|mercury|edgios/i.test(navigator.userAgent);
     if (isSafari) {
       setTimeout(() => {
-        if (isStandalone) return;
+        if (localStorage.getItem('pwa_installed') === 'true' || isStandalone) return;
         const iosBanner = document.getElementById('pwa-ios-banner');
         const iosCloseBtn = document.getElementById('pwa-ios-close-btn');
         if (iosBanner) {

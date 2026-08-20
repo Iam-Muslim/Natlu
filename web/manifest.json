@@ -2,7 +2,7 @@
     "id": "./",
     "name": "Recite Quran - اتلو القران",
     "short_name": "اتلو القران",
-    "start_url": "./",
+    "start_url": "./?source=pwa",
     "scope": "./",
     "display": "standalone",
     "display_override": ["standalone", "window-controls-overlay"],

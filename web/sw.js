@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
-// Provides full offline capability and COOP/COEP Cross-Origin Isolation for WebAssembly.
+// Provides complete offline caching and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v1';
+const CACHE_NAME = 'recite-quran-pwa-v2';
 
 const STATIC_PRECACHE = [
   './',
@@ -10,6 +10,7 @@ const STATIC_PRECACHE = [
   'favicon.png',
   'icons/Icon-192.png',
   'icons/Icon-512.png',
+  'pwa_install.js',
   'sherpa-onnx-asr.js?v=2',
   'sherpa_official_app.js?v=2',
   'sherpa-onnx-wasm-main-asr.js?v=2',
@@ -20,7 +21,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Precaching essential static assets for offline use...');
+      console.log('[SW] Precaching essential files for offline readiness...');
       return cache.addAll(STATIC_PRECACHE).catch((err) => {
         console.warn('[SW] Some precache items skipped:', err);
       });
@@ -34,7 +35,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[SW] Removing old cache:', key);
+            console.log('[SW] Purging outdated cache:', key);
             return caches.delete(key);
           }
         })
@@ -62,24 +63,27 @@ function addCoopCoepHeaders(response) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Never cache the raw model download endpoint in Service Worker (it is stored in IndexedDB)
+  // 1. Model download endpoint is stored in IndexedDB, do not cache inside ServiceWorker
   if (url.pathname.includes('/download-model')) {
     return;
   }
 
-  // 2. Navigation requests (HTML pages): Network First, fallback to cached index.html
+  // 2. Navigation requests (Page loading): Network First, fallback to cached index.html
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
-          const cloned = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          if (networkResponse && networkResponse.status === 200) {
+            const cloned = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          }
           return addCoopCoepHeaders(networkResponse);
         })
         .catch(async () => {
+          console.log('[SW] Offline mode detected. Serving cached index.html');
           const cached = await caches.match(event.request);
           if (cached) return addCoopCoepHeaders(cached);
-          const fallback = await caches.match('index.html') || await caches.match('./');
+          const fallback = (await caches.match('index.html')) || (await caches.match('./'));
           return addCoopCoepHeaders(fallback);
         })
     );
@@ -102,7 +106,7 @@ self.addEventListener('fetch', (event) => {
         }
         return addCoopCoepHeaders(networkResponse);
       }).catch((fetchErr) => {
-        // If offline and not in cache, let it fail gracefully
+        console.warn('[SW] Fetch failed for:', event.request.url, fetchErr);
         return cachedResponse;
       });
     })

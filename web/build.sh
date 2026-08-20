@@ -20,6 +20,7 @@ flutter build web --release --base-href "/recite/"
 echo "=== [2/3] Copying Flutter App into React Landing Page ==="
 mkdir -p landing_page/public/recite
 cp -R build/web/* landing_page/public/recite/
+rm -f landing_page/public/recite/build.sh
 
 # 4. Copy Cloudflare Functions into place
 echo "=== Copying Cloudflare Functions ==="

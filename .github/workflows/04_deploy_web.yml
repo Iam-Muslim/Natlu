@@ -4,14 +4,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'lib/**'
-      - 'web/**'
-      - 'landing_page/**'
-      - 'assets/**'
-      - 'functions/**'
-      - 'pubspec.yaml'
-      - '.github/workflows/05_deploy_web.yml'
+      - 'ReciteQuran-*'
+      - '**'
   workflow_dispatch:
 
 jobs:
