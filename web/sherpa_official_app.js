@@ -6,7 +6,8 @@ Module = {};
 
 Module.locateFile = function(path, scriptDirectory = '') {
   console.log(`[Sherpa] locateFile called for: ${path} in ${scriptDirectory}`);
-  return scriptDirectory + path;
+  if (scriptDirectory) return scriptDirectory + path;
+  return path;
 };
 
 let recognizer = null;
@@ -16,6 +17,22 @@ let isWasmLoaded = false;
 
 Module.setStatus = function(status) {
   // console.log(`[Sherpa] Emscripten status: ${status}`);
+};
+
+Module.printErr = function(text) {
+  console.error('[Sherpa WASM Error]', text);
+};
+
+Module.onAbort = function(what) {
+  console.error('[Sherpa WASM Aborted]', what);
+  const pTitleAr = document.querySelector('#progress-container .splash-title-ar');
+  const pTitleEn = document.querySelector('#progress-container .splash-title-en');
+  const pDescAr = document.querySelector('#progress-container .splash-desc-ar');
+  const pDescEn = document.querySelector('#progress-container .splash-desc-en');
+  if (pTitleAr) pTitleAr.innerText = 'تعذر تشغيل المحرك';
+  if (pTitleEn) pTitleEn.innerText = 'Engine Initialization Failed';
+  if (pDescAr) pDescAr.innerText = 'يرجى تحديث الصفحة أو استخدام متصفح حديث مثل Chrome أو Safari.';
+  if (pDescEn) pDescEn.innerText = 'Please reload or use a modern browser (Chrome/Safari/Edge).';
 };
 
 Module.onRuntimeInitialized = function() {
@@ -66,6 +83,14 @@ window.initSherpaRecognizer = function(modelFilename) {
         return true;
     } catch (e) {
         console.error('[Sherpa] Failed to create recognizer:', e);
+        const pTitleAr = document.querySelector('#progress-container .splash-title-ar');
+        const pTitleEn = document.querySelector('#progress-container .splash-title-en');
+        const pDescAr = document.querySelector('#progress-container .splash-desc-ar');
+        const pDescEn = document.querySelector('#progress-container .splash-desc-en');
+        if (pTitleAr) pTitleAr.innerText = 'تعذر تشغيل المحرك';
+        if (pTitleEn) pTitleEn.innerText = 'Engine Initialization Failed';
+        if (pDescAr) pDescAr.innerText = 'حدث خطأ أثناء تهيئة المحرك. يرجى تحديث الصفحة.';
+        if (pDescEn) pDescEn.innerText = 'Error initializing engine. Please refresh the page.';
         return false;
     }
 };

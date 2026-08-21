@@ -107,9 +107,15 @@ class SherpaEngine {
       // Start fetching the model in parallel with WASM memory compilation
       final modelFuture = _fetchSherpaModel(modelUrl.toJS).toDart;
 
-      // Concurrently wait for the WASM engine to start
+      // Concurrently wait for the WASM engine to start (with a 30s timeout)
+      int waitCount = 0;
       while (!_isWasmModuleLoaded().toDart) {
         await Future.delayed(const Duration(milliseconds: 100));
+        waitCount++;
+        if (waitCount > 300) {
+          DebugLogger.logSimple('SherpaDart', 'TIMEOUT waiting for WASM module!');
+          break;
+        }
       }
 
       DebugLogger.logSimple(
@@ -117,7 +123,12 @@ class SherpaEngine {
         'WASM Memory loaded. Awaiting model bytes...',
       );
 
-      final JSUint8Array modelBytes = (await modelFuture) as JSUint8Array;
+      final modelRaw = await modelFuture;
+      if (modelRaw == null) {
+        DebugLogger.logSimple('SherpaDart', 'Model bytes returned null! Cannot initialize.');
+        return;
+      }
+      final JSUint8Array modelBytes = modelRaw as JSUint8Array;
 
       _writeSherpaAssetToVFS(modelFileName.toJS, modelBytes);
       DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');

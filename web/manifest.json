@@ -1,5 +1,5 @@
 {
-    "id": "./",
+    "id": "recite-quran-app",
     "name": "Recite Quran - اتلو القران",
     "short_name": "اتلو القران",
     "start_url": "./?source=pwa",
