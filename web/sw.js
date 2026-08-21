@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
-// Provides complete offline caching and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
+// Provides complete offline caching, auto-updating, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v2';
+const CACHE_NAME = 'recite-quran-pwa-v3';
 
 const STATIC_PRECACHE = [
   './',
@@ -11,20 +11,35 @@ const STATIC_PRECACHE = [
   'icons/Icon-192.png',
   'icons/Icon-512.png',
   'pwa_install.js',
+  'audio_worklet.js',
   'sherpa-onnx-asr.js?v=2',
   'sherpa_official_app.js?v=2',
   'sherpa-onnx-wasm-main-asr.js?v=2',
-  'sherpa-onnx-wasm-main-asr.wasm'
+  'sherpa-onnx-wasm-main-asr.wasm',
+  'flutter_bootstrap.js',
+  'main.dart.js',
+  'assets/FontManifest.json',
+  'assets/AssetManifest.json',
+  'assets/AssetManifest.bin.json',
+  'assets/fonts/HafsSmart_08.ttf',
+  'assets/model/tokens.txt',
+  'assets/model/ordered_quran_phonemes.json',
+  'assets/model/ph_index.npy',
+  'assets/model/ref_norm_ph.txt'
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Precaching essential files for offline readiness...');
-      return cache.addAll(STATIC_PRECACHE).catch((err) => {
-        console.warn('[SW] Some precache items skipped:', err);
-      });
+      console.log('[SW] Precaching all essential assets for complete offline readiness...');
+      return Promise.allSettled(
+        STATIC_PRECACHE.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[SW] Precache item optional/skipped:', url, err);
+          })
+        )
+      );
     })
   );
 });
@@ -88,34 +103,38 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           console.log('[SW] Offline mode detected. Serving cached index.html');
-          const cached = await caches.match(event.request);
+          const cached = await caches.match(event.request, { ignoreSearch: true });
           if (cached) return addCoopCoepHeaders(cached);
           const fallback = (await caches.match('index.html')) || (await caches.match('./'));
-          return addCoopCoepHeaders(fallback);
+          return fallback ? addCoopCoepHeaders(fallback) : Response.error();
         })
     );
     return;
   }
 
-  // 3. Static assets: Cache First, fallback to Network (and cache dynamically)
+  // 3. Static assets & CanvasKit: Cache First, fallback to Network (and cache dynamically)
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) {
         return addCoopCoepHeaders(cachedResponse);
       }
 
       return fetch(event.request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
+        if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
           });
         }
         return addCoopCoepHeaders(networkResponse);
-      }).catch((fetchErr) => {
-        console.warn('[SW] Fetch failed for:', event.request.url, fetchErr);
-        return cachedResponse;
+      }).catch(async (fetchErr) => {
+        console.warn('[SW] Offline fetch fallback for:', event.request.url);
+        // Try fallback by pathname if exact match failed
+        const fallback = await caches.match(url.pathname, { ignoreSearch: true });
+        if (fallback) return addCoopCoepHeaders(fallback);
+        return Response.error();
       });
     })
   );
 });
+

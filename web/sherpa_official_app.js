@@ -116,6 +116,54 @@ function primeRecognizer() {
     }
 }
 
+let workletNode = null;
+
+function processAudioSamples(samples) {
+  processedChunks++;
+  if (processedChunks % 50 === 0) {
+      console.log(`[Sherpa] onaudioprocess running... processed ${processedChunks} chunks so far. isRecognizerReady: ${isRecognizerReady}`);
+  }
+
+  if (!isRecognizerReady || !recognizer) {
+      if (processedChunks % 50 === 0) console.warn('[Sherpa] Recognizer not ready, dropping audio chunk.');
+      return;
+  }
+
+  if (recognizer_stream == null) {
+    console.log('[Sherpa] Creating recognizer stream...');
+    recognizer_stream = recognizer.createStream();
+    primeRecognizer();
+  }
+
+  // Feed directly to Sherpa (No VAD)
+  recognizer_stream.acceptWaveform(expectedSampleRate, samples);
+  while (recognizer.isReady(recognizer_stream)) {
+    recognizer.decode(recognizer_stream);
+  }
+
+  let isEndpoint = recognizer.isEndpoint(recognizer_stream);
+  let fullResult = recognizer.getResult(recognizer_stream);
+  let resultText = fullResult.text;
+
+  // Send intermediate results to Dart
+  if (resultText.length > 0 && lastResult != resultText) {
+    console.log(`%c[Sherpa ASR] 🗣️ Partial: "${resultText}" (tokens: ${fullResult.tokens ? fullResult.tokens.length : 0})`, 'color: #059669; font-weight: bold;');
+    lastResult = resultText;
+    if (window.dartSherpaOnResult) {
+        window.dartSherpaOnResult(JSON.stringify(fullResult), false);
+    } else {
+        console.warn('[Sherpa] window.dartSherpaOnResult callback is not defined!');
+    }
+  }
+
+  if (isEndpoint) {
+    console.log(`%c[Sherpa ASR] ⚡ Endpoint detected (pause/breath). Accumulated text: "${lastResult}"`, 'color: #0284c7; font-weight: bold;');
+    if (window.dartSherpaOnResult) {
+        window.dartSherpaOnResult(JSON.stringify(fullResult), true); // Notify final segment
+    }
+  }
+}
+
 let activeMicrophoneStream = null;
 
 window.startOfficialSherpa = function() {
@@ -133,7 +181,7 @@ window.startOfficialSherpa = function() {
       }
   };
 
-  let onSuccess = function(stream) {
+  let onSuccess = async function(stream) {
     console.log('[Sherpa] Microphone access granted. Initializing AudioContext...');
     activeMicrophoneStream = stream;
     
@@ -156,92 +204,70 @@ window.startOfficialSherpa = function() {
 
     console.log(`[Sherpa] AudioContext started. Record sample rate: ${recordSampleRate}`);
 
-    var bufferSize = 4096;
-    var numberOfInputChannels = 1;
-    var numberOfOutputChannels = 2;
-    if (audioCtx.createScriptProcessor) {
-      recorder = audioCtx.createScriptProcessor(
-          bufferSize, numberOfInputChannels, numberOfOutputChannels);
-    } else {
-      recorder = audioCtx.createJavaScriptNode(
-          bufferSize, numberOfInputChannels, numberOfOutputChannels);
+    // Try AudioWorklet first (off-main-thread audio sampling)
+    let usedWorklet = false;
+    if (audioCtx.audioWorklet) {
+      try {
+        await audioCtx.audioWorklet.addModule('audio_worklet.js');
+        workletNode = new AudioWorkletNode(audioCtx, 'audio-stream-processor');
+        workletNode.port.onmessage = (event) => {
+          if (event.data && event.data.samples) {
+            const chunk = new Float32Array(event.data.samples);
+            processAudioSamples(chunk);
+          }
+        };
+        mediaStream.connect(workletNode);
+        workletNode.connect(audioCtx.destination);
+        usedWorklet = true;
+        console.log('[Sherpa] AudioWorkletNode connected and started collecting audio!');
+      } catch (workletErr) {
+        console.warn('[Sherpa] AudioWorklet failed, falling back to ScriptProcessor:', workletErr);
+      }
     }
 
-    recorder.onaudioprocess = function(e) {
-      processedChunks++;
-      if (processedChunks % 50 === 0) {
-          console.log(`[Sherpa] onaudioprocess running... processed ${processedChunks} chunks so far. isRecognizerReady: ${isRecognizerReady}`);
-      }
-
-      if (!isRecognizerReady || !recognizer) {
-          if (processedChunks % 50 === 0) console.warn('[Sherpa] Recognizer not ready, dropping audio chunk.');
-          return;
-      }
-
-      let samples = new Float32Array(e.inputBuffer.getChannelData(0));
-      samples = downsampleBuffer(samples, expectedSampleRate);
-
-      if (recognizer_stream == null) {
-        console.log('[Sherpa] Creating recognizer stream...');
-        recognizer_stream = recognizer.createStream();
-        primeRecognizer();
-      }
-
-      // Concat to frame buffer
-      let newBuffer = new Float32Array(frameBuffer.length + samples.length);
-      newBuffer.set(frameBuffer);
-      newBuffer.set(samples, frameBuffer.length);
-      frameBuffer = newBuffer;
-
-      // Process in EXACT 320ms chunks (5120 samples)
-      let offset = 0;
-      while (frameBuffer.length - offset >= RECORD_CHUNK_SAMPLES) {
-          let chunk = frameBuffer.slice(offset, offset + RECORD_CHUNK_SAMPLES);
-          offset += RECORD_CHUNK_SAMPLES;
-
-          // Feed directly to Sherpa (No VAD)
-          recognizer_stream.acceptWaveform(expectedSampleRate, chunk);
-          while (recognizer.isReady(recognizer_stream)) {
-            recognizer.decode(recognizer_stream);
-          }
-      }
-
-      // Keep remainder
-      if (offset < frameBuffer.length) {
-          frameBuffer = frameBuffer.slice(offset);
+    // Fallback to ScriptProcessor if AudioWorklet unavailable
+    if (!usedWorklet) {
+      var bufferSize = 4096;
+      var numberOfInputChannels = 1;
+      var numberOfOutputChannels = 2;
+      if (audioCtx.createScriptProcessor) {
+        recorder = audioCtx.createScriptProcessor(
+            bufferSize, numberOfInputChannels, numberOfOutputChannels);
       } else {
-          frameBuffer = new Float32Array(0);
+        recorder = audioCtx.createJavaScriptNode(
+            bufferSize, numberOfInputChannels, numberOfOutputChannels);
       }
 
-      let isEndpoint = recognizer.isEndpoint(recognizer_stream);
-      let fullResult = recognizer.getResult(recognizer_stream);
-      let resultText = fullResult.text;
+      recorder.onaudioprocess = function(e) {
+        let samples = new Float32Array(e.inputBuffer.getChannelData(0));
+        samples = downsampleBuffer(samples, expectedSampleRate);
 
-      // Send intermediate results to Dart
-      if (resultText.length > 0 && lastResult != resultText) {
-        console.log(`%c[Sherpa ASR] 🗣️ Partial: "${resultText}" (tokens: ${fullResult.tokens ? fullResult.tokens.length : 0})`, 'color: #059669; font-weight: bold;');
-        lastResult = resultText;
-        if (window.dartSherpaOnResult) {
-            window.dartSherpaOnResult(JSON.stringify(fullResult), false);
+        // Concat to frame buffer
+        let newBuffer = new Float32Array(frameBuffer.length + samples.length);
+        newBuffer.set(frameBuffer);
+        newBuffer.set(samples, frameBuffer.length);
+        frameBuffer = newBuffer;
+
+        // Process in EXACT 320ms chunks (5120 samples)
+        let offset = 0;
+        while (frameBuffer.length - offset >= RECORD_CHUNK_SAMPLES) {
+            let chunk = frameBuffer.slice(offset, offset + RECORD_CHUNK_SAMPLES);
+            offset += RECORD_CHUNK_SAMPLES;
+            processAudioSamples(chunk);
+        }
+
+        // Keep remainder
+        if (offset < frameBuffer.length) {
+            frameBuffer = frameBuffer.slice(offset);
         } else {
-            console.warn('[Sherpa] window.dartSherpaOnResult callback is not defined!');
+            frameBuffer = new Float32Array(0);
         }
-      }
+      };
 
-      if (isEndpoint) {
-        console.log(`%c[Sherpa ASR] ⚡ Endpoint detected (pause/breath). Accumulated text: "${lastResult}"`, 'color: #0284c7; font-weight: bold;');
-        if (window.dartSherpaOnResult) {
-            window.dartSherpaOnResult(JSON.stringify(fullResult), true); // Notify final segment
-        }
-        // Continuous decoding: DO NOT wipe recognizer stream on pause/endpoint!
-        // The stream runs continuously across Ayahs just like in native Android.
-        // It is only reset when Dart explicitly calls window.resetOfficialSherpaBuffer().
-      }
-    };
-
-    mediaStream.connect(recorder);
-    recorder.connect(audioCtx.destination);
-    console.log('[Sherpa] Recorder connected and started collecting audio!');
+      mediaStream.connect(recorder);
+      recorder.connect(audioCtx.destination);
+      console.log('[Sherpa] ScriptProcessor fallback connected and started collecting audio!');
+    }
   };
 
   let onError = function(err) {
@@ -253,8 +279,17 @@ window.startOfficialSherpa = function() {
 
 window.stopOfficialSherpa = function() {
   console.log('[Sherpa] stopOfficialSherpa called from Dart');
+  if (workletNode && audioCtx) {
+    try { workletNode.disconnect(audioCtx.destination); } catch(e) {}
+    try { workletNode.port.close(); } catch(e) {}
+    workletNode = null;
+  }
+  if (mediaStream && workletNode) {
+    try { mediaStream.disconnect(workletNode); } catch(e) {}
+  }
   if (recorder && audioCtx) {
     try { recorder.disconnect(audioCtx.destination); } catch(e) {}
+    recorder = null;
   }
   if (mediaStream && recorder) {
     try { mediaStream.disconnect(recorder); } catch(e) {}
@@ -338,6 +373,17 @@ async function getCachedModel(url) {
     } catch(e) { return null; }
 }
 
+async function ensurePersistentStorage() {
+    try {
+        if (navigator.storage && navigator.storage.persist) {
+            const isPersisted = await navigator.storage.persist();
+            console.log(`[Storage] Persistent storage active: ${isPersisted}`);
+        }
+    } catch (e) {
+        console.warn('[Storage] Could not request persistent storage:', e);
+    }
+}
+
 async function cacheModel(url, buffer) {
     try {
         const db = await openDB();
@@ -347,7 +393,10 @@ async function cacheModel(url, buffer) {
                 const store = tx.objectStore(STORE_NAME);
                 store.clear();
                 const req = store.put(buffer, url);
-                tx.oncomplete = () => resolve();
+                tx.oncomplete = () => {
+                    ensurePersistentStorage();
+                    resolve();
+                };
                 tx.onerror = () => resolve();
                 tx.onabort = () => resolve();
                 req.onerror = () => resolve();

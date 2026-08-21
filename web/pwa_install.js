@@ -8,11 +8,15 @@
                        window.location.search.includes('source=pwa') ||
                        localStorage.getItem('pwa_installed') === 'true';
 
-  // 2. Register Service Worker for offline functionality & COOP/COEP support
+  // 2. Register Service Worker for offline functionality, background updates & COOP/COEP support
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
+        // Automatically check for new versions on launch when online
+        if (navigator.onLine) {
+          reg.update().catch(console.warn);
+        }
       }).catch((err) => {
         console.warn('[PWA] ServiceWorker registration failed:', err);
       });
