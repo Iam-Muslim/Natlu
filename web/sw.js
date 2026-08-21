@@ -8,6 +8,8 @@ const STATIC_PRECACHE = [
   'index.html',
   'manifest.json',
   'favicon.png',
+  'apple-touch-icon.png',
+  'apple-touch-icon-precomposed.png',
   'icons/Icon-192.png',
   'icons/Icon-512.png',
   'pwa_install.js',
