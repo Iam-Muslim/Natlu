@@ -63,8 +63,8 @@ class _TrackingScreenState extends State<TrackingScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb) {
+      WidgetsBinding.instance.addObserver(this);
       try { WakelockPlus.enable(); } catch (_) {}
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
@@ -74,6 +74,8 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (kIsWeb) return;
+
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden ||
@@ -92,14 +94,14 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (!kIsWeb) {
+      WidgetsBinding.instance.removeObserver(this);
+      try { WakelockPlus.disable(); } catch (_) {}
+    }
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
-    if (!kIsWeb) {
-      try { WakelockPlus.disable(); } catch (_) {}
-    }
     super.dispose();
   }
 

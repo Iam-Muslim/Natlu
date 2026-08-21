@@ -131,29 +131,32 @@ class QuranApp extends StatelessWidget {
                 ? ColorScheme.dark(primary: c.gold, surface: c.surface)
                 : ColorScheme.light(primary: c.gold, surface: c.surface),
           ),
-          home: Scaffold(
-            backgroundColor: isDark ? Colors.black : const Color(0xFFE5E7EB),
-            body: kIsWeb
-                ? Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 480),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: c.bg,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.15),
-                              blurRadius: 25,
-                              spreadRadius: 5,
-                            ),
-                          ],
+          builder: (context, child) {
+            if (!kIsWeb) return child!;
+            return Scaffold(
+              backgroundColor: isDark ? Colors.black : const Color(0xFFE5E7EB),
+              body: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: c.bg,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 25,
+                          spreadRadius: 5,
                         ),
-                        child: const _Orchestrator(),
-                      ),
+                      ],
                     ),
-                  )
-                : const _Orchestrator(),
-          ),
+                    child: child,
+                  ),
+                ),
+              ),
+            );
+          },
+          home: const _Orchestrator(),
         );
       },
     );
