@@ -643,7 +643,7 @@ function createOnlineRecognizer(Module, myConfig) {
     tokens: './quran_tokens.txt',
     numThreads: 1,
     provider: 'cpu',
-    debug: 1,
+    debug: 0,
     modelType: '',
     modelingUnit: 'cjkchar',
     bpeVocab: '',

@@ -86,6 +86,19 @@ window.initSherpaRecognizer = function(modelFilename) {
         }
         isRecognizerReady = true;
         console.log("[Sherpa] Recognizer created successfully!");
+
+        // Free 72MB VFS RAM immediately (model is already loaded in C++ recognizer)
+        try {
+            const modelFile = modelFilename || 'zipformer_p_arabic_v3.int8.onnx';
+            const fullPath = modelFile.startsWith('/') ? modelFile : ('/' + modelFile);
+            if (Module.FS && Module.FS.analyzePath && Module.FS.analyzePath(fullPath).exists) {
+                Module.FS.unlink(fullPath);
+                console.log(`[Sherpa] Unlinked ${fullPath} from VFS to release 72MB RAM.`);
+            }
+        } catch(unlinkErr) {
+            console.warn('[Sherpa] Non-critical unlink notice:', unlinkErr);
+        }
+        activeModelDownloadPromise = null;
         
         // Engine is completely loaded into WASM memory and ready!
         // Now we can safely remove the HTML splash screen.
