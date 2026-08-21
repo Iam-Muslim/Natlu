@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
 // Provides complete offline caching, auto-updating, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v4';
+const CACHE_NAME = 'recite-quran-pwa-v5';
 
 const STATIC_PRECACHE = [
   './',
@@ -12,9 +12,9 @@ const STATIC_PRECACHE = [
   'icons/Icon-512.png',
   'pwa_install.js',
   'audio_worklet.js',
-  'sherpa-onnx-asr.js?v=3',
-  'sherpa_official_app.js?v=3',
-  'sherpa-onnx-wasm-main-asr.js?v=3',
+  'sherpa-onnx-asr.js?v=4',
+  'sherpa_official_app.js?v=4',
+  'sherpa-onnx-wasm-main-asr.js?v=4',
   'sherpa-onnx-wasm-main-asr.wasm',
   'flutter_bootstrap.js',
   'main.dart.js',
@@ -116,7 +116,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) {
-        return addCoopCoepHeaders(cachedResponse);
+        return cachedResponse;
       }
 
       return fetch(event.request).then((networkResponse) => {
@@ -126,12 +126,11 @@ self.addEventListener('fetch', (event) => {
             cache.put(event.request, responseToCache);
           });
         }
-        return addCoopCoepHeaders(networkResponse);
+        return networkResponse;
       }).catch(async (fetchErr) => {
         console.warn('[SW] Offline fetch fallback for:', event.request.url);
-        // Try fallback by pathname if exact match failed
         const fallback = await caches.match(url.pathname, { ignoreSearch: true });
-        if (fallback) return addCoopCoepHeaders(fallback);
+        if (fallback) return fallback;
         return Response.error();
       });
     })

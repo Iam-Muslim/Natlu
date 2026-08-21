@@ -47,16 +47,27 @@ window.isWasmModuleLoaded = function() {
 // Called by Dart to write the asset bytes directly into the WASM filesystem
 window.writeSherpaAssetToVFS = function(filename, bytes) {
     try {
-        if (Module.FS_createDataFile) {
+        const fullPath = '/' + filename;
+        if (Module.FS) {
+            try {
+                if (Module.FS.analyzePath && Module.FS.analyzePath(fullPath).exists) {
+                    Module.FS.unlink(fullPath);
+                }
+            } catch (_) {}
+            Module.FS.writeFile(fullPath, bytes);
+            console.log(`[Sherpa] Wrote ${filename} to VFS. Size: ${bytes.length || bytes.byteLength} bytes`);
+            return true;
+        } else if (Module.FS_createDataFile) {
+            try {
+                if (Module.FS_unlink) Module.FS_unlink(fullPath);
+            } catch (_) {}
             Module.FS_createDataFile('/', filename, bytes, true, true, true);
-        } else if (Module.FS) {
-            Module.FS.writeFile('/' + filename, bytes);
+            console.log(`[Sherpa] Wrote ${filename} to VFS via createDataFile. Size: ${bytes.length || bytes.byteLength} bytes`);
+            return true;
         } else {
             console.error('[Sherpa] No FS API found on Module!');
             return false;
         }
-        console.log(`[Sherpa] Wrote ${filename} to VFS. Size: ${bytes.length} bytes`);
-        return true;
     } catch (e) {
         console.error(`[Sherpa] Failed to write ${filename} to VFS:`, e);
         return false;
