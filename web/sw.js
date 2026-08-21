@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
 // Provides complete offline caching, auto-updating, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v3';
+const CACHE_NAME = 'recite-quran-pwa-v4';
 
 const STATIC_PRECACHE = [
   './',
@@ -12,9 +12,9 @@ const STATIC_PRECACHE = [
   'icons/Icon-512.png',
   'pwa_install.js',
   'audio_worklet.js',
-  'sherpa-onnx-asr.js?v=2',
-  'sherpa_official_app.js?v=2',
-  'sherpa-onnx-wasm-main-asr.js?v=2',
+  'sherpa-onnx-asr.js?v=3',
+  'sherpa_official_app.js?v=3',
+  'sherpa-onnx-wasm-main-asr.js?v=3',
   'sherpa-onnx-wasm-main-asr.wasm',
   'flutter_bootstrap.js',
   'main.dart.js',

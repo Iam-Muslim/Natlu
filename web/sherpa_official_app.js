@@ -70,6 +70,9 @@ window.initSherpaRecognizer = function(modelFilename) {
             Module.modelPath = modelFilename.startsWith('./') ? modelFilename : ('./' + modelFilename);
         }
         recognizer = createOnlineRecognizer(Module);
+        if (!recognizer || !recognizer.handle) {
+            throw new Error('OnlineRecognizer created with null or invalid handle');
+        }
         isRecognizerReady = true;
         console.log("[Sherpa] Recognizer created successfully!");
         
@@ -565,11 +568,14 @@ window.fetchSherpaModel = async function(url) {
                     };
 
                     xhr.onload = () => {
-                        if (xhr.status === 200 || xhr.status === 206) {
+                        if (xhr.status === 206) {
                             loadedPerChunk[i] = xhr.response.byteLength;
                             const totalLoaded = loadedPerChunk.reduce((a, b) => a + b, 0);
                             updateProgress(totalLoaded, totalSize);
                             resolve({ index: i, buffer: xhr.response });
+                        } else if (xhr.status === 200) {
+                            // Server returned entire file instead of range chunk; reject to safely trigger single-stream
+                            reject(new Error(`Server returned HTTP 200 instead of 206 for chunk ${i}`));
                         } else {
                             reject(new Error(`Chunk ${i} returned status ${xhr.status}`));
                         }
@@ -594,7 +600,9 @@ window.fetchSherpaModel = async function(url) {
             for (const r of results) {
                 assembled.set(new Uint8Array(r.buffer), offset);
                 offset += r.buffer.byteLength;
+                r.buffer = null; // Release individual chunk buffer immediately
             }
+            results.length = 0; // Clear results array references
 
             return assembled.buffer;
         }

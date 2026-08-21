@@ -107,14 +107,14 @@ class SherpaEngine {
       // Start fetching the model in parallel with WASM memory compilation
       final modelFuture = _fetchSherpaModel(modelUrl.toJS).toDart;
 
-      // Concurrently wait for the WASM engine to start (with a 30s timeout)
+      // Concurrently wait for the WASM engine to start (with a 120s timeout for mobile devices)
       int waitCount = 0;
       while (!_isWasmModuleLoaded().toDart) {
         await Future.delayed(const Duration(milliseconds: 100));
         waitCount++;
-        if (waitCount > 300) {
+        if (waitCount > 1200) {
           DebugLogger.logSimple('SherpaDart', 'TIMEOUT waiting for WASM module!');
-          break;
+          return;
         }
       }
 
