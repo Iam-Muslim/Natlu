@@ -314,19 +314,33 @@ class QuranDictationMatcher {
     int bestI = -1;
     double bestCost = double.infinity;
 
+    // Effective length: collapse consecutive identical Madd vowels (ا, و, ي, ۥ, ۦ)
+    // and skip zero-cost markers so the error budget reflects real word content.
+    int effN = 0;
+    for (int j = 0; j < n; j++) {
+      final int code = fullPhonemes.codeUnitAt(refStart + j);
+      if (PhoneticCostEngine._isZeroCostMarker(code)) continue;
+      if (j > 0 && code == fullPhonemes.codeUnitAt(refStart + j - 1) &&
+          (code == 0x0627 || code == 0x0648 || code == 0x064A || code == 0x06E5 || code == 0x06E6)) {
+        continue;
+      }
+      effN++;
+    }
+    if (effN < 1) effN = 1;
+
     // Dynamic threshold: scaled to guarantee matching at >= 70% accuracy (up to 30% error)
     // while preventing random acoustic noise from triggering false greens on short words.
     double threshold = config.maxPathCost;
-    if (n <= 3) {
+    if (effN <= 3) {
       threshold = min(threshold, 0.25);
-    } else if (n <= 5) {
+    } else if (effN <= 7) {
       threshold = min(threshold, 0.28);
     } else {
       threshold = min(threshold, 0.30);
     }
 
     for (int i = 1; i <= m; i++) {
-      final double norm = dp[i * stride + n] / n;
+      final double norm = dp[i * stride + n] / effN;
       if (norm <= threshold) {
         if (norm <= bestCost) { // Changed to <= to consume trailing vowels on tie
           bestI = i;

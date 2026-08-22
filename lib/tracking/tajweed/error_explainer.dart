@@ -15,6 +15,7 @@ import 'dart:math';
 
 import '../../data/quran_data.dart';
 import '../../utils/debug_logger.dart';
+import '../word/dictation_matcher.dart';
 import 'tajweed_rules.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -277,10 +278,13 @@ class ErrorExplainer {
           (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
         );
 
-        // Filter out normal phoneme substitutions and surplus duration (keep only defects & tashkeel)
+        // Filter out expected ASR noise and surplus duration
         wordErrors.removeWhere((e) {
-          return e.errorType == ErrorCategory.normal ||
-              e.durationStatus == TajweedDurationStatus.surplus;
+          if (e.durationStatus == TajweedDurationStatus.surplus) return true;
+          if (e.errorType == ErrorCategory.normal) {
+            return _isExpectedAsrNoise(e);
+          }
+          return false;
         });
 
         // Deduplicate identical errors on the same rule/phoneme
@@ -645,6 +649,22 @@ class ErrorExplainer {
           name: LangName(ar: wRule.nameAr, en: wRule.nameEn),
           goldenLen: wRule.goldenLen,
         );
+    }
+  }
+
+  static bool _isExpectedAsrNoise(ReciterError e) {
+    final int refCode = e.expectedPh.isNotEmpty ? e.expectedPh.codeUnitAt(0) : 0;
+    final int asrCode = e.predictedPh.isNotEmpty ? e.predictedPh.codeUnitAt(0) : 0;
+
+    switch (e.speechErrorType) {
+      case SpeechErrorType.replace:
+        return refCode > 0 && asrCode > 0 && PhoneticCostEngine.getSubstitutionCost(asrCode, refCode) <= 0.25;
+      case SpeechErrorType.delete:
+        // Common ASR drops (ا, ء, ل, ٱ) and Madd vowels (و, ي, ۥ, ۦ)
+        return refCode == 0x0627 || refCode == 0x0621 || refCode == 0x0644 || refCode == 0x0671 ||
+               refCode == 0x0648 || refCode == 0x064A || refCode == 0x06E5 || refCode == 0x06E6;
+      case SpeechErrorType.insert:
+        return asrCode > 0 && (PhoneticCostEngine.isTashkeel(asrCode) || PhoneticCostEngine.getInsertionCost(e.predictedPh, 0) <= 0.25);
     }
   }
 
