@@ -5,10 +5,9 @@ import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'package:recite_quran/recite_quran.dart';
 import '../main.dart';
 import '../state/app_state.dart';
-import '../tracking/word/highlighting_controller.dart';
-import '../utils/debug_logger.dart';
 import 'widgets/dialogs/voice_search_dialog.dart';
 import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';

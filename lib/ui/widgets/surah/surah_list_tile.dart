@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../data/quran_data.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../../state/app_state.dart';
 
 /// Single interactive row tile for a Surah in the picker sheet.

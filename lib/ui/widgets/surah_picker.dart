@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../data/quran_data.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../state/app_state.dart';
-import '../../tracking/word/highlighting_controller.dart';
 import 'surah/surah_list_tile.dart';
 
 /// Surah Picker modal bottom sheet with search and voice navigation.

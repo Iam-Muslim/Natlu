@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../../state/app_state.dart';
-import '../../../tracking/word/highlighting_controller.dart';
 
 /// Pure helper for generating high-performance, styled [InlineSpan] lists for Quranic verses.
 /// Handles zero-GPU blur hiding, color status resolution, and word gesture binding.

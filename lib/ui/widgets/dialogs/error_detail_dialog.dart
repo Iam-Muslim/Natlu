@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../../state/app_state.dart';
-import '../../../tracking/tajweed/error_explainer.dart';
 
 /// Modal bottom sheet presenting an interactive, detailed breakdown
 /// of Tajweed, Tashkeel, or phonetic pronunciation errors for a specific word.

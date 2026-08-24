@@ -10,7 +10,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/debug_logger.dart';
+import 'package:recite_quran/recite_quran.dart';
 
 // Supported UI languages.
 enum AppLanguage { ar, en }

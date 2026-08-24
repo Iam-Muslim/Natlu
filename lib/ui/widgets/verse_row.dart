@@ -1,8 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../../data/quran_data.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../state/app_state.dart';
-import '../../tracking/word/highlighting_controller.dart';
 import 'dialogs/error_detail_dialog.dart';
 import 'helpers/verse_span_builder.dart';
 import 'tajweed_tutorial_word.dart';

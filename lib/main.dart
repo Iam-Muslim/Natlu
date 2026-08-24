@@ -28,17 +28,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 
+import 'package:recite_quran/recite_quran.dart';
 import 'state/app_state.dart';
-import 'engine/sherpa_engine.dart';
-import 'tracking/word/highlighting_controller.dart';
-import 'audio/audio_processor.dart';
-import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
 import 'ui/widgets/dialogs/permission_dialog.dart';
-
-import 'tracking/ayah_search/voice_search_controller.dart';
-import 'utils/debug_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // //logs
