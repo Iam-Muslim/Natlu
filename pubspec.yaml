@@ -23,9 +23,9 @@ dependencies:
   super_sliver_list: ^0.4.1
   wakelock_plus: ^1.6.1
 
-# dependency_overrides:
-#   recite_quran:
-#     path: ../ReciteQuran
+dependency_overrides:
+  recite_quran:
+   path: ../ReciteQuran
 
 
 
@@ -40,10 +40,6 @@ flutter:
 
   assets:
     - assets/model/zipformer_p_arabic_v3.int8.onnx
-    - assets/model/tokens.txt
-    - assets/model/ordered_quran_phonemes.json
-    - assets/model/ph_index.npy
-    - assets/model/ref_norm_ph.txt
     - assets/icon/app_icon.png
 
 
