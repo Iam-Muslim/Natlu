@@ -3,9 +3,13 @@ set -e
 
 # 1. Install Flutter if not present (for Cloudflare Pages runner)
 if ! command -v flutter &> /dev/null; then
-    echo "=== Installing Flutter SDK on Cloudflare Runner ==="
-    git clone https://github.com/flutter/flutter.git -b stable --depth 1 $HOME/flutter
+    echo "=== Installing Pre-bundled Flutter SDK on Cloudflare Runner ==="
+    curl -fSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.29.0-stable.tar.xz" -o $HOME/flutter.tar.xz
+    tar -xf $HOME/flutter.tar.xz -C $HOME
+    rm -f $HOME/flutter.tar.xz
     export PATH="$PATH:$HOME/flutter/bin"
+    git config --global --add safe.directory "$HOME/flutter" || true
+    flutter config --no-analytics
     flutter --version
 fi
 
