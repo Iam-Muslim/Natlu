@@ -332,7 +332,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     return ListenableBuilder(
       listenable: app,
-      builder: (_, _) {
+      builder: (context, child) {
         final c = app.colors;
 
         return Directionality(

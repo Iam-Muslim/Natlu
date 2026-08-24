@@ -112,7 +112,7 @@ class QuranApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: AppState.instance,
-      builder: (_, _) {
+      builder: (context, child) {
         final ThemeColors c = AppState.instance.colors;
         final isDark = AppState.instance.isDarkMode;
         return MaterialApp(
