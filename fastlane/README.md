@@ -67,7 +67,7 @@ Explain how to create the App Store Connect record (cannot be automated)
 [bundle exec] fastlane make_profile
 ```
 
-Fetch + install the App Store provisioning profile
+Reissue the App Store provisioning profile and install it locally
 
 ### ci_bundle
 
@@ -75,7 +75,7 @@ Fetch + install the App Store provisioning profile
 [bundle exec] fastlane ci_bundle
 ```
 
-Print the base64 blobs to paste into GitHub Actions secrets
+Collect the four values GitHub Actions needs, ready to add as secrets
 
 ### ci_ship_ios
 
@@ -92,6 +92,14 @@ CI: build signed and upload to TestFlight (GitHub Actions)
 ```
 
 CI: build unsigned only (no secrets needed) — compile check
+
+### make_ci_cert
+
+```sh
+[bundle exec] fastlane make_ci_cert
+```
+
+Mint a CI-only Apple Distribution certificate (no keychain prompt)
 
 ----
 

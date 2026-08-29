@@ -3,11 +3,12 @@
 #
 #   bundle exec fastlane ios_status        # what's on TestFlight / App Store now
 #   bundle exec fastlane make_app          # one-time: how to create the ASC record
-#   bundle exec fastlane make_profile      # one-time / on expiry: App Store profile
+#   bundle exec fastlane make_ci_cert      # one-time / on expiry: CI signing identity
+#   bundle exec fastlane make_profile      # reissue the App Store profile
 #   bundle exec fastlane ship_ios          # bump + build + upload to TestFlight
 #   bundle exec fastlane beta              # latest processed build → external testers
 #   bundle exec fastlane release_ios       # latest TestFlight build → App Store review
-#   bundle exec fastlane ci_bundle         # package signing material for GitHub Actions
+#   bundle exec fastlane ci_bundle         # collect the GitHub Actions secrets
 #
 # Apple identity is the same one behind Al Najma and Jibly, so the App Store
 # Connect API key in secrets/ is shared with those projects.
@@ -18,6 +19,7 @@
 
 require "base64"
 require "shellwords"
+require "securerandom"
 
 # Derived, not hardcoded: the checkout path contains a space on this Mac and
 # differs again on CI, so anything shelling out must quote it.
@@ -30,6 +32,7 @@ ASC_KEY_ID    = "ZJUS9VF3D6"
 ASC_ISSUER_ID = "2a31803e-fd97-4852-9a5d-0eea1a75b6dd"
 ASC_KEY_PATH  = "#{ROOT}/secrets/AuthKey_#{ASC_KEY_ID}.p8"
 
+GH_REPO        = "Iam-Muslim/Natlu"
 IOS_BETA_GROUP = "beta"        # TestFlight external group
 PROFILE_NAME   = "ReciteQuran AppStore"
 
@@ -51,6 +54,52 @@ def asc_key
     key_filepath: ASC_KEY_PATH,
     in_house: false
   )
+end
+
+def asc_token!
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+    key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID, filepath: ASC_KEY_PATH
+  )
+end
+
+# Build the App Store profile directly instead of going through `sigh`.
+#
+# A provisioning profile embeds the certificates allowed to sign with it, and
+# `sigh` only attaches ones whose private key it can find in the local keychain.
+# The CI certificate's key is deliberately a file rather than a keychain item, so
+# `sigh` leaves it out and the runner's signature is rejected. Talking to the API
+# directly lets every distribution certificate onto the profile — the one on this
+# Mac and the CI one both.
+def reissue_appstore_profile!
+  asc_token!
+
+  bundle = Spaceship::ConnectAPI::BundleId.find(BUNDLE_ID)
+  UI.user_error!("#{BUNDLE_ID} is not registered on the developer portal") if bundle.nil?
+
+  dist_certs = Spaceship::ConnectAPI::Certificate.all.select do |c|
+    c.certificate_type.to_s.include?("DISTRIBUTION")
+  end
+  UI.user_error!("no distribution certificates on the team") if dist_certs.empty?
+  UI.message("attaching #{dist_certs.count} distribution certificate(s):")
+  dist_certs.each { |c| UI.message("  #{c.id}  expires #{c.expiration_date}") }
+
+  # Profile names are unique per team, so the old one has to go first.
+  Spaceship::ConnectAPI::Profile.all.select { |pr| pr.name == PROFILE_NAME }.each do |pr|
+    UI.message("removing the previous '#{PROFILE_NAME}' profile (#{pr.id})")
+    pr.delete!
+  end
+
+  profile = Spaceship::ConnectAPI::Profile.create(
+    name: PROFILE_NAME,
+    profile_type: Spaceship::ConnectAPI::Profile::ProfileType::IOS_APP_STORE,
+    bundle_id_id: bundle.id,
+    certificate_ids: dist_certs.map(&:id)
+  )
+
+  path = "#{ROOT}/secrets/ReciteQuran_appstore.mobileprovision"
+  File.binwrite(path, Base64.decode64(profile.profile_content))
+  UI.success("wrote #{path}")
+  path
 end
 
 def pubspec_path
@@ -277,50 +326,58 @@ lane :make_app do
   UI.message("and App Store uploads need the listing to exist.")
 end
 
-desc "Fetch + install the App Store provisioning profile"
-# Deliberately does NOT call `cert`. The team already has one Apple Distribution
-# certificate (shared with Al Najma, Jibly and the rest), and Apple caps a team
-# at a small number of them — creating another, or revoking this one, would break
-# signing for every other project. This reuses the existing identity.
+desc "Reissue the App Store provisioning profile and install it locally"
+# Deliberately does NOT call `cert`. Certificates are minted only by
+# `make_ci_cert`, which knows about Apple's per-team cap; nothing here should be
+# able to create one as a side effect.
 lane :make_profile do
-  key = asc_key
-  get_provisioning_profile(
-    api_key: key,
-    app_identifier: BUNDLE_ID,
-    team_id: TEAM_ID,
-    provisioning_name: PROFILE_NAME,
-    output_path: "#{ROOT}/secrets",
-    filename: "ReciteQuran_appstore.mobileprovision",
-    skip_install: false
-  )
-  UI.success("Profile written to secrets/ and installed locally.")
-  UI.important("For CI you also need the distribution certificate as a .p12. Exporting a")
-  UI.important("private key cannot be scripted without a keychain prompt, so do it by hand:")
-  UI.important("  Keychain Access → login → My Certificates →")
-  UI.important("  'Apple Distribution: Abdeljawad Almiladi (ZKQ5264RUS)' → right-click → Export")
-  UI.important("  → save as secrets/ReciteQuran_dist.p12, and remember the password you set.")
-  UI.important("Then run `fastlane ci_bundle`.")
+  asc_key
+  path = reissue_appstore_profile!
+  # Installing it locally is what lets Xcode and `ship_ios` sign on this Mac.
+  FileUtils.mkdir_p(File.expand_path("~/Library/MobileDevice/Provisioning Profiles"))
+  uuid = `security cms -D -i #{path.shellescape} | plutil -extract UUID raw -o - -`.strip
+  FileUtils.cp(path, File.expand_path("~/Library/MobileDevice/Provisioning Profiles/#{uuid}.mobileprovision"))
+  UI.success("Profile written to secrets/ and installed as #{uuid}.")
 end
 
-desc "Print the base64 blobs to paste into GitHub Actions secrets"
-lane :ci_bundle do
-  p12     = Dir["#{ROOT}/secrets/*.p12"].max_by { |f| File.mtime(f) }
-  profile = "#{ROOT}/secrets/ReciteQuran_appstore.mobileprovision"
+desc "Install the four GitHub Actions secrets (upload:true), or write them out"
+# `upload: true` pushes them straight to the repository with `gh`, so nobody
+# needs a browser. GitHub requires **admin** on the repo to write secrets --
+# write access is not enough -- so whoever runs it needs that.
+#
+# Without upload: they go to a gitignored file instead, to add by hand.
+lane :ci_bundle do |o|
+  p12      = "#{CI_CERT_DIR}/ReciteQuran_ci_dist.p12"
+  pass_txt = "#{CI_CERT_DIR}/p12_password.txt"
+  profile  = "#{ROOT}/secrets/ReciteQuran_appstore.mobileprovision"
 
-  UI.user_error!("No .p12 in secrets/ — export it from Keychain Access, see `fastlane make_profile`") if p12.nil?
-  UI.user_error!("No profile at #{profile} — run `fastlane make_profile` first") unless File.exist?(profile)
-
-  out = "#{ROOT}/secrets/ci_secrets.txt"
-  File.open(out, "w", 0600) do |f|
-    f.puts "IOS_DIST_CERT_P12=#{Base64.strict_encode64(File.binread(p12))}"
-    f.puts
-    f.puts "IOS_PROVISIONING_PROFILE=#{Base64.strict_encode64(File.binread(profile))}"
-    f.puts
-    f.puts "ASC_KEY_P8=#{Base64.strict_encode64(File.binread(ASC_KEY_PATH))}"
+  [p12, pass_txt, profile].each do |f|
+    UI.user_error!("Missing #{f} — run `fastlane make_ci_cert` first") unless File.exist?(f)
   end
-  UI.success("Wrote #{out} (mode 0600, gitignored).")
-  UI.important("Paste each line's value into a GitHub Actions repository secret, then delete the file.")
-  UI.important("You also need IOS_DIST_CERT_PASSWORD — the password you set when `cert` exported the .p12.")
+
+  values = {
+    "IOS_DIST_CERT_P12"        => Base64.strict_encode64(File.binread(p12)),
+    "IOS_DIST_CERT_PASSWORD"   => File.read(pass_txt).strip,
+    "IOS_PROVISIONING_PROFILE" => Base64.strict_encode64(File.binread(profile)),
+    "ASC_KEY_P8"               => Base64.strict_encode64(File.binread(ASC_KEY_PATH))
+  }
+
+  if o[:upload]
+    values.each do |name, value|
+      # Fed to `gh` on stdin so the value never appears in a command line, a
+      # process list or the fastlane log.
+      IO.popen(["gh", "secret", "set", name, "--repo", GH_REPO], "w") { |io| io.write(value) }
+      UI.user_error!("Failed to set #{name} — do you have admin on #{GH_REPO}?") unless $?.success?
+      UI.success("set #{name}")
+    end
+    UI.success("All four secrets are on #{GH_REPO}.")
+  else
+    out = "#{ROOT}/secrets/ci_secrets.txt"
+    File.open(out, "w", 0600) { |f| values.each { |k, v| f.puts("#{k}=#{v}"); f.puts } }
+    UI.success("Wrote #{out} (mode 0600, gitignored).")
+    UI.important("Re-run as `fastlane ci_bundle upload:true` to install them with `gh`,")
+    UI.important("or add them by hand under Settings -> Secrets and variables -> Actions.")
+  end
 end
 
 # ── CI (GitHub Actions) ──────────────────────────────────────────────────────
@@ -363,4 +420,124 @@ lane :ci_build_unsigned do
   ensure_model!
   flutter_sh("build ipa --release --no-codesign")
   UI.success("✅ Unsigned archive built.")
+end
+
+# ── CI signing identity ──────────────────────────────────────────────────────
+
+CI_KEYCHAIN = "#{Dir.home}/Library/Keychains/recitequran-ci.keychain-db"
+CI_CERT_DIR = "#{ROOT}/secrets/ci"
+
+desc "Mint a CI-only Apple Distribution certificate (no keychain prompt)"
+# Xcode does manage certificates for you, but only in one direction. Apple never
+# holds your private key -- it only ever signs the public half -- so there is no
+# way to fetch the key back down. The key behind the team's existing certificate
+# lives in the login keychain guarded by a per-item ACL, and exporting it always
+# raises a GUI prompt: fine once by hand, useless from a script.
+#
+# So instead of extracting that key, mint a *second* certificate whose key we
+# generate ourselves and keep as a file. Nothing touches the login keychain and
+# the lane can be re-run whenever the certificate expires.
+#
+# The existing certificate that Al Najma, Jibly and the rest sign with is left
+# completely alone. Adding a certificate does not affect it; only revoking would.
+lane :make_ci_cert do |o|
+  key = asc_key
+  asc_token!
+
+  FileUtils.mkdir_p(CI_CERT_DIR)
+  cer = Dir["#{CI_CERT_DIR}/*.cer"].max_by { |f| File.mtime(f) }
+
+  if cer && File.exist?(cer.sub(/\.cer\z/, ".p12"))
+    # A previous run already minted one. Reuse it rather than spend another of
+    # the team's limited certificate slots; delete secrets/ci to start over.
+    UI.important("Reusing the certificate already in #{CI_CERT_DIR} (#{File.basename(cer, '.cer')}).")
+    UI.important("Delete that directory first if you really want a new one.")
+  else
+    # Apple caps distribution certificates per team, and `force` below mints a
+    # new one on every run. Refuse once there are already two, so a stray re-run
+    # cannot quietly burn the team's last slot.
+    existing = Spaceship::ConnectAPI::Certificate.all.select do |c|
+      c.certificate_type.to_s.include?("DISTRIBUTION")
+    end
+    UI.message("distribution certificates on the team: #{existing.count}")
+    existing.each { |c| UI.message("  #{c.display_name}  id=#{c.id}  expires #{c.expiration_date}") }
+
+    if existing.count >= 2 && !o[:force]
+      UI.user_error!(
+        "The team already has #{existing.count} distribution certificates and Apple caps how many " \
+        "you may hold.\nIf one of them is a stale CI certificate, revoke that one in the developer " \
+        "portal first.\nRe-run with force:true only if you are sure there is room."
+      )
+    end
+
+    # A throwaway keychain, so the import never goes near the login keychain.
+    # It has to join the user search list while `cert` runs, though: `cert`
+    # confirms its work by looking the certificate up, and that lookup only
+    # consults the search list -- outside it the lane dies with
+    # "Could not find the newly generated certificate installed".
+    kc_pass  = SecureRandom.hex(12)
+    original = `security list-keychains -d user`.scan(/"([^"]+)"/).flatten
+
+    begin
+      sh("security delete-keychain #{CI_KEYCHAIN.shellescape} 2>/dev/null || true")
+      sh("security create-keychain -p #{kc_pass.shellescape} #{CI_KEYCHAIN.shellescape}")
+      sh("security unlock-keychain -p #{kc_pass.shellescape} #{CI_KEYCHAIN.shellescape}")
+      sh("security set-keychain-settings -t 3600 -l #{CI_KEYCHAIN.shellescape}")
+      sh("security list-keychains -d user -s #{CI_KEYCHAIN.shellescape} " +
+         original.map(&:shellescape).join(" "))
+
+      cert(
+        api_key: key,
+        team_id: TEAM_ID,
+        generate_apple_certs: true,
+        force: true,
+        platform: "ios",
+        output_path: CI_CERT_DIR,
+        keychain_path: CI_KEYCHAIN,
+        keychain_password: kc_pass
+      )
+    ensure
+      # Put the machine back exactly as it was, even if `cert` raised.
+      sh("security list-keychains -d user -s " + original.map(&:shellescape).join(" ")) unless original.empty?
+      sh("security delete-keychain #{CI_KEYCHAIN.shellescape} 2>/dev/null || true")
+    end
+
+    cer = Dir["#{CI_CERT_DIR}/*.cer"].max_by { |f| File.mtime(f) }
+  end
+
+  UI.user_error!("no .cer in #{CI_CERT_DIR}") if cer.nil?
+
+  # `cert` writes the private key as PEM but gives it a .p12 extension -- a
+  # long-standing fastlane quirk, it is not a PKCS#12 bundle. Pair it with the
+  # certificate to build a real one that `security import` will accept.
+  pem_key = cer.sub(/\.cer\z/, ".p12")
+  UI.user_error!("no private key beside #{cer}") unless File.exist?(pem_key)
+
+  cert_pem = "#{CI_CERT_DIR}/cert.pem"
+  p12_out  = "#{CI_CERT_DIR}/ReciteQuran_ci_dist.p12"
+  p12_pass = SecureRandom.hex(16)
+
+  # LibreSSL at /usr/bin/openssl, not Homebrew's OpenSSL 3: its PKCS#12 defaults
+  # are the ones macOS and the runner's `security import` read without complaint.
+  sh("/usr/bin/openssl x509 -inform DER -in #{cer.shellescape} -out #{cert_pem.shellescape}")
+  # Password through the environment so it stays out of the logged command line.
+  ENV["CI_P12_PASSWORD"] = p12_pass
+  sh("/usr/bin/openssl pkcs12 -export -inkey #{pem_key.shellescape} -in #{cert_pem.shellescape} " \
+     "-out #{p12_out.shellescape} -passout env:CI_P12_PASSWORD")
+  File.chmod(0600, p12_out)
+
+  # Prove it round-trips before anyone pastes it into a GitHub secret.
+  sh("/usr/bin/openssl pkcs12 -in #{p12_out.shellescape} -passin env:CI_P12_PASSWORD -nokeys -noout")
+  ENV.delete("CI_P12_PASSWORD")
+
+  # The profile predates this certificate, so reissue it with both attached.
+  reissue_appstore_profile!
+
+  File.write("#{CI_CERT_DIR}/p12_password.txt", p12_pass + "\n")
+  File.chmod(0600, "#{CI_CERT_DIR}/p12_password.txt")
+
+  UI.success("CI certificate ready:")
+  UI.success("  #{p12_out}")
+  UI.success("  password in #{CI_CERT_DIR}/p12_password.txt")
+  UI.important("Now run `bundle exec fastlane ci_bundle` to emit the GitHub secrets.")
 end
