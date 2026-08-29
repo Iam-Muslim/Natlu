@@ -222,6 +222,25 @@ file timestamps for the model it extracts from its own bundle).
 
 ## Troubleshooting
 
+**The workflow does not appear on the Actions tab.** As of 2026-08-29 GitHub
+had not indexed `06_deploy_ios.yml`, even though it sits on the default branch
+and is valid YAML. A deliberately trivial probe workflow pushed alongside it was
+not indexed either, which rules out this file's contents — GitHub is not picking
+up *any* newly added workflow on this repo, while the four pre-existing ones
+keep running normally.
+
+The likeliest cause is the non-ASCII default branch name,
+`ReciteQuran-الحمدلله`. Two things to try, cheapest first:
+
+1. Open the repository's **Actions** tab in a browser. The UI sometimes registers
+   a workflow that the API has not surfaced yet.
+2. Rename the default branch to something ASCII, e.g. `main`. The existing
+   workflows already list `main` among their trigger branches, so nothing else
+   should need changing.
+
+Until it registers, releases still work from a Mac — `bundle exec fastlane
+ship_ios` runs the identical lane the workflow would.
+
 **`No IPA in build/ios/ipa/`** — the archive succeeded but the export failed,
 almost always signing. Locally, open `ios/Runner.xcworkspace` in Xcode and check
 the Signing & Capabilities tab. On CI, check that all four secrets are present
