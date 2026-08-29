@@ -101,3 +101,8 @@ secrets/
 *.mobileprovision
 *.p12
 ios/ExportOptionsCI.plist.local
+
+# fastlane run artifacts
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/

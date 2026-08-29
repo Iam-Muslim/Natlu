@@ -6,7 +6,7 @@
 # A full build takes roughly 25-40 minutes. See docs/IOS_DEPLOYMENT.md for the
 # one-time secret setup.
 
-name: 05 - Deploy iOS
+name: 06 - Deploy iOS (signed)
 
 on:
   workflow_dispatch:

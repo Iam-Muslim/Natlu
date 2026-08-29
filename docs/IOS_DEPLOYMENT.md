@@ -3,7 +3,7 @@
 Two ways to ship this app to Apple:
 
 - **From a Mac** — `bundle exec fastlane ship_ios`, the fastest loop while iterating.
-- **From GitHub Actions** — the *05 - Deploy iOS* workflow, so someone on Windows
+- **From GitHub Actions** — the *06 - Deploy iOS (signed)* workflow, so someone on Windows
   (or anyone without a Mac) can release without touching one. GitHub's macOS
   runners are free for public repositories.
 
@@ -144,7 +144,7 @@ is managed automatically.
 ## Releasing from GitHub (no Mac)
 
 1. Open the repository's **Actions** tab.
-2. Choose **05 - Deploy iOS** in the sidebar.
+2. Choose **06 - Deploy iOS (signed)** in the sidebar.
 3. Click **Run workflow** and pick an action:
 
 | Action | What it does | Needs signing secrets |
