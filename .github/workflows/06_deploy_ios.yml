@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   deploy:
-    name: ${{ inputs.action }}
+    name: Deploy
     runs-on: macos-15
     timeout-minutes: 90
 
@@ -68,7 +68,7 @@ jobs:
       # The 69 MB ASR model is published as a release asset rather than
       # committed, so every fresh checkout has to fetch it before building.
       - name: Download ASR model
-        if: inputs.action == 'testflight' || inputs.action == 'unsigned'
+        if: github.event.inputs.action == 'testflight' || github.event.inputs.action == 'unsigned'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,12 +77,12 @@ jobs:
           ls -lh assets/model
 
       - name: Apply marketing version override
-        if: inputs.marketing_version != ''
+        if: github.event.inputs.marketing_version != ''
         run: |
           set -euo pipefail
           current=$(grep '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
           build="${current#*+}"
-          sed -i '' "s/^version:.*/version: ${{ inputs.marketing_version }}+${build}/" pubspec.yaml
+          sed -i '' "s/^version:.*/version: ${{ github.event.inputs.marketing_version }}+${build}/" pubspec.yaml
           grep '^version:' pubspec.yaml
 
       - name: Install Flutter packages
@@ -91,14 +91,14 @@ jobs:
       # --- signing material: only for the lanes that actually talk to Apple ---
 
       - name: Import distribution certificate
-        if: inputs.action == 'testflight'
+        if: github.event.inputs.action == 'testflight'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
           p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
 
       - name: Install provisioning profile
-        if: inputs.action == 'testflight'
+        if: github.event.inputs.action == 'testflight'
         env:
           PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
@@ -113,7 +113,7 @@ jobs:
           echo "installed profile $uuid"
 
       - name: Write App Store Connect API key
-        if: inputs.action != 'unsigned'
+        if: github.event.inputs.action != 'unsigned'
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
@@ -125,25 +125,25 @@ jobs:
       # --- the actual work ---
 
       - name: Build and upload to TestFlight
-        if: inputs.action == 'testflight'
+        if: github.event.inputs.action == 'testflight'
         run: bundle exec fastlane ci_ship_ios
 
       - name: Distribute to external testers
-        if: inputs.action == 'beta'
+        if: github.event.inputs.action == 'beta'
         run: bundle exec fastlane beta
 
       - name: Submit to App Store review
-        if: inputs.action == 'appstore'
+        if: github.event.inputs.action == 'appstore'
         run: bundle exec fastlane release_ios
 
       - name: Build unsigned (smoke test)
-        if: inputs.action == 'unsigned'
+        if: github.event.inputs.action == 'unsigned'
         run: bundle exec fastlane ci_build_unsigned
 
       # --- artefacts ---
 
       - name: Upload IPA
-        if: inputs.action == 'testflight'
+        if: github.event.inputs.action == 'testflight'
         uses: actions/upload-artifact@v4
         with:
           name: recite-quran-ios-ipa
