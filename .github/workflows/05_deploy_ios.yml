@@ -1,0 +1,167 @@
+# Signed iOS releases straight from GitHub — no Mac required on the operator's
+# side. Everything runs on GitHub's macOS runners, which are free for public
+# repositories, so a Windows machine can ship to TestFlight and the App Store
+# using nothing but the "Run workflow" button on the Actions tab.
+#
+# A full build takes roughly 25-40 minutes. See docs/IOS_DEPLOYMENT.md for the
+# one-time secret setup.
+
+name: 05 - Deploy iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        default: testflight
+        options:
+          - testflight   # build a signed IPA and upload it to TestFlight
+          - beta         # send the last processed build to external testers
+          - appstore     # submit the last TestFlight build to App Store review
+          - unsigned     # compile only, no secrets needed (a smoke test)
+      marketing_version:
+        description: "Marketing version, e.g. 1.0.3 (blank keeps pubspec's value)"
+        required: false
+        type: string
+
+# Two concurrent uploads would race for the same TestFlight build number.
+concurrency:
+  group: ios-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.action }}
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      FLUTTER_VERSION: "3.44.1"
+      MODEL_RELEASE: models-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Set up Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up Ruby and fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # The 69 MB ASR model is published as a release asset rather than
+      # committed, so every fresh checkout has to fetch it before building.
+      - name: Download ASR model
+        if: inputs.action == 'testflight' || inputs.action == 'unsigned'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets/model
+          gh release download "$MODEL_RELEASE" -p '*.onnx' --dir assets/model --clobber
+          ls -lh assets/model
+
+      - name: Apply marketing version override
+        if: inputs.marketing_version != ''
+        run: |
+          set -euo pipefail
+          current=$(grep '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
+          build="${current#*+}"
+          sed -i '' "s/^version:.*/version: ${{ inputs.marketing_version }}+${build}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      - name: Install Flutter packages
+        run: flutter pub get
+
+      # --- signing material: only for the lanes that actually talk to Apple ---
+
+      - name: Import distribution certificate
+        if: inputs.action == 'testflight'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
+          p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+
+      - name: Install provisioning profile
+        if: inputs.action == 'testflight'
+        env:
+          PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$dir"
+          echo "$PROFILE_B64" | base64 --decode > "$dir/ReciteQuran_appstore.mobileprovision"
+          # Xcode matches profiles by UUID on disk, not by filename.
+          uuid=$(security cms -D -i "$dir/ReciteQuran_appstore.mobileprovision" \
+                 | plutil -extract UUID raw -o - -)
+          mv "$dir/ReciteQuran_appstore.mobileprovision" "$dir/$uuid.mobileprovision"
+          echo "installed profile $uuid"
+
+      - name: Write App Store Connect API key
+        if: inputs.action != 'unsigned'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          echo "$ASC_KEY_P8" | base64 --decode > secrets/AuthKey_ZJUS9VF3D6.p8
+          chmod 600 secrets/AuthKey_ZJUS9VF3D6.p8
+
+      # --- the actual work ---
+
+      - name: Build and upload to TestFlight
+        if: inputs.action == 'testflight'
+        run: bundle exec fastlane ci_ship_ios
+
+      - name: Distribute to external testers
+        if: inputs.action == 'beta'
+        run: bundle exec fastlane beta
+
+      - name: Submit to App Store review
+        if: inputs.action == 'appstore'
+        run: bundle exec fastlane release_ios
+
+      - name: Build unsigned (smoke test)
+        if: inputs.action == 'unsigned'
+        run: bundle exec fastlane ci_build_unsigned
+
+      # --- artefacts ---
+
+      - name: Upload IPA
+        if: inputs.action == 'testflight'
+        uses: actions/upload-artifact@v4
+        with:
+          name: recite-quran-ios-ipa
+          path: build/ios/ipa/*.ipa
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload fastlane logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastlane-logs
+          path: |
+            ~/Library/Logs/gym/
+            ~/Library/Logs/fastlane/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Clean up secrets
+        if: always()
+        run: rm -rf secrets

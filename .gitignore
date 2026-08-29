@@ -5,9 +5,11 @@
 *.swp
 .DS_Store
 .atom/
+.build/
 .buildlog/
 .history
 .svn/
+.swiftpm/
 migrate_working_dir/
 
 # IntelliJ related
@@ -92,3 +94,10 @@ ios/Runner/GeneratedPluginRegistrant.*
 # Ignore scratch directories
 .scratch/
 /assets/model
+
+# Signing material — never commit
+secrets/
+*.p8
+*.mobileprovision
+*.p12
+ios/ExportOptionsCI.plist.local

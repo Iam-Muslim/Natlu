@@ -1,8 +1,12 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+# Minimum iOS the CocoaPods dependencies are built for. Which devices can
+# actually install the app is gated by the Runner target's own
+# IPHONEOS_DEPLOYMENT_TARGET in Runner.xcodeproj, which may be higher.
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+install! 'cocoapods', :warn_for_unused_master_specs_repo => false
 
 project 'Runner', {
   'Debug' => :debug,
@@ -39,5 +43,15 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # permission_handler compiles EVERY permission handler it supports unless
+      # it is told otherwise, so the binary ends up referencing Contacts, Photos,
+      # Bluetooth, Camera and friends. App Review flags APIs whose matching
+      # NS*UsageDescription key is absent from Info.plist, and this app only ever
+      # asks for the microphone -- so compile that one in and everything else out.
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] += ['PERMISSION_MICROPHONE=1']
+    end
   end
 end

@@ -1,0 +1,355 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Recite Quran — اتلو القران : iOS release pipeline
+#
+#   bundle exec fastlane ios_status        # what's on TestFlight / App Store now
+#   bundle exec fastlane make_app          # one-time: how to create the ASC record
+#   bundle exec fastlane make_profile      # one-time / on expiry: App Store profile
+#   bundle exec fastlane ship_ios          # bump + build + upload to TestFlight
+#   bundle exec fastlane beta              # latest processed build → external testers
+#   bundle exec fastlane release_ios       # latest TestFlight build → App Store review
+#   bundle exec fastlane ci_bundle         # package signing material for GitHub Actions
+#
+# Apple identity is the same one behind Al Najma and Jibly, so the App Store
+# Connect API key in secrets/ is shared with those projects.
+#
+# Run with the Homebrew Ruby (fastlane needs Ruby 3+), not macOS's built-in 2.6:
+#   PATH="/opt/homebrew/opt/ruby/bin:$PATH" bundle exec fastlane ...
+# ─────────────────────────────────────────────────────────────────────────────
+
+require "base64"
+require "shellwords"
+
+# Derived, not hardcoded: the checkout path contains a space on this Mac and
+# differs again on CI, so anything shelling out must quote it.
+ROOT       = File.expand_path("..", __dir__)
+TEAM_ID    = "ZKQ5264RUS"
+BUNDLE_ID  = "com.recitequran.app"
+APP_NAME   = "Recite Quran - اتلو القران"
+
+ASC_KEY_ID    = "ZJUS9VF3D6"
+ASC_ISSUER_ID = "2a31803e-fd97-4852-9a5d-0eea1a75b6dd"
+ASC_KEY_PATH  = "#{ROOT}/secrets/AuthKey_#{ASC_KEY_ID}.p8"
+
+IOS_BETA_GROUP = "beta"        # TestFlight external group
+PROFILE_NAME   = "ReciteQuran AppStore"
+
+# The ASR model is a 69 MB release asset rather than a committed file, so a
+# fresh checkout has to fetch it before any build.
+MODEL_PATH    = "#{ROOT}/assets/model/zipformer_p_arabic_v3.int8.onnx"
+MODEL_RELEASE = "models-latest"
+MODEL_REPO    = "Iam-Muslim/Natlu"
+
+def flutter_bin
+  ENV["FLUTTER_BIN"] || `which flutter`.strip.then { |p| p.empty? ? "flutter" : p }
+end
+
+def asc_key
+  UI.user_error!("App Store Connect key missing at #{ASC_KEY_PATH}") unless File.exist?(ASC_KEY_PATH)
+  app_store_connect_api_key(
+    key_id: ASC_KEY_ID,
+    issuer_id: ASC_ISSUER_ID,
+    key_filepath: ASC_KEY_PATH,
+    in_house: false
+  )
+end
+
+def pubspec_path
+  "#{ROOT}/pubspec.yaml"
+end
+
+# pubspec `version: 1.0.2+16` → ["1.0.2", 16]
+def pubspec_version
+  line = File.read(pubspec_path).lines.find { |l| l =~ /^version:\s*/ }
+  UI.user_error!("No `version:` line in pubspec.yaml") if line.nil?
+  name, build = line.sub(/^version:\s*/, "").strip.split("+", 2)
+  [name, (build || "0").to_i]
+end
+
+def set_build(marketing, n)
+  p = pubspec_path
+  File.write(p, File.read(p).sub(/^version:.*$/, "version: #{marketing}+#{n}"))
+  UI.message("pubspec → #{marketing}+#{n}")
+end
+
+# One monotonic build number: 1 + max(what TestFlight already has, what pubspec
+# says). Apple rejects a re-used build number at the very end of an upload, long
+# after the archive is built, so it is worth getting right up front.
+def next_build
+  tf = begin
+    latest_testflight_build_number(
+      api_key: asc_key, app_identifier: BUNDLE_ID, initial_build_number: 0
+    ).to_i
+  rescue => e
+    UI.important("TestFlight lookup failed (#{e.message[0..60]}) — treating as 0")
+    0
+  end
+  local = pubspec_version[1]
+  nxt = [tf, local].max + 1
+  UI.message("build numbers — TestFlight:#{tf}  pubspec:#{local}  → next:#{nxt}")
+  nxt
+end
+
+# Apple also rejects a marketing version that has already been used, and again
+# only at submission time. Advisory on lookup failure: a Spaceship hiccup must
+# not block an otherwise-fine release, only a *confirmed* collision stops us.
+def assert_version_unused(marketing)
+  used = begin
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID, filepath: ASC_KEY_PATH
+    )
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    app.nil? ? [] : app.get_app_store_versions.map { |v| [v.version_string, v.app_store_state] }
+  rescue => e
+    UI.important("Could not check existing App Store versions (#{e.message[0..80]}) — continuing")
+    nil
+  end
+  return if used.nil?
+
+  hit = used.find { |vs, _| vs == marketing }
+  if hit
+    UI.user_error!(
+      "#{marketing} already exists on App Store Connect (state: #{hit[1]}).\n" \
+      "Bump `version:` in pubspec.yaml before building.\n" \
+      "Versions in use: #{used.map(&:first).join(', ')}"
+    )
+  end
+  UI.success("#{marketing} is not yet on App Store Connect — proceeding.")
+end
+
+def ensure_model!
+  return if File.exist?(MODEL_PATH) && File.size(MODEL_PATH) > 1_000_000
+
+  UI.message("ASR model missing — fetching from #{MODEL_REPO} release #{MODEL_RELEASE}")
+  FileUtils.mkdir_p(File.dirname(MODEL_PATH))
+  sh("gh release download #{MODEL_RELEASE} --repo #{MODEL_REPO} -p '*.onnx' " \
+     "--dir #{ROOT.shellescape}/assets/model --clobber")
+  UI.user_error!("Model still missing at #{MODEL_PATH}") unless File.exist?(MODEL_PATH)
+end
+
+# Run `flutter build` (and the `pod install` it triggers) with a CLEAN Ruby env.
+# Under `bundle exec fastlane`, Homebrew-Ruby gem vars leak into the system `pod`
+# subprocess → "CocoaPods installed but broken" → flutter aborts the iOS build.
+# Stripping bundler/gem vars lets the system `pod` run cleanly; fastlane's own
+# Ruby is unaffected.
+def flutter_sh(args)
+  flutter = flutter_bin
+  clean_env = "env -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLER_VERSION -u GEM_HOME " \
+              "-u GEM_PATH -u GEM_ROOT -u RUBYOPT -u RUBYLIB " \
+              "PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{File.dirname(flutter)}:/opt/homebrew/bin' " \
+              "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8"
+  sh("cd #{ROOT.shellescape} && #{clean_env} #{flutter.shellescape} #{args}")
+end
+
+def build_ios(marketing, n, export_plist: "ios/ExportOptions.plist")
+  ensure_model!
+
+  flutter_sh("build ipa --release --build-name=#{marketing} --build-number=#{n} " \
+             "--export-options-plist=#{export_plist}")
+
+  ipa = Dir["#{ROOT}/build/ios/ipa/*.ipa"].max_by { |f| File.mtime(f) }
+  UI.user_error!("No IPA in build/ios/ipa/ — check Xcode signing") if ipa.nil?
+  ipa
+end
+
+# ── Release lanes ────────────────────────────────────────────────────────────
+
+desc "Show what is currently on TestFlight / App Store"
+lane :ios_status do
+  marketing, build = pubspec_version
+  tf = (latest_testflight_build_number(
+          api_key: asc_key, app_identifier: BUNDLE_ID, initial_build_number: 0
+        ) rescue "n/a")
+  UI.success("pubspec = #{marketing}+#{build}   TestFlight latest build = #{tf}")
+  UI.message("model present: #{File.exist?(MODEL_PATH)}")
+end
+
+desc "iOS: bump build number, build, upload to TestFlight"
+lane :ship_ios do
+  marketing, = pubspec_version
+  assert_version_unused(marketing)
+  n = next_build
+  set_build(marketing, n)
+  ipa = build_ios(marketing, n)
+  upload_to_testflight(
+    api_key: asc_key, app_identifier: BUNDLE_ID, ipa: ipa,
+    skip_submission: true, skip_waiting_for_build_processing: true
+  )
+  UI.success("✅ #{marketing} build #{n} → TestFlight (processing).")
+  UI.success("   Once Apple finishes processing: bundle exec fastlane beta")
+end
+
+desc "Re-upload an already-built IPA to TestFlight (no rebuild)"
+lane :retry_upload_ios do |o|
+  UI.user_error!("Pass ipa:/path/to.ipa") if o[:ipa].nil?
+  upload_to_testflight(
+    api_key: asc_key, app_identifier: BUNDLE_ID, ipa: o[:ipa],
+    skip_submission: true, skip_waiting_for_build_processing: true
+  )
+end
+
+desc "Distribute the latest processed build to the external TestFlight group"
+lane :beta do
+  key = asc_key
+  n = latest_testflight_build_number(api_key: key, app_identifier: BUNDLE_ID, initial_build_number: 0)
+  upload_to_testflight(
+    api_key: key, app_identifier: BUNDLE_ID,
+    distribute_only: true, distribute_external: true,
+    groups: [IOS_BETA_GROUP], notify_external_testers: true,
+    build_number: n.to_s
+  )
+  UI.success("✅ build #{n} → external '#{IOS_BETA_GROUP}' (Apple beta review).")
+end
+
+desc "Submit the latest TestFlight build to App Store review"
+lane :release_ios do
+  key = asc_key
+  marketing, = pubspec_version
+  n = latest_testflight_build_number(api_key: key, app_identifier: BUNDLE_ID, initial_build_number: 0)
+  upload_to_app_store(
+    api_key: key,
+    app_identifier: BUNDLE_ID,
+    app_version: marketing,
+    build_number: n.to_s,
+    platform: "ios",
+    metadata_path: "#{ROOT}/fastlane/metadata",
+    skip_binary_upload: true,
+    skip_screenshots: true,
+    overwrite_screenshots: false,
+    sync_screenshots: false,
+    submit_for_review: true,
+    automatic_release: true,
+    reject_if_possible: true,
+    force: true,
+    precheck_include_in_app_purchases: false,
+    submission_information: {
+      add_id_info_uses_idfa: false,
+      export_compliance_uses_encryption: false,
+      content_rights_contains_third_party_content: false
+    }
+  )
+  UI.success("✅ #{marketing} (build #{n}) → App Store review, auto-release on approval.")
+end
+
+# ── One-time setup ───────────────────────────────────────────────────────────
+
+desc "Explain how to create the App Store Connect record (cannot be automated)"
+# There is no scripted path for this. fastlane's `produce` only supports Apple ID
+# + password authentication -- it predates App Store Connect API keys -- and
+# Apple's API has no create-an-app endpoint at all. Rather than fail with
+# `No value found for 'username'`, say what to do.
+lane :make_app do
+  exists = begin
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID, filepath: ASC_KEY_PATH
+    )
+    !Spaceship::ConnectAPI::App.find(BUNDLE_ID).nil?
+  rescue => e
+    UI.important("Could not query App Store Connect (#{e.message[0..60]})")
+    nil
+  end
+
+  if exists
+    UI.success("#{BUNDLE_ID} already exists on App Store Connect — nothing to do.")
+    next
+  end
+
+  UI.important("Create the listing by hand at https://appstoreconnect.apple.com/apps")
+  UI.important("  Apps → + → New App")
+  UI.important("  Platform:  iOS")
+  UI.important("  Bundle ID: #{BUNDLE_ID}")
+  UI.important("  Name:      #{APP_NAME}")
+  UI.important("  Language:  Arabic")
+  UI.important("  SKU:       #{BUNDLE_ID}")
+  UI.message("")
+  UI.message("The bundle ID itself is already registered on the developer portal,")
+  UI.message("so `make_profile` and signing work without this. Only the TestFlight")
+  UI.message("and App Store uploads need the listing to exist.")
+end
+
+desc "Fetch + install the App Store provisioning profile"
+# Deliberately does NOT call `cert`. The team already has one Apple Distribution
+# certificate (shared with Al Najma, Jibly and the rest), and Apple caps a team
+# at a small number of them — creating another, or revoking this one, would break
+# signing for every other project. This reuses the existing identity.
+lane :make_profile do
+  key = asc_key
+  get_provisioning_profile(
+    api_key: key,
+    app_identifier: BUNDLE_ID,
+    team_id: TEAM_ID,
+    provisioning_name: PROFILE_NAME,
+    output_path: "#{ROOT}/secrets",
+    filename: "ReciteQuran_appstore.mobileprovision",
+    skip_install: false
+  )
+  UI.success("Profile written to secrets/ and installed locally.")
+  UI.important("For CI you also need the distribution certificate as a .p12. Exporting a")
+  UI.important("private key cannot be scripted without a keychain prompt, so do it by hand:")
+  UI.important("  Keychain Access → login → My Certificates →")
+  UI.important("  'Apple Distribution: Abdeljawad Almiladi (ZKQ5264RUS)' → right-click → Export")
+  UI.important("  → save as secrets/ReciteQuran_dist.p12, and remember the password you set.")
+  UI.important("Then run `fastlane ci_bundle`.")
+end
+
+desc "Print the base64 blobs to paste into GitHub Actions secrets"
+lane :ci_bundle do
+  p12     = Dir["#{ROOT}/secrets/*.p12"].max_by { |f| File.mtime(f) }
+  profile = "#{ROOT}/secrets/ReciteQuran_appstore.mobileprovision"
+
+  UI.user_error!("No .p12 in secrets/ — export it from Keychain Access, see `fastlane make_profile`") if p12.nil?
+  UI.user_error!("No profile at #{profile} — run `fastlane make_profile` first") unless File.exist?(profile)
+
+  out = "#{ROOT}/secrets/ci_secrets.txt"
+  File.open(out, "w", 0600) do |f|
+    f.puts "IOS_DIST_CERT_P12=#{Base64.strict_encode64(File.binread(p12))}"
+    f.puts
+    f.puts "IOS_PROVISIONING_PROFILE=#{Base64.strict_encode64(File.binread(profile))}"
+    f.puts
+    f.puts "ASC_KEY_P8=#{Base64.strict_encode64(File.binread(ASC_KEY_PATH))}"
+  end
+  UI.success("Wrote #{out} (mode 0600, gitignored).")
+  UI.important("Paste each line's value into a GitHub Actions repository secret, then delete the file.")
+  UI.important("You also need IOS_DIST_CERT_PASSWORD — the password you set when `cert` exported the .p12.")
+end
+
+# ── CI (GitHub Actions) ──────────────────────────────────────────────────────
+
+# The runner has no Xcode account signed in, so automatic signing cannot resolve
+# a profile. The workflow imports the distribution certificate into a temporary
+# keychain and drops the profile in place; this lane points the Runner target at
+# them explicitly, then exports with ios/ExportOptionsCI.plist.
+#
+# The project file is edited in the runner's working copy only — never committed.
+desc "CI: build signed and upload to TestFlight (GitHub Actions)"
+lane :ci_ship_ios do
+  UI.user_error!("ci_ship_ios is for CI; use ship_ios locally") unless ENV["CI"]
+
+  marketing, = pubspec_version
+  n = next_build
+  set_build(marketing, n)
+
+  update_code_signing_settings(
+    path: "#{ROOT}/ios/Runner.xcodeproj",
+    use_automatic_signing: false,
+    team_id: TEAM_ID,
+    targets: ["Runner"],
+    bundle_identifier: BUNDLE_ID,
+    code_sign_identity: "Apple Distribution",
+    profile_name: PROFILE_NAME
+  )
+
+  ipa = build_ios(marketing, n, export_plist: "ios/ExportOptionsCI.plist")
+
+  upload_to_testflight(
+    api_key: asc_key, app_identifier: BUNDLE_ID, ipa: ipa,
+    skip_submission: true, skip_waiting_for_build_processing: true
+  )
+  UI.success("✅ #{marketing} build #{n} → TestFlight from CI.")
+end
+
+desc "CI: build unsigned only (no secrets needed) — compile check"
+lane :ci_build_unsigned do
+  ensure_model!
+  flutter_sh("build ipa --release --no-codesign")
+  UI.success("✅ Unsigned archive built.")
+end
