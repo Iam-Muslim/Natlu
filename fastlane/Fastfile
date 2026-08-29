@@ -126,18 +126,29 @@ def ensure_model!
   UI.user_error!("Model still missing at #{MODEL_PATH}") unless File.exist?(MODEL_PATH)
 end
 
-# Run `flutter build` (and the `pod install` it triggers) with a CLEAN Ruby env.
-# Under `bundle exec fastlane`, Homebrew-Ruby gem vars leak into the system `pod`
-# subprocess → "CocoaPods installed but broken" → flutter aborts the iOS build.
-# Stripping bundler/gem vars lets the system `pod` run cleanly; fastlane's own
-# Ruby is unaffected.
+# `flutter build` shells out to `pod install`, and getting CocoaPods to work in
+# that subprocess needs opposite treatment on a laptop and on a runner.
+#
+# Locally: fastlane runs under the Homebrew Ruby, whose gem vars leak into the
+# subprocess and confuse the *system* `pod` → "CocoaPods is installed but
+# broken" → the build aborts. Stripping the bundler/gem vars fixes it.
+#
+# On CI: `bundle exec` points GEM_HOME at the vendored bundle and puts its
+# binstubs on PATH, so `pod` resolves to the CocoaPods gem in the Gemfile.
+# Scrubbing the environment there breaks the very thing that makes it work, so
+# the ambient environment is left alone.
 def flutter_sh(args)
   flutter = flutter_bin
-  clean_env = "env -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLER_VERSION -u GEM_HOME " \
-              "-u GEM_PATH -u GEM_ROOT -u RUBYOPT -u RUBYLIB " \
-              "PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{File.dirname(flutter)}:/opt/homebrew/bin' " \
-              "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8"
-  sh("cd #{ROOT.shellescape} && #{clean_env} #{flutter.shellescape} #{args}")
+  prefix =
+    if ENV["CI"]
+      ""
+    else
+      "env -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLER_VERSION -u GEM_HOME " \
+      "-u GEM_PATH -u GEM_ROOT -u RUBYOPT -u RUBYLIB " \
+      "PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{File.dirname(flutter)}:/opt/homebrew/bin' " \
+      "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "
+    end
+  sh("cd #{ROOT.shellescape} && #{prefix}#{flutter.shellescape} #{args}")
 end
 
 def build_ios(marketing, n, export_plist: "ios/ExportOptions.plist")
