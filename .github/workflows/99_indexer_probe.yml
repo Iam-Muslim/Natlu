@@ -1,8 +1,0 @@
-name: 99 - indexer probe
-on:
-  workflow_dispatch:
-jobs:
-  noop:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo ok
