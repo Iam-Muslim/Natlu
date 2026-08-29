@@ -1,10 +1,25 @@
 # Signed iOS releases straight from GitHub — no Mac required on the operator's
 # side. Everything runs on GitHub's macOS runners, which are free for public
 # repositories, so a Windows machine can ship to TestFlight and the App Store
-# using nothing but the "Run workflow" button on the Actions tab.
+# with nothing but git.
 #
-# A full build takes roughly 25-40 minutes. See docs/IOS_DEPLOYMENT.md for the
-# one-time secret setup.
+# Two ways to start a release:
+#
+#   1. Push a tag — works from any machine with git, and needs nothing else:
+#
+#        git tag ios-testflight-1.0.3 && git push origin ios-testflight-1.0.3
+#
+#      The tag is  ios-<action>-<version>.  <action> is one of unsigned,
+#      testflight, beta or appstore. <version>, when it looks like a version
+#      number, is used as the marketing version; anything else (ios-unsigned-1)
+#      is just a label so the tag is unique.
+#
+#   2. The Run workflow button on the Actions tab, if you prefer it.
+#
+# Tags are the documented path because they do not depend on GitHub having
+# indexed this file for manual dispatch — see docs/IOS_DEPLOYMENT.md.
+#
+# A signed build takes roughly 25-40 minutes.
 
 name: 06 - Deploy iOS (signed)
 
@@ -24,6 +39,12 @@ on:
         description: "Marketing version, e.g. 1.0.3 (blank keeps pubspec's value)"
         required: false
         type: string
+  push:
+    tags:
+      - 'ios-unsigned-*'
+      - 'ios-testflight-*'
+      - 'ios-beta-*'
+      - 'ios-appstore-*'
 
 # Two concurrent uploads would race for the same TestFlight build number.
 concurrency:
@@ -47,6 +68,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # A tag push and a manual dispatch carry the same two settings in
+      # different places. Normalise them here so every later step reads one
+      # source.
+      - name: Resolve action and version
+        id: cfg
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF_NAME}"
+            rest="${tag#ios-}"
+            action="${rest%%-*}"
+            version="${rest#*-}"
+            # The trailing part is only a version if it looks like one; for a
+            # tag such as ios-unsigned-1 it is just there to keep the tag unique.
+            case "$version" in
+              [0-9]*.[0-9]*.[0-9]*) ;;
+              *) version="" ;;
+            esac
+          else
+            action="${{ github.event.inputs.action }}"
+            version="${{ github.event.inputs.marketing_version }}"
+          fi
+
+          case "$action" in
+            unsigned|testflight|beta|appstore) ;;
+            *) echo "::error::Unknown action '$action'. Expected unsigned, testflight, beta or appstore." >&2; exit 1 ;;
+          esac
+
+          echo "action=$action"   >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::action=$action version=${version:-<from pubspec>}"
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -68,7 +121,7 @@ jobs:
       # The 69 MB ASR model is published as a release asset rather than
       # committed, so every fresh checkout has to fetch it before building.
       - name: Download ASR model
-        if: github.event.inputs.action == 'testflight' || github.event.inputs.action == 'unsigned'
+        if: steps.cfg.outputs.action == 'testflight' || steps.cfg.outputs.action == 'unsigned'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,12 +130,12 @@ jobs:
           ls -lh assets/model
 
       - name: Apply marketing version override
-        if: github.event.inputs.marketing_version != ''
+        if: steps.cfg.outputs.version != ''
         run: |
           set -euo pipefail
           current=$(grep '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
           build="${current#*+}"
-          sed -i '' "s/^version:.*/version: ${{ github.event.inputs.marketing_version }}+${build}/" pubspec.yaml
+          sed -i '' "s/^version:.*/version: ${{ steps.cfg.outputs.version }}+${build}/" pubspec.yaml
           grep '^version:' pubspec.yaml
 
       - name: Install Flutter packages
@@ -91,14 +144,14 @@ jobs:
       # --- signing material: only for the lanes that actually talk to Apple ---
 
       - name: Import distribution certificate
-        if: github.event.inputs.action == 'testflight'
+        if: steps.cfg.outputs.action == 'testflight'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
           p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
 
       - name: Install provisioning profile
-        if: github.event.inputs.action == 'testflight'
+        if: steps.cfg.outputs.action == 'testflight'
         env:
           PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
@@ -113,7 +166,7 @@ jobs:
           echo "installed profile $uuid"
 
       - name: Write App Store Connect API key
-        if: github.event.inputs.action != 'unsigned'
+        if: steps.cfg.outputs.action != 'unsigned'
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
@@ -125,25 +178,25 @@ jobs:
       # --- the actual work ---
 
       - name: Build and upload to TestFlight
-        if: github.event.inputs.action == 'testflight'
+        if: steps.cfg.outputs.action == 'testflight'
         run: bundle exec fastlane ci_ship_ios
 
       - name: Distribute to external testers
-        if: github.event.inputs.action == 'beta'
+        if: steps.cfg.outputs.action == 'beta'
         run: bundle exec fastlane beta
 
       - name: Submit to App Store review
-        if: github.event.inputs.action == 'appstore'
+        if: steps.cfg.outputs.action == 'appstore'
         run: bundle exec fastlane release_ios
 
       - name: Build unsigned (smoke test)
-        if: github.event.inputs.action == 'unsigned'
+        if: steps.cfg.outputs.action == 'unsigned'
         run: bundle exec fastlane ci_build_unsigned
 
       # --- artefacts ---
 
       - name: Upload IPA
-        if: github.event.inputs.action == 'testflight'
+        if: steps.cfg.outputs.action == 'testflight'
         uses: actions/upload-artifact@v4
         with:
           name: recite-quran-ios-ipa
