@@ -261,10 +261,18 @@ almost always signing. Locally, open `ios/Runner.xcworkspace` in Xcode and check
 the Signing & Capabilities tab. On CI, check that all four secrets are present
 and that the provisioning profile has not expired (they last a year).
 
-**`CocoaPods installed but broken`** during a fastlane build — Homebrew Ruby's
-gem environment leaking into the `pod` subprocess. `build_ios` in the Fastfile
-already strips those variables; if you are invoking `flutter build` by hand, do
-the same or use a plain shell.
+**`CocoaPods is installed but broken`** during a fastlane build. `flutter build`
+shells out to `pod install`, and that subprocess needs opposite handling in the
+two places this runs, which `flutter_sh` in the Fastfile takes care of:
+
+- *On a Mac*, fastlane runs under the Homebrew Ruby, whose gem variables leak
+  into the subprocess and confuse the system `pod`. Stripping the bundler and
+  gem variables is the fix. If you are calling `flutter build` by hand and hit
+  this, run it from a plain shell rather than under `bundle exec`.
+- *On CI*, `bundle exec` points `GEM_HOME` at the vendored bundle and puts its
+  binstubs on `PATH`, so `pod` resolves to the CocoaPods gem in the `Gemfile` —
+  which is why it is a dependency there. Scrubbing the environment on a runner
+  breaks the thing that makes it work, so `flutter_sh` leaves CI alone.
 
 **Apple rejects the build number** — something else uploaded the same number.
 `bundle exec fastlane ios_status` shows what TestFlight has; the next `ship_ios`
