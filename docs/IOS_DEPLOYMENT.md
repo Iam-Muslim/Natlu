@@ -143,28 +143,49 @@ is managed automatically.
 
 ## Releasing from GitHub (no Mac)
 
-1. Open the repository's **Actions** tab.
-2. Choose **06 - Deploy iOS (signed)** in the sidebar.
-3. Click **Run workflow** and pick an action:
+Everything runs on GitHub's macOS runners, which are free for public
+repositories. Nothing here needs a Mac, and the tag route needs nothing but git.
 
-| Action | What it does | Needs signing secrets |
+### By tag — the CLI route
+
+```bash
+git tag ios-testflight-1.0.3
+git push origin ios-testflight-1.0.3
+```
+
+The tag is `ios-<action>-<version>`:
+
+| Tag | What it does | Needs signing secrets |
 |---|---|---|
-| `unsigned` | Compiles only. A smoke test that the app still builds. | no |
-| `testflight` | Builds a signed IPA and uploads it to TestFlight. | yes |
-| `beta` | Sends the last processed build to the external testers group. | API key only |
-| `appstore` | Submits the last TestFlight build to App Store review. | API key only |
+| `ios-unsigned-1` | Compiles only. A smoke test that the app still builds. | no |
+| `ios-testflight-1.0.3` | Builds a signed IPA and uploads it to TestFlight. | yes |
+| `ios-beta-1.0.3` | Sends the last processed build to the external testers group. | API key only |
+| `ios-appstore-1.0.3` | Submits the last TestFlight build to App Store review. | API key only |
 
-Optionally set **marketing_version** (e.g. `1.0.3`) to override `pubspec.yaml`
-for that run.
+When the last part looks like a version number it becomes the marketing version,
+overriding `pubspec.yaml` for that run. When it does not — `ios-unsigned-1` —
+it is just there to keep the tag unique, and the version comes from `pubspec.yaml`.
 
-A `testflight` run takes roughly 25–40 minutes; most of it is the Xcode archive.
-The finished IPA is attached to the run as an artefact for 14 days. On failure,
-the gym and fastlane logs are attached instead — that is the first place to look.
+Watch it with `gh run watch`, or:
+
+```bash
+gh run list --repo Iam-Muslim/Natlu --workflow 06_deploy_ios.yml
+```
+
+### By button
+
+**Actions → 06 - Deploy iOS (signed) → Run workflow**, then pick the action from
+the dropdown and optionally set a marketing version. Same job either way.
+
+A signed build takes roughly 25–40 minutes; most of it is the Xcode archive. The
+finished IPA is attached to the run as an artefact for 14 days. On failure, the
+gym and fastlane logs are attached instead — that is the first place to look.
 
 ### The normal release sequence
 
 ```
-testflight  →  wait for Apple to finish processing (5-30 min)  →  beta  →  appstore
+ios-testflight-X.Y.Z  →  wait for Apple to finish processing (5-30 min)
+                      →  ios-beta-X.Y.Z  →  ios-appstore-X.Y.Z
 ```
 
 `beta` and `appstore` do not rebuild anything. They act on the binary already
@@ -222,24 +243,18 @@ file timestamps for the model it extracts from its own bundle).
 
 ## Troubleshooting
 
-**The workflow does not appear on the Actions tab.** As of 2026-08-29 GitHub
-had not indexed `06_deploy_ios.yml`, even though it sits on the default branch
-and is valid YAML. A deliberately trivial probe workflow pushed alongside it was
-not indexed either, which rules out this file's contents — GitHub is not picking
-up *any* newly added workflow on this repo, while the four pre-existing ones
-keep running normally.
+**A newly added workflow does not appear on the Actions tab.** This happened
+to `06_deploy_ios.yml` when it was first pushed, and it is a chicken-and-egg
+problem rather than a bug in the file: GitHub would not index it, and
+`workflow_dispatch` needs an index entry to be dispatchable — so it could not be
+started manually, which is what would have indexed it. A deliberately trivial
+probe workflow pushed alongside it was not indexed either, which ruled out the
+file's contents. Workflows the repository owner adds are indexed immediately, so
+it appears to affect files pushed by a collaborator.
 
-The likeliest cause is the non-ASCII default branch name,
-`ReciteQuran-الحمدلله`. Two things to try, cheapest first:
-
-1. Open the repository's **Actions** tab in a browser. The UI sometimes registers
-   a workflow that the API has not surfaced yet.
-2. Rename the default branch to something ASCII, e.g. `main`. The existing
-   workflows already list `main` among their trigger branches, so nothing else
-   should need changing.
-
-Until it registers, releases still work from a Mac — `bundle exec fastlane
-ship_ios` runs the identical lane the workflow would.
+Triggering it once by tag broke the deadlock, and it registered straight away.
+If you ever add another workflow and it does not show up, give it a trigger you
+can fire without the index — a tag push — and run it once.
 
 **`No IPA in build/ios/ipa/`** — the archive succeeded but the export failed,
 almost always signing. Locally, open `ios/Runner.xcworkspace` in Xcode and check
