@@ -19,7 +19,8 @@
 #
 #      <version>, when it is exactly N.N or N.N.N, is used as the marketing
 #      version; anything else (ios-unsigned-1) is just a label so the tag is
-#      unique.
+#      unique. A two-part version is padded to three -- 1.0 becomes 1.0.0 --
+#      because Apple accepts 1.0 but a Dart pubspec does not.
 #
 #   2. The Run workflow button on the Actions tab, if you prefer it.
 #
@@ -112,6 +113,15 @@ jobs:
             *) echo "::error::Unknown action '$action'. Expected unsigned, testflight, internal, external or appstore." >&2; exit 1 ;;
           esac
 
+          # Apple is happy with a two-part marketing version like 1.0, but a Dart
+          # pubspec is not: `version: 1.0+16` fails to parse and takes the build
+          # down at `flutter pub get`. Pad it to three parts, and say so rather
+          # than changing the version behind your back.
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::padding version $version to ${version}.0 — a pubspec needs three components"
+            version="${version}.0"
+          fi
+
           echo "action=$action"   >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "::notice::action=$action version=${version:-<from pubspec>}"
@@ -151,7 +161,17 @@ jobs:
           set -euo pipefail
           current=$(grep '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
           build="${current#*+}"
-          sed -i '' "s/^version:.*/version: ${{ steps.cfg.outputs.version }}+${build}/" pubspec.yaml
+          new="${{ steps.cfg.outputs.version }}+${build}"
+
+          # Check before writing: an unparseable version does not surface until
+          # `flutter pub get`, by which point the failure reads like a broken
+          # dependency rather than a bad tag.
+          if [[ ! "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+[+][0-9]+$ ]]; then
+            echo "::error::Refusing to write 'version: $new' — a pubspec needs major.minor.patch+build." >&2
+            exit 1
+          fi
+
+          sed -i '' "s/^version:.*/version: ${new}/" pubspec.yaml
           grep '^version:' pubspec.yaml
 
       - name: Install Flutter packages
