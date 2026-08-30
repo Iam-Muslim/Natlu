@@ -1,10 +1,84 @@
-The app runs entirely on device. There is no account, no sign-in and no network
-connection required; recitation audio is never transmitted or stored.
+WHAT THE APP DOES
 
-To test: allow microphone access when prompted, pick any surah, tap the
-microphone and recite aloud. Words turn green as they are recognised, red when
-skipped or mispronounced, and yellow on a Tajweed timing error. Tapping a
-highlighted word shows the expected versus recited duration in milliseconds.
+Recite Quran is a practice tool for people memorising and reciting the Quran. It
+listens through the microphone while the user recites aloud and highlights each
+word on screen as it is recognised: green when pronounced correctly, red when a
+word is skipped or misread, and yellow when the timing of a Tajweed rule (the
+prescribed elongation of Madd, Ghunnah or Shaddah) is outside the accepted
+range. Tapping a highlighted word shows the expected duration against the
+recited one in milliseconds.
 
-Recitation must be in Arabic; the acoustic model is trained on Quranic Arabic
-only and will not respond to other speech.
+Target audience: students of Quranic memorisation (hifz) and anyone revising
+their recitation, at any level. The problem it solves is that this practice
+normally requires a teacher listening in real time; the app gives immediate,
+private feedback when a teacher is not available. It is a practice aid and
+deliberately not a religious authority — it reports measured timing, and does
+not issue rulings on the validity of anyone's recitation.
+
+HOW TO TEST IT
+
+No account, login, or credentials are needed. There is no paid content, no
+subscription, no in-app purchase, no advertising, and no user-generated content.
+
+1. Launch the app and allow microphone access when prompted.
+2. Pick any surah from the list.
+3. Tap the microphone button and recite the verses aloud.
+4. Words highlight as you recite: green correct, red skipped or misread,
+   yellow a Tajweed timing error. Tap a yellow or red word to see the detail.
+
+IMPORTANT FOR THE REVIEWER: the app only responds to recited Quranic Arabic —
+the acoustic model is trained on that alone and will not react to other speech
+or other languages. If the reviewer does not recite Arabic, the app can still be
+tested fully by playing any recording of the chosen verses aloud from a second
+device held near the iPhone. The app responds to that audio exactly as it does
+to a live voice, and the highlighting can be observed as it happens.
+
+EXTERNAL SERVICES USED
+
+None. The app is entirely self-contained and works with the device offline or in
+airplane mode.
+
+- Speech recognition runs on device using a Zipformer CTC acoustic model bundled
+  inside the app and executed locally through ONNX Runtime (CoreML on iOS).
+- There is no server, no API, no data provider, no authentication service, no
+  payment processor and no third-party AI service. The app contains no
+  networking code at all.
+- No analytics or advertising SDK is present.
+- Recitation audio is processed in memory on the device, is never written to
+  disk, and never leaves the device.
+
+REGIONAL DIFFERENCES
+
+None. The app behaves identically in every region. The interface is available in
+Arabic and English, selected from the device language; no feature, content or
+behaviour varies by country.
+
+THIRD-PARTY MATERIAL AND AUTHORISATION
+
+The app bundles three pieces of third-party material, all used within their
+licences, and all of which permit free distribution:
+
+1. Quranic typeface — KFGQPC Hafs Smart, King Fahd Glorious Quran Printing
+   Complex. Its end-user licence states: "Permission is hereby granted, Free of
+   Cost, to any person obtaining a copy of this Font accompanying this license,
+   the rights to Use, Copy, Distribute", conditional on the font not being sold,
+   modified or reverse engineered. The font is embedded unmodified, and the app
+   is free, so both conditions are met.
+
+2. Acoustic model — Quran-Lab zipformer_p-arabic-v3, released under the
+   Quran-Lab No-Profit License 1.2. That licence permits use only in software
+   that is free to end users and never monetised. This app is free with no
+   adverts and no in-app purchases, which is what the licence requires.
+
+3. Quranic text and phonetic index — derived from the open-source
+   quran-transcript project and the Quranic Universal Aligner, both credited in
+   the app's public source repository. The recited text is the Quran itself.
+
+The app is open source and its full licence, which likewise forbids charging for
+it in any form, is published at github.com/Iam-Muslim/Natlu.
+
+PERMISSIONS
+
+Microphone only, requested at the point the user first starts a recitation
+session, and used solely to recognise the words being recited. No other
+permission is requested, and no data is collected.
