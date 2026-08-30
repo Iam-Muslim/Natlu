@@ -1,0 +1,8 @@
+First App Store release.
+
+• Real-time word-by-word recitation tracking
+• Tajweed and Madd timing checked to the millisecond
+• Voice search to jump to any ayah
+• Hifz revision and hide mode
+
+All of it runs on your device, with no internet connection.
