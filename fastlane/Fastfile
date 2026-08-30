@@ -122,18 +122,26 @@ def set_build(marketing, n)
   UI.message("pubspec → #{marketing}+#{n}")
 end
 
+# The highest build number Apple has seen, whatever state it is in.
+#
+# Deliberately not `latest_testflight_build_number`: that reports 0 even when a
+# VALID build exists, which would hand out a number already in use. Expired and
+# still-processing builds count too — Apple rejects a repeat regardless.
+def max_testflight_build
+  asc_token!
+  app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+  return 0 if app.nil?
+  app.get_builds.map { |b| b.version.to_i }.max || 0
+rescue => e
+  UI.important("TestFlight lookup failed (#{e.message[0..60]}) — treating as 0")
+  0
+end
+
 # One monotonic build number: 1 + max(what TestFlight already has, what pubspec
 # says). Apple rejects a re-used build number at the very end of an upload, long
 # after the archive is built, so it is worth getting right up front.
 def next_build
-  tf = begin
-    latest_testflight_build_number(
-      api_key: asc_key, app_identifier: BUNDLE_ID, initial_build_number: 0
-    ).to_i
-  rescue => e
-    UI.important("TestFlight lookup failed (#{e.message[0..60]}) — treating as 0")
-    0
-  end
+  tf = max_testflight_build
   local = pubspec_version[1]
   nxt = [tf, local].max + 1
   UI.message("build numbers — TestFlight:#{tf}  pubspec:#{local}  → next:#{nxt}")
