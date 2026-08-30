@@ -9,6 +9,11 @@ Two ways to ship this app to Apple:
 
 Both paths run the same fastlane lanes, so they cannot drift apart.
 
+> **Shipping from Windows?** Read
+> **[RELEASING_WITHOUT_A_MAC.md](RELEASING_WITHOUT_A_MAC.md)** instead — it is
+> the short version, and everything in it needs only git. This page is the
+> reference for whoever maintains the signing setup on the Mac.
+
 ---
 
 ## App identity
