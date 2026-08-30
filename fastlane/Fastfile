@@ -11,8 +11,8 @@
 #   bundle exec fastlane release_ios       # latest TestFlight build → App Store review
 #   bundle exec fastlane ci_bundle         # collect the GitHub Actions secrets
 #
-# Apple identity is the same one behind Al Najma and Jibly, so the App Store
-# Connect API key in secrets/ is shared with those projects.
+# The Apple identity is shared with the team's other apps, so the App Store
+# Connect API key in secrets/ is used by more than this project.
 #
 # Run with the Homebrew Ruby (fastlane needs Ruby 3+), not macOS's built-in 2.6:
 #   PATH="/opt/homebrew/opt/ruby/bin:$PATH" bundle exec fastlane ...
@@ -539,7 +539,7 @@ desc "Mint a CI-only Apple Distribution certificate (no keychain prompt)"
 # generate ourselves and keep as a file. Nothing touches the login keychain and
 # the lane can be re-run whenever the certificate expires.
 #
-# The existing certificate that Al Najma, Jibly and the rest sign with is left
+# The existing certificate that the team's other apps sign with is left
 # completely alone. Adding a certificate does not affect it; only revoking would.
 lane :make_ci_cert do |o|
   key = asc_key

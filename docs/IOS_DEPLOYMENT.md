@@ -20,7 +20,7 @@ Both paths run the same fastlane lanes, so they cannot drift apart.
 | App Store name | Recite Quran - اتلو القران |
 | Display name | `Recite Quran` (English), `اتلو القران` (Arabic) |
 | Minimum iOS | 15.0 |
-| App Store Connect API key | `ZJUS9VF3D6` (shared with the Al Najma and Jibly projects) |
+| App Store Connect API key | `ZJUS9VF3D6` (shared with the team's other apps) |
 
 The ASR model is **not** in the repo. It is a 69 MB asset on the
 [`models-latest`](https://github.com/Iam-Muslim/Natlu/releases/tag/models-latest)
@@ -103,9 +103,9 @@ Two things it is careful about:
   there are two, and reuses whatever is already in `secrets/ci/` instead of
   minting another. Delete that directory to deliberately start over.
 - **Your original certificate is never touched.** Adding a certificate does not
-  affect an existing one; only revoking does. Al Najma, Jibly and the rest keep
-  signing exactly as before. If the CI certificate is ever compromised, revoke
-  just that one — nothing else is affected.
+  affect an existing one; only revoking does. Every other app on this Apple
+  team keeps signing exactly as before. If the CI certificate is ever
+  compromised, revoke just that one — nothing else is affected.
 
 The profile is built through the App Store Connect API rather than `sigh`,
 because `sigh` only attaches certificates whose private key it can find in the
