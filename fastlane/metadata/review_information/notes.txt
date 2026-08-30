@@ -9,11 +9,10 @@ range. Tapping a highlighted word shows the expected duration against the
 recited one in milliseconds.
 
 Target audience: students of Quranic memorisation (hifz) and anyone revising
-their recitation, at any level. The problem it solves is that this practice
-normally requires a teacher listening in real time; the app gives immediate,
-private feedback when a teacher is not available. It is a practice aid and
-deliberately not a religious authority — it reports measured timing, and does
-not issue rulings on the validity of anyone's recitation.
+their recitation. This practice normally needs a teacher listening in real
+time; the app gives that feedback privately when one is not available. It is a
+practice aid, not a religious authority: it reports measured timing and does
+not rule on the validity of anyone's recitation.
 
 HOW TO TEST IT
 
@@ -38,20 +37,18 @@ EXTERNAL SERVICES USED
 None. The app is entirely self-contained and works with the device offline or in
 airplane mode.
 
-- Speech recognition runs on device using a Zipformer CTC acoustic model bundled
-  inside the app and executed locally through ONNX Runtime (CoreML on iOS).
-- There is no server, no API, no data provider, no authentication service, no
-  payment processor and no third-party AI service. The app contains no
-  networking code at all.
-- No analytics or advertising SDK is present.
-- Recitation audio is processed in memory on the device, is never written to
-  disk, and never leaves the device.
+- Speech recognition runs on device: a Zipformer CTC acoustic model bundled in
+  the app, executed locally through ONNX Runtime (CoreML on iOS).
+- No server, API, data provider, authentication service, payment processor or
+  third-party AI service. The app contains no networking code at all, and no
+  analytics or advertising SDK.
+- Recitation audio is processed in memory, never written to disk, and never
+  leaves the device.
 
 REGIONAL DIFFERENCES
 
-None. The app behaves identically in every region. The interface is available in
-Arabic and English, selected from the device language; no feature, content or
-behaviour varies by country.
+None. The app behaves identically everywhere. The interface follows the device
+language (Arabic or English); no feature or content varies by country.
 
 THIRD-PARTY MATERIAL AND AUTHORISATION
 
@@ -74,11 +71,11 @@ licences, and all of which permit free distribution:
    quran-transcript project and the Quranic Universal Aligner, both credited in
    the app's public source repository. The recited text is the Quran itself.
 
-The app is open source and its full licence, which likewise forbids charging for
-it in any form, is published at github.com/Iam-Muslim/Natlu.
+The app is open source; its licence likewise forbids charging for it in any
+form. Published at github.com/Iam-Muslim/Natlu.
 
 PERMISSIONS
 
-Microphone only, requested at the point the user first starts a recitation
-session, and used solely to recognise the words being recited. No other
-permission is requested, and no data is collected.
+Microphone only, requested when the user first starts a recitation session and
+used solely to recognise the words recited. Nothing else is requested, and no
+data is collected.
