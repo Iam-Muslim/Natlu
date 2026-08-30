@@ -37,13 +37,29 @@ iOS: bump build number, build, upload to TestFlight
 
 Re-upload an already-built IPA to TestFlight (no rebuild)
 
+### internal
+
+```sh
+[bundle exec] fastlane internal
+```
+
+Send the latest build to the 'internal' TestFlight group (no review)
+
+### external
+
+```sh
+[bundle exec] fastlane external
+```
+
+Send the latest build to the 'external' TestFlight group (Apple beta review)
+
 ### beta
 
 ```sh
 [bundle exec] fastlane beta
 ```
 
-Distribute the latest processed build to the external TestFlight group
+Alias for `external`, kept so older notes and tags still work
 
 ### release_ios
 
@@ -75,7 +91,7 @@ Reissue the App Store provisioning profile and install it locally
 [bundle exec] fastlane ci_bundle
 ```
 
-Collect the four values GitHub Actions needs, ready to add as secrets
+Install the four GitHub Actions secrets (upload:true), or write them out
 
 ### ci_ship_ios
 

@@ -1,0 +1,10 @@
+The app runs entirely on device. There is no account, no sign-in and no network
+connection required; recitation audio is never transmitted or stored.
+
+To test: allow microphone access when prompted, pick any surah, tap the
+microphone and recite aloud. Words turn green as they are recognised, red when
+skipped or mispronounced, and yellow on a Tajweed timing error. Tapping a
+highlighted word shows the expected versus recited duration in milliseconds.
+
+Recitation must be in Arabic; the acoustic model is trained on Quranic Arabic
+only and will not respond to other speech.

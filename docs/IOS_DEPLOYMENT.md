@@ -154,7 +154,8 @@ export PATH="/opt/homebrew/opt/ruby/bin:$PATH"
 
 bundle exec fastlane ios_status    # what is on TestFlight right now
 bundle exec fastlane ship_ios      # bump build number, build, upload to TestFlight
-bundle exec fastlane beta          # once processed: send to external testers
+bundle exec fastlane internal      # confirm the internal group has it
+bundle exec fastlane external      # send it to the external testers
 bundle exec fastlane release_ios   # submit to App Store review
 ```
 
@@ -184,8 +185,26 @@ The tag is `ios-<action>-<version>`:
 |---|---|---|
 | `ios-unsigned-1` | Compiles only. A smoke test that the app still builds. | no |
 | `ios-testflight-1.0.3` | Builds a signed IPA and uploads it to TestFlight. | yes |
-| `ios-beta-1.0.3` | Sends the last processed build to the external testers group. | API key only |
+| `ios-internal-1.0.3` | Confirms the last build is with the `internal` group. | API key only |
+| `ios-external-1.0.3` | Sends the last build to the `external` group. | API key only |
 | `ios-appstore-1.0.3` | Submits the last TestFlight build to App Store review. | API key only |
+
+`ios-beta-*` still works as an alias for `ios-external-*`.
+
+### internal vs external
+
+The two TestFlight groups behave quite differently:
+
+**`internal`** — team members on the App Store Connect account, up to 100. It is
+configured to receive every build automatically, so a build is with them the
+moment Apple finishes processing it, with no review of any kind. There is
+nothing to assign: Apple's API actually rejects a manual assignment to such a
+group with *"Cannot add internal group to a build"*. The `internal` action
+recognises this and reports which build they already have rather than failing.
+
+**`external`** — anyone you invite, up to 10,000. The first build a group sees
+has to clear Apple's beta review, usually about a day. This one is a real
+assignment, and testers are emailed when it lands.
 
 When the last part looks like a version number it becomes the marketing version,
 overriding `pubspec.yaml` for that run. When it does not — `ios-unsigned-1` —
@@ -209,12 +228,21 @@ gym and fastlane logs are attached instead — that is the first place to look.
 ### The normal release sequence
 
 ```
-ios-testflight-X.Y.Z  →  wait for Apple to finish processing (5-30 min)
-                      →  ios-beta-X.Y.Z  →  ios-appstore-X.Y.Z
+ios-testflight-X.Y.Z   build and upload; the internal group has it as soon
+                       as Apple finishes processing (5-30 min)
+        ↓
+ios-external-X.Y.Z     hand it to the external testers (Apple beta review,
+                       about a day for a group's first build)
+        ↓
+ios-appstore-X.Y.Z     submit to App Store review
 ```
 
-`beta` and `appstore` do not rebuild anything. They act on the binary already
-sitting on TestFlight, so they finish in a couple of minutes.
+Only the first step builds anything. `internal`, `external` and `appstore` act
+on the binary already sitting on TestFlight, so they finish in a couple of
+minutes.
+
+Before `ios-appstore-*` will do anything, the listing has to be complete — see
+**App Store metadata** below. It refuses to submit while placeholders remain.
 
 ### Notes
 
@@ -226,6 +254,47 @@ sitting on TestFlight, so they finish in a couple of minutes.
 - Signing is switched from automatic to manual on the runner only, because a CI
   machine has no Xcode account to resolve a profile with. Your checkout is
   untouched.
+
+---
+
+## App Store metadata
+
+The listing text lives in `fastlane/metadata/` and is uploaded by the `appstore`
+action. It ships as a scaffold: the parts that are simply facts are filled in,
+and everything needing a human decision says `TODO`.
+
+```
+fastlane/metadata/
+├── primary_category.txt          EDUCATION
+├── copyright.txt                 TODO
+├── ar-SA/                        the listing's only locale
+│   ├── name.txt                  Recite Quran - اتلو القران
+│   ├── support_url.txt           the repo's issues page
+│   ├── marketing_url.txt         recitequran.pages.dev
+│   ├── subtitle.txt              TODO   (max 30 chars)
+│   ├── description.txt           TODO   (max 4000)
+│   ├── keywords.txt              TODO   (max 100 total, comma separated)
+│   ├── promotional_text.txt      TODO   (max 170, editable without a new build)
+│   ├── release_notes.txt         TODO   (max 4000)
+│   └── privacy_url.txt           TODO   (Apple rejects without a reachable page)
+└── review_information/
+    ├── notes.txt                 how to test the app — written, edit if you like
+    ├── demo_user.txt             empty, the app has no accounts
+    ├── demo_password.txt         empty
+    └── first_name / last_name / phone_number / email_address   TODO
+```
+
+**`release_ios` refuses to run while any `TODO` remains**, and lists the files
+still to fill. Placeholder text on a public listing is a worse outcome than a
+failed lane, so this is deliberate.
+
+To add English alongside Arabic, create `fastlane/metadata/en-US/` with the same
+files. Only `ar-SA` exists today because that is the listing's primary language.
+
+**Screenshots are not managed from here.** Apple requires them, but they are far
+easier to curate in App Store Connect than to keep in the repo, so
+`release_ios` passes `skip_screenshots`. Add them in App Store Connect before
+submitting or the submission is rejected.
 
 ---
 

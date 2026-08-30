@@ -9,10 +9,17 @@
 #
 #        git tag ios-testflight-1.0.3 && git push origin ios-testflight-1.0.3
 #
-#      The tag is  ios-<action>-<version>.  <action> is one of unsigned,
-#      testflight, beta or appstore. <version>, when it looks like a version
-#      number, is used as the marketing version; anything else (ios-unsigned-1)
-#      is just a label so the tag is unique.
+#      The tag is  ios-<action>-<version>.  <action> is one of:
+#
+#        unsigned    compile only, no secrets needed
+#        testflight  build a signed IPA and upload it
+#        internal    hand the last build to the internal testers, no review
+#        external    hand it to the external testers, needs Apple beta review
+#        appstore    submit the last build to App Store review
+#
+#      <version>, when it is exactly N.N or N.N.N, is used as the marketing
+#      version; anything else (ios-unsigned-1) is just a label so the tag is
+#      unique.
 #
 #   2. The Run workflow button on the Actions tab, if you prefer it.
 #
@@ -32,7 +39,8 @@ on:
         default: testflight
         options:
           - testflight   # build a signed IPA and upload it to TestFlight
-          - beta         # send the last processed build to external testers
+          - internal     # last build → internal testers, available immediately
+          - external     # last build → external testers, needs Apple beta review
           - appstore     # submit the last TestFlight build to App Store review
           - unsigned     # compile only, no secrets needed (a smoke test)
       marketing_version:
@@ -43,7 +51,9 @@ on:
     tags:
       - 'ios-unsigned-*'
       - 'ios-testflight-*'
-      - 'ios-beta-*'
+      - 'ios-internal-*'
+      - 'ios-external-*'
+      - 'ios-beta-*'       # kept as an alias for external
       - 'ios-appstore-*'
 
 # Two concurrent uploads would race for the same TestFlight build number.
@@ -66,7 +76,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # A tag push and a manual dispatch carry the same two settings in
       # different places. Normalise them here so every later step reads one
@@ -80,20 +90,26 @@ jobs:
             rest="${tag#ios-}"
             action="${rest%%-*}"
             version="${rest#*-}"
-            # The trailing part is only a version if it looks like one; for a
-            # tag such as ios-unsigned-1 it is just there to keep the tag unique.
-            case "$version" in
-              [0-9]*.[0-9]*.[0-9]*) ;;
-              *) version="" ;;
-            esac
+            # The trailing part is only a version if it is exactly N.N or N.N.N;
+            # in a tag like ios-unsigned-1 it is just there to keep the tag
+            # unique. The match has to be strict, because Apple rejects anything
+            # else as a marketing version and only says so at the very end of an
+            # upload -- a tag such as ios-testflight-1.0.3-rc1 would otherwise
+            # sail through here and waste a full build.
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+              version=""
+            fi
           else
             action="${{ github.event.inputs.action }}"
             version="${{ github.event.inputs.marketing_version }}"
           fi
 
+          # `beta` is the old name for `external`; accept it and normalise.
+          [ "$action" = "beta" ] && action="external"
+
           case "$action" in
-            unsigned|testflight|beta|appstore) ;;
-            *) echo "::error::Unknown action '$action'. Expected unsigned, testflight, beta or appstore." >&2; exit 1 ;;
+            unsigned|testflight|internal|external|appstore) ;;
+            *) echo "::error::Unknown action '$action'. Expected unsigned, testflight, internal, external or appstore." >&2; exit 1 ;;
           esac
 
           echo "action=$action"   >> "$GITHUB_OUTPUT"
@@ -145,7 +161,7 @@ jobs:
 
       - name: Import distribution certificate
         if: steps.cfg.outputs.action == 'testflight'
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
           p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
@@ -181,9 +197,13 @@ jobs:
         if: steps.cfg.outputs.action == 'testflight'
         run: bundle exec fastlane ci_ship_ios
 
+      - name: Distribute to internal testers
+        if: steps.cfg.outputs.action == 'internal'
+        run: bundle exec fastlane internal
+
       - name: Distribute to external testers
-        if: steps.cfg.outputs.action == 'beta'
-        run: bundle exec fastlane beta
+        if: steps.cfg.outputs.action == 'external'
+        run: bundle exec fastlane external
 
       - name: Submit to App Store review
         if: steps.cfg.outputs.action == 'appstore'
@@ -197,7 +217,7 @@ jobs:
 
       - name: Upload IPA
         if: steps.cfg.outputs.action == 'testflight'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: recite-quran-ios-ipa
           path: build/ios/ipa/*.ipa
@@ -206,7 +226,7 @@ jobs:
 
       - name: Upload fastlane logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fastlane-logs
           path: |

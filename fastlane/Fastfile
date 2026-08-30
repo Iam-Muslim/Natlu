@@ -6,7 +6,8 @@
 #   bundle exec fastlane make_ci_cert      # one-time / on expiry: CI signing identity
 #   bundle exec fastlane make_profile      # reissue the App Store profile
 #   bundle exec fastlane ship_ios          # bump + build + upload to TestFlight
-#   bundle exec fastlane beta              # latest processed build → external testers
+#   bundle exec fastlane internal          # latest build → internal testers (instant)
+#   bundle exec fastlane external          # latest build → external testers (Apple review)
 #   bundle exec fastlane release_ios       # latest TestFlight build → App Store review
 #   bundle exec fastlane ci_bundle         # collect the GitHub Actions secrets
 #
@@ -32,8 +33,9 @@ ASC_KEY_ID    = "ZJUS9VF3D6"
 ASC_ISSUER_ID = "2a31803e-fd97-4852-9a5d-0eea1a75b6dd"
 ASC_KEY_PATH  = "#{ROOT}/secrets/AuthKey_#{ASC_KEY_ID}.p8"
 
-GH_REPO        = "Iam-Muslim/Natlu"
-IOS_BETA_GROUP = "beta"        # TestFlight external group
+GH_REPO            = "Iam-Muslim/Natlu"
+IOS_INTERNAL_GROUP = "internal"   # team members, no review, instant
+IOS_EXTERNAL_GROUP = "external"   # invited testers, needs Apple beta review
 PROFILE_NAME   = "ReciteQuran AppStore"
 
 # The ASR model is a 69 MB release asset rather than a committed file, so a
@@ -247,31 +249,130 @@ lane :retry_upload_ios do |o|
   )
 end
 
-desc "Distribute the latest processed build to the external TestFlight group"
-lane :beta do
+# Hand the newest processed build to one TestFlight group.
+#
+# The two kinds behave very differently, which is why they are separate lanes
+# rather than one with a name argument:
+#
+#   internal — team members on the App Store Connect account, up to 100. The
+#              build is available the moment Apple finishes processing it, with
+#              no review of any kind.
+#   external — anyone you invite, up to 10,000, but the *first* build a group
+#              sees has to clear Apple's beta review first, which usually takes
+#              a day or so.
+# The newest build Apple has finished processing, as [version, build].
+#
+# `latest_testflight_build_number` reports 0 here even with a VALID build on
+# TestFlight, so the build is located through the API directly. Both numbers are
+# needed: pilot matches a build by version *and* build number, and a build that
+# is still PROCESSING cannot be distributed at all.
+def latest_processed_build
+  asc_token!
+  app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+  UI.user_error!("#{BUNDLE_ID} not found on App Store Connect") if app.nil?
+
+  build = app.get_builds(includes: "preReleaseVersion")
+             .reject(&:expired)
+             .select { |b| b.processing_state == "VALID" }
+             .max_by { |b| b.version.to_i }
+
+  UI.user_error!("No processed build on TestFlight yet — run ship_ios first") if build.nil?
+  [build.pre_release_version&.version, build.version]
+end
+
+def distribute_to(group_name, external:)
   key = asc_key
-  n = latest_testflight_build_number(api_key: key, app_identifier: BUNDLE_ID, initial_build_number: 0)
+  asc_token!
+
+  app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+  group = app.get_beta_groups.find { |g| g.name == group_name }
+  if group.nil?
+    have = app.get_beta_groups.map(&:name).join(", ")
+    UI.user_error!("No TestFlight group called '#{group_name}'. Groups on this app: #{have}")
+  end
+
+  version, build = latest_processed_build
+
+  # A group set to "automatically distribute builds" already has every build the
+  # moment Apple finishes processing it, and the API rejects a manual assignment
+  # outright — "Cannot add internal group to a build". That is the default for
+  # internal groups, so treat it as success rather than an error.
+  if group.has_access_to_all_builds
+    UI.success("'#{group_name}' receives every build automatically — #{version} build #{build} is already there.")
+    return build
+  end
+
+  UI.message("distributing #{version} build #{build} to '#{group_name}'")
   upload_to_testflight(
-    api_key: key, app_identifier: BUNDLE_ID,
-    distribute_only: true, distribute_external: true,
-    groups: [IOS_BETA_GROUP], notify_external_testers: true,
-    build_number: n.to_s
+    api_key: key,
+    app_identifier: BUNDLE_ID,
+    # Without this pilot stops to ask "appletvos, ios, osx, xros" on stdin,
+    # which on a runner just hangs until the job times out.
+    app_platform: "ios",
+    distribute_only: true,
+    distribute_external: external,
+    groups: [group_name],
+    # Only external testers get an email; internal testers see it immediately.
+    notify_external_testers: external,
+    app_version: version,
+    build_number: build
   )
-  UI.success("✅ build #{n} → external '#{IOS_BETA_GROUP}' (Apple beta review).")
+  build
+end
+
+desc "Send the latest build to the 'internal' TestFlight group (no review)"
+lane :internal do
+  n = distribute_to(IOS_INTERNAL_GROUP, external: false)
+  UI.success("✅ build #{n} → '#{IOS_INTERNAL_GROUP}' — available to the team now.")
+end
+
+desc "Send the latest build to the 'external' TestFlight group (Apple beta review)"
+lane :external do
+  n = distribute_to(IOS_EXTERNAL_GROUP, external: true)
+  UI.success("✅ build #{n} → '#{IOS_EXTERNAL_GROUP}' — pending Apple beta review.")
+end
+
+desc "Alias for `external`, kept so older notes and tags still work"
+lane :beta do
+  external
+end
+
+METADATA_DIR = "#{ROOT}/fastlane/metadata"
+
+# The metadata scaffold ships with TODO placeholders. Uploading those to Apple
+# would put them on the public listing, so refuse while any remain and name the
+# files that still need filling.
+def assert_metadata_filled!
+  pending = Dir.glob("#{METADATA_DIR}/**/*.txt").select do |f|
+    File.read(f).lstrip.start_with?("TODO")
+  end
+  return if pending.empty?
+
+  UI.user_error!(
+    "#{pending.count} metadata file(s) still contain placeholder text:\n" +
+    pending.map { |f| "  fastlane/metadata/#{f.sub("#{METADATA_DIR}/", '')}" }.sort.join("\n") +
+    "\n\nFill them in, then run this lane again."
+  )
 end
 
 desc "Submit the latest TestFlight build to App Store review"
 lane :release_ios do
   key = asc_key
+  assert_metadata_filled!
   marketing, = pubspec_version
   n = latest_testflight_build_number(api_key: key, app_identifier: BUNDLE_ID, initial_build_number: 0)
+  UI.user_error!("No processed build on TestFlight yet — run ship_ios first") if n.to_i.zero?
+
+  # Screenshots are deliberately not managed from here: Apple requires them for
+  # submission, but they are easier to curate in App Store Connect than to keep
+  # in the repo. Add them there before submitting.
   upload_to_app_store(
     api_key: key,
     app_identifier: BUNDLE_ID,
     app_version: marketing,
     build_number: n.to_s,
     platform: "ios",
-    metadata_path: "#{ROOT}/fastlane/metadata",
+    metadata_path: METADATA_DIR,
     skip_binary_upload: true,
     skip_screenshots: true,
     overwrite_screenshots: false,
