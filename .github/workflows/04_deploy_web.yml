@@ -26,8 +26,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: landing_page/package-lock.json
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -50,25 +48,23 @@ jobs:
         env:
           SUBHAN_ALLAH: ${{ secrets.SUBHAN_ALLAH }}
         run: |
-          mkdir -p landing_page/public/recite
-          cp -R build/web/* landing_page/public/recite/
-          mkdir -p landing_page/functions
+          mkdir -p landing_page/recite
+          cp -R build/web/* landing_page/recite/
+          mkdir -p functions landing_page/functions
+          cp web/download-model.js functions/download-model.js
           cp web/download-model.js landing_page/functions/download-model.js
-          sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" landing_page/functions/download-model.js
-
-      - name: Install Node dependencies & Build Landing Page
-        working-directory: landing_page
-        run: |
-          npm ci
-          npm run build
+          if [ -n "${SUBHAN_ALLAH}" ]; then
+            sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" functions/download-model.js 2>/dev/null || true
+            sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" landing_page/functions/download-model.js 2>/dev/null || true
+          fi
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy landing_page/dist --project-name=recitequran
-        if: env.CLOUDFLARE_API_TOKEN != ''
+          command: pages deploy landing_page --project-name=recitequran
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -18,11 +18,11 @@ touch assets/model/zipformer_p_arabic_v3.int8.onnx
 flutter pub get
 flutter build web --release --base-href "/recite/"
 
-# 3. Copy Flutter App to Landing Page Public Folder
-echo "=== [2/3] Copying Flutter App into React Landing Page ==="
-mkdir -p landing_page/public/recite
-cp -R build/web/* landing_page/public/recite/
-rm -f landing_page/public/recite/build.sh
+# 3. Copy Flutter App to Landing Page
+echo "=== [2/2] Copying Flutter App into Landing Page ==="
+mkdir -p landing_page/recite
+cp -R build/web/* landing_page/recite/
+rm -f landing_page/recite/build.sh
 
 # 4. Copy Cloudflare Functions into place
 echo "=== Copying Cloudflare Functions ==="
@@ -32,9 +32,4 @@ cp web/download-model.js landing_page/functions/download-model.js
 mkdir -p functions
 cp web/download-model.js functions/download-model.js
 
-# 5. Build React Landing Page
-echo "=== [3/3] Building React Landing Page ==="
-cd landing_page
-npm ci
-npm run build
-echo "=== Build Complete! Output is in landing_page/dist ==="
+echo "=== Build Complete! Output is in landing_page/ ==="
