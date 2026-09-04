@@ -37,9 +37,7 @@ migrate_working_dir/
 
 # Web & Landing Page related
 lib/generated_plugin_registrant.dart
-landing_page/node_modules/
-landing_page/dist/
-landing_page/public/recite/
+landing_page/recite/
 
 # Symbolication related
 app.*.symbols

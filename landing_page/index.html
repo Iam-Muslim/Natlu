@@ -1,31 +1,970 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#059669" />
-    <meta name="description" content="استمع وتتبع تلاوة القرآن العظيم على جهازك بدون إنترنت." />
-    
-    <!-- iOS Safari Home Screen Icons -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="اتلو القران" />
-    <meta name="google-site-verification" content="zAp3YAcLDGYMGkdq7T4FL1Pli2wUq1uGVdFjkJNpY2s" />
-    <meta name="google-site-verification" content="iX8XIi8vexUo9EkVFykS-nkfyBKxMUl0kJfq_AkFuTQ" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  
+  <title>اتلو القرآن — Recite Quran</title>
+  <meta name="description" content="تطبيق اتلو القرآن — مساعد ذكي لتصحيح التلاوة وتجويد القرآن الكريم في الوقت الفعلي مع تتبع الكلمات وفحص المدود.">
+  <meta name="theme-color" content="#070d09">
+  
+  <!-- PWA & Favicon -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="favicon.png">
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="Recite Quran - اتلو القران" />
-    <meta property="og:description" content="استمع وتتبع تلاوة القرآن الكريم بالذكاء الاصطناعي على جهازك بدون إنترنت." />
-    <meta property="og:image" content="/apple-touch-icon.png" />
+  <!-- Open Graph / Facebook / Telegram / WhatsApp / Reddit / LinkedIn -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://recitequran.pages.dev/">
+  <meta property="og:title" content="اتلو القرآن — Recite Quran | مساعدك الذكي لتصحيح التلاوة والتجويد">
+  <meta property="og:description" content="تطبيق ذكي مجاني لتصحيح تلاوة القرآن الكريم في الوقت الفعلي مع كشف أخطاء النطق، فحص المدود، وتتبع الكلمات بدون إعلانات.">
+  <meta property="og:image" content="https://recitequran.pages.dev/assets/og-preview.png">
+  <meta property="og:image:secure_url" content="https://recitequran.pages.dev/assets/og-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="اتلو القرآن — Recite Quran App Preview">
+  <meta property="og:site_name" content="اتلو القرآن — Recite Quran">
+  <meta property="og:locale" content="ar_AR">
+  <meta property="og:locale:alternate" content="en_US">
 
-    <title>Recite Quran - اتلو القران</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+  <!-- Twitter / X Cards -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://recitequran.pages.dev/">
+  <meta name="twitter:title" content="اتلو القرآن — Recite Quran | مساعدك الذكي لتصحيح التلاوة والتجويد">
+  <meta name="twitter:description" content="تطبيق ذكي مجاني لتصحيح تلاوة القرآن الكريم في الوقت الفعلي مع كشف أخطاء النطق، فحص المدود، وتتبع الكلمات بدون إعلانات.">
+  <meta name="twitter:image" content="https://recitequran.pages.dev/assets/og-preview.png">
+
+  <!-- Preload Screenshots for Instant Loading & Zero Bandwidth on Repeat Visits -->
+  <link rel="preload" as="image" href="assets/qamar.png">
+  <link rel="preload" as="image" href="assets/fatiha.png">
+  <link rel="preload" as="image" href="assets/yusuf.png">
+  <link rel="preload" as="image" href="assets/search.png">
+  <link rel="preload" as="image" href="assets/ahzab.png">
+
+  <!-- Google Fonts: Amiri (Quranic), Cairo (Arabic UI), Inter (English UI) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #070d09;
+      --bg-gradient: radial-gradient(ellipse 90% 60% at 50% -5%, #0e1b13 0%, #070d09 75%);
+      --panel: #0c1510;
+      --panel-hover: #111d16;
+      
+      /* Burnished Warm Gold */
+      --gold: #c39a3f;
+      --gold-light: #d6af55;
+      --gold-dim: rgba(195, 154, 63, 0.12);
+      --gold-border: rgba(195, 154, 63, 0.22);
+
+      /* Eye-Comfort Warm Parchment Text */
+      --paper: #ece5d8;
+      --paper-dim: #b5af9f;
+      --mist: #88968b;
+      
+      /* Subtle Hairline Dividers */
+      --line: rgba(195, 154, 63, 0.18);
+      --line-subtle: rgba(236, 229, 216, 0.07);
+
+      /* Natural Organic Status Colors */
+      --status-green: #3eb469;
+      --status-green-bg: rgba(62, 180, 105, 0.12);
+      --status-green-border: rgba(62, 180, 105, 0.28);
+
+      --status-yellow: #dca32b;
+      --status-yellow-bg: rgba(220, 163, 43, 0.12);
+      --status-yellow-border: rgba(220, 163, 43, 0.28);
+
+      --status-red: #d95d5d;
+      --status-red-bg: rgba(217, 93, 93, 0.12);
+      --status-red-border: rgba(217, 93, 93, 0.28);
+
+      --font-quran: 'Amiri', serif;
+      --font-body: 'Cairo', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    html[lang="en"] {
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: var(--bg-gradient);
+      background-attachment: fixed;
+      color: var(--paper);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+      line-height: 1.5;
+      overflow-x: hidden;
+      padding-bottom: 24px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    /* ---------- UPPER TOOLBAR: RIGID 1-LINE HORIZONTAL & VERTICAL ALIGNMENT ---------- */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 54px;
+      background: rgba(7, 13, 9, 0.95);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line-subtle);
+    }
+
+    .header-inner {
+      max-width: 960px;
+      height: 100%;
+      margin: 0 auto;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative; /* Context for dead-center 50% alignment */
+      white-space: nowrap;
+    }
+
+    /* App Name: Small, Scalable, Secondary to the Ayah */
+    .brand {
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-body);
+      font-size: clamp(0.72rem, 1.2vw, 0.88rem);
+      font-weight: 600;
+      color: var(--paper-dim);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    .brand-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      border: 1px solid var(--gold-border);
+      flex-shrink: 0;
+      display: block;
+    }
+
+    #navBrand {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+      transition: all 160ms ease;
+    }
+
+    /* Ayah: DEAD-CENTER IN THE MIDDLE OF THE PAGE (100% aligned with buttons & phone) */
+    .header-ayah {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, calc(-50% - 1px));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-family: var(--font-quran);
+      font-size: clamp(1.02rem, 2.5vw, 1.35rem);
+      color: var(--gold-light);
+      line-height: 1;
+      font-weight: 700;
+      white-space: nowrap;
+      pointer-events: none;
+      direction: rtl !important;
+      unicode-bidi: isolate;
+      margin: 0;
+      padding: 0;
+      z-index: 1;
+    }
+
+    .lang-toggle {
+      height: 26px;
+      line-height: 24px;
+      padding: 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--gold-border);
+      background: var(--gold-dim);
+      color: var(--gold-light);
+      font-size: 0.75rem;
+      font-family: var(--font-body);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+      transition: all 160ms ease;
+    }
+
+    .lang-toggle:hover,
+    .lang-toggle:active {
+      background: rgba(195, 154, 63, 0.22);
+      border-color: var(--gold);
+      color: var(--paper);
+    }
+
+    /* As width decreases: App Name scales down / hides text so Ayah stays big, uncompressed, and centered */
+    @media (max-width: 600px) {
+      #navBrand {
+        display: none; /* Collapses app name to icon-only, so Ayah is 100% centered and never overlapped */
+      }
+      .header-inner {
+        padding: 0 10px;
+      }
+      .header-ayah {
+        font-size: clamp(0.92rem, 3.4vw, 1.15rem);
+      }
+    }
+
+    /* ---------- MAIN CONTAINER ---------- */
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 0 14px;
+    }
+
+    /* ---------- HERO SECTION (STORE BADGES & SHOWCASE) ---------- */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 22px 0 16px;
+    }
+
+    /* Store Badges Row */
+    .hero-stores {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .store-badge {
+      display: inline-block;
+      transition: transform 160ms ease, opacity 160ms ease;
+    }
+
+    .store-badge:active {
+      transform: scale(0.96);
+    }
+
+    .store-badge img {
+      height: 38px;
+      width: auto;
+      border-radius: 7px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* ---------- PHONE SHOWCASE (THUMB-FRIENDLY CONTROLS) ---------- */
+    .showcase-stage {
+      position: relative;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .phone-wrapper {
+      position: relative;
+      width: min(280px, 74vw);
+      max-width: 300px;
+      user-select: none;
+      touch-action: pan-y;
+    }
+
+    .phone-hardware {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1080 / 2340;
+      border-radius: 32px;
+      background: #030604;
+      padding: 6px;
+      box-shadow:
+        0 0 0 1.5px rgba(195, 154, 63, 0.24),
+        0 14px 40px -10px rgba(0, 0, 0, 0.95);
+    }
+
+    .phone-screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 26px;
+      overflow: hidden;
+      background: #000;
+      cursor: grab;
+    }
+
+    .phone-screen:active {
+      cursor: grabbing;
+    }
+
+    .phone-screen img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      opacity: 0;
+      transition: opacity 240ms ease-out;
+      pointer-events: none;
+    }
+
+    .phone-screen img.active {
+      opacity: 1;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 34%;
+      height: 13px;
+      background: #030604;
+      border-radius: 0 0 8px 8px;
+      z-index: 5;
+    }
+
+    /* Thumb Controls Below Mockup */
+    .showcase-nav {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 300px;
+    }
+
+    .btn-nav-arrow {
+      width: 34px;
+      height: 34px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--gold-light);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 160ms ease;
+    }
+
+    .btn-nav-arrow:hover,
+    .btn-nav-arrow:active {
+      background: var(--gold);
+      color: #070d09;
+      transform: scale(1.05);
+    }
+
+    .btn-nav-arrow svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .showcase-caption {
+      flex-grow: 1;
+      text-align: center;
+      min-height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .caption-text {
+      font-family: var(--font-quran);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--paper);
+      line-height: 1.25;
+    }
+
+    .showcase-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .showcase-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--line-subtle);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      transition: all 180ms ease;
+    }
+
+    .showcase-dot.active {
+      background: var(--gold);
+      transform: scale(1.25);
+    }
+
+    /* ---------- COMPACT 4 DOWN BOXES (FOR ANDROID SCREENS) ---------- */
+    .features-section {
+      padding: 18px 0 6px;
+      border-top: 1px solid var(--line-subtle);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .feature-card {
+      background: var(--panel);
+      border: 1px solid var(--line-subtle);
+      border-radius: 10px;
+      padding: 9px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 180ms ease;
+    }
+
+    .feature-card:hover {
+      border-color: var(--line);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+    }
+
+    .card-mini-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      color: var(--gold-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-mini-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .card-title {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--paper);
+      line-height: 1.25;
+    }
+
+    .card-desc {
+      color: var(--mist);
+      font-size: 0.74rem;
+      line-height: 1.38;
+    }
+
+    /* Micro Status Pills */
+    .status-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+
+    .status-pill {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      line-height: 1.2;
+    }
+
+    .pill-green {
+      background: var(--status-green-bg);
+      color: var(--status-green);
+      border: 1px solid var(--status-green-border);
+    }
+
+    .pill-yellow {
+      background: var(--status-yellow-bg);
+      color: var(--status-yellow);
+      border: 1px solid var(--status-yellow-border);
+    }
+
+    .pill-red {
+      background: var(--status-red-bg);
+      color: var(--status-red);
+      border: 1px solid var(--status-red-border);
+    }
+
+    /* ---------- BOTTOM ACTIONS (SOURCE CODE BUTTON AT BOTTOM) ---------- */
+    .bottom-actions {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 16px 0 10px;
+    }
+
+    .btn-source-code {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 16px;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--paper);
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: all 160ms ease;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+    }
+
+    .btn-source-code:hover,
+    .btn-source-code:active {
+      border-color: var(--gold);
+      background: #111d16;
+      color: var(--gold-light);
+      transform: scale(0.97);
+    }
+
+    /* Small Screen Micro-Tuning */
+    @media (max-width: 380px) {
+      .phone-wrapper {
+        width: min(250px, 72vw);
+      }
+      .features-grid {
+        gap: 6px;
+      }
+      .feature-card {
+        padding: 8px 8px;
+      }
+      .card-title {
+        font-size: 0.8rem;
+      }
+      .card-desc {
+        font-size: 0.7rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .phone-screen img,
+      .showcase-dot,
+      .btn-nav-arrow,
+      .btn-source-code {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Upper Toolbar (Strictly Aligned Single-Line Header) -->
+  <header class="header">
+    <div class="header-inner">
+      <a href="#" class="brand">
+        <img src="app_icon.png" alt="اتلو القرآن" class="brand-icon">
+        <span id="navBrand">اتلو القرآن</span>
+      </a>
+
+      <!-- Ayah centered horizontally and vertically on the exact same line -->
+      <div class="header-ayah" id="headerAyah">
+        وَمَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ إِنْ أَجْرِيَ إِلَّا عَلَى رَبِّ الْعَالَمِينَ
+      </div>
+
+      <!-- Language Toggle -->
+      <button class="lang-toggle" id="langToggle" aria-label="Toggle language">
+        <span id="langToggleText">English</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Section (Title Removed as Requested) -->
+    <section class="hero">
+      <!-- Store Badges Row -->
+      <div class="hero-stores">
+        <!-- Google Play -->
+        <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank" rel="noopener noreferrer" class="store-badge" title="Google Play">
+          <img src="assets/badges/google_play.svg" alt="Get it on Google Play">
+        </a>
+
+        <!-- App Store -->
+        <a href="https://apps.apple.com/app/id6806614841" target="_blank" rel="noopener noreferrer" class="store-badge" title="App Store">
+          <img src="assets/badges/app_store.svg" alt="Download on the App Store">
+        </a>
+
+        <!-- Web App -->
+        <a href="recite/" class="store-badge" title="Web App">
+          <img src="assets/badges/web_app.svg" alt="Use Web App">
+        </a>
+      </div>
+
+      <!-- Phone Showcase (Thumb-Friendly Controls) -->
+      <div class="showcase-stage">
+        <div class="phone-wrapper" id="phoneWrapper">
+          <div class="phone-hardware">
+            <div class="phone-notch"></div>
+            <div class="phone-screen" id="phoneScreen">
+              <img src="assets/qamar.png" alt="محرك التجويد والمدود" class="active" data-index="0">
+              <img src="assets/fatiha.png" alt="تتبع الكلمات في الوقت الفعلي" data-index="1">
+              <img src="assets/yusuf.png" alt="تثبيت وتمرير الآية التلقائي" data-index="2">
+              <img src="assets/search.png" alt="البحث الصوتي الفوري عن الآيات" data-index="3">
+              <img src="assets/ahzab.png" alt="وضع القراءة الليلي" data-index="4">
+            </div>
+          </div>
+        </div>
+
+        <!-- Thumb Controls Below Mockup -->
+        <div class="showcase-nav">
+          <button class="btn-nav-arrow" id="btnPrev" aria-label="السابق">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="iconPrev">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+
+          <div class="showcase-caption">
+            <div class="caption-text" id="capLabel">محرك التجويد والمدود الصوتي</div>
+          </div>
+
+          <button class="btn-nav-arrow" id="btnNext" aria-label="التالي">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="iconNext">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Dot Indicators -->
+        <div class="showcase-dots" id="showcaseDots"></div>
+      </div>
+    </section>
+
+    <!-- Compact 4 Feature Boxes (Designed to fit neatly on Android screens) -->
+    <section class="features-section" id="features">
+      <div class="features-grid">
+        <!-- Box 1 -->
+        <div class="feature-card">
+          <div>
+            <div class="card-top">
+              <div class="card-mini-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                </svg>
+              </div>
+              <h2 class="card-title" id="f1Title">تتبع الكلمات في الوقت الفعلي</h2>
+            </div>
+            <p class="card-desc" id="f1Desc">
+              متابعة صوتية مباشرة لصوتك كلمة بكلمة مع تمييز لوني فوري لتوجيه القراءة:
+            </p>
+          </div>
+          <div class="status-pills">
+            <span class="status-pill pill-green" id="pillGreen">● صحيح</span>
+            <span class="status-pill pill-yellow" id="pillYellow">● ملاحظة تجويدية</span>
+            <span class="status-pill pill-red" id="pillRed">● خطأ/تخطي</span>
+          </div>
+        </div>
+
+        <!-- Box 2 -->
+        <div class="feature-card">
+          <div>
+            <div class="card-top">
+              <div class="card-mini-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 15 14"></polyline>
+                </svg>
+              </div>
+              <h2 class="card-title" id="f2Title">محرك التجويد والمدود الصوتي</h2>
+            </div>
+            <p class="card-desc" id="f2Desc">
+              فحص أزمنة المدود، وغنة النون والميم المشددتين، والشدة بمعايير التدوير القرآنية.
+            </p>
+          </div>
+        </div>
+
+        <!-- Box 3 -->
+        <div class="feature-card">
+          <div>
+            <div class="card-top">
+              <div class="card-mini-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <line x1="21" y1="21" x2="16" y2="16"></line>
+                </svg>
+              </div>
+              <h2 class="card-title" id="f3Title">البحث الصوتي الفوري عن الآيات</h2>
+            </div>
+            <p class="card-desc" id="f3Desc">
+              تلاوة أي مقطع ينقلك فوراً إلى موضع الآية وسياقها في السورة دون كتابة.
+            </p>
+          </div>
+        </div>
+
+        <!-- Box 4 -->
+        <div class="feature-card">
+          <div>
+            <div class="card-top">
+              <div class="card-mini-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                </svg>
+              </div>
+              <h2 class="card-title" id="f4Title">وضع الحفظ والمراجعة</h2>
+            </div>
+            <p class="card-desc" id="f4Desc">
+              إخفاء الآيات لتسهيل التسميع، مع ظهور الكلمات تباعاً عند تلاوتها بشكل صحيح.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Source Code Button at the Bottom -->
+    <div class="bottom-actions">
+      <a href="https://github.com/Iam-Muslim/ReciteQuran" target="_blank" rel="noopener noreferrer" class="btn-source-code" title="Source Code">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+        </svg>
+        <span id="sourceCodeLabel">الكود المصدري</span>
+      </a>
+    </div>
+  </main>
+
+  <!-- Bilingual Logic & Phone Carousel -->
+  <script>
+    const content = {
+      ar: {
+        dir: 'rtl',
+        lang: 'ar',
+        toggleText: 'English',
+        navBrand: 'اتلو القرآن',
+        sourceCode: 'الكود المصدري',
+        captions: [
+          'محرك التجويد والمدود الصوتي',
+          'تتبع الكلمات في الوقت الفعلي',
+          'تثبيت وتمرير الآية التلقائي',
+          'البحث الصوتي الفوري عن الآيات',
+          'وضع القراءة الليلي المريح'
+        ],
+        f1Title: 'تتبع الكلمات في الوقت الفعلي',
+        f1Desc: 'متابعة صوتية مباشرة لصوتك كلمة بكلمة مع تمييز لوني فوري لتوجيه القراءة:',
+        pillGreen: '● صحيح',
+        pillYellow: '● ملاحظة تجويدية',
+        pillRed: '● خطأ/تخطي',
+        f2Title: 'محرك التجويد والمدود الصوتي',
+        f2Desc: 'فحص أزمنة المدود، وغنة النون والميم المشددتين، والشدة بمعايير التدوير القرآنية.',
+        f3Title: 'البحث الصوتي الفوري عن الآيات',
+        f3Desc: 'تلاوة أي مقطع ينقلك فوراً إلى موضع الآية وسياقها في السورة دون كتابة.',
+        f4Title: 'وضع الحفظ والمراجعة',
+        f4Desc: 'إخفاء الآيات لتسهيل التسميع، مع ظهور الكلمات تباعاً عند تلاوتها بشكل صحيح.'
+      },
+      en: {
+        dir: 'ltr',
+        lang: 'en',
+        toggleText: 'العربية',
+        navBrand: 'Recite Quran',
+        sourceCode: 'Source Code',
+        captions: [
+          'Acoustic Tajweed & Madd Engine',
+          'Real-Time Word Tracking',
+          'Auto-Scroll & Active Verse Focus',
+          'Instant Voice Ayah Search',
+          'Comfortable Night Reading Theme'
+        ],
+        f1Title: 'Real-Time Word Tracking',
+        f1Desc: 'Real-time acoustic speech following word by word with instant color guidance:',
+        pillGreen: '● Correct',
+        pillYellow: '● Tajweed Nuance',
+        pillRed: '● Mistake/Skip',
+        f2Title: 'Acoustic Tajweed & Madd Engine',
+        f2Desc: 'Evaluates Madd elongation, Mushaddad Ghunnah, and Shaddah under Tadweer timing.',
+        f3Title: 'Instant Voice Ayah Search',
+        f3Desc: 'Recite any portion of any verse to jump directly to its Mushaf location without typing.',
+        f4Title: 'Hifz Revision & Hide Mode',
+        f4Desc: 'Conceal verse text to test memorization; words reveal progressively as you recite.'
+      }
+    };
+
+    let currentLang = localStorage.getItem('rq_lang') || 'ar';
+
+    function updateIconsForDir(isRtl) {
+      const iconPrev = document.getElementById('iconPrev');
+      const iconNext = document.getElementById('iconNext');
+      if (isRtl) {
+        iconPrev.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+        iconNext.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+      } else {
+        iconPrev.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+        iconNext.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+      }
+    }
+
+    function setLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem('rq_lang', lang);
+      const t = content[lang];
+
+      document.documentElement.lang = t.lang;
+      document.documentElement.dir = t.dir;
+
+      document.getElementById('langToggleText').textContent = t.toggleText;
+      document.getElementById('navBrand').textContent = t.navBrand;
+      document.getElementById('sourceCodeLabel').textContent = t.sourceCode;
+
+      document.getElementById('f1Title').textContent = t.f1Title;
+      document.getElementById('f1Desc').textContent = t.f1Desc;
+      document.getElementById('pillGreen').textContent = t.pillGreen;
+      document.getElementById('pillYellow').textContent = t.pillYellow;
+      document.getElementById('pillRed').textContent = t.pillRed;
+
+      document.getElementById('f2Title').textContent = t.f2Title;
+      document.getElementById('f2Desc').textContent = t.f2Desc;
+      document.getElementById('f3Title').textContent = t.f3Title;
+      document.getElementById('f3Desc').textContent = t.f3Desc;
+      document.getElementById('f4Title').textContent = t.f4Title;
+      document.getElementById('f4Desc').textContent = t.f4Desc;
+
+      // Note: Ayah always remains in original Arabic
+      updateIconsForDir(t.dir === 'rtl');
+      render();
+    }
+
+    document.getElementById('langToggle').addEventListener('click', () => {
+      setLanguage(currentLang === 'ar' ? 'en' : 'ar');
+    });
+
+    // ---------- Carousel & Thumb Controls ----------
+    const images = document.querySelectorAll('.phone-screen img');
+    const capLabel = document.getElementById('capLabel');
+    const dotsWrap = document.getElementById('showcaseDots');
+    let currentIndex = 0;
+    const total = images.length;
+    let timer = null;
+
+    // Generate Dots
+    dotsWrap.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const dot = document.createElement('button');
+      dot.className = 'showcase-dot' + (i === 0 ? ' active' : '');
+      dot.setAttribute('aria-label', 'Screen ' + (i + 1));
+      dot.addEventListener('click', () => goTo(i));
+      dotsWrap.appendChild(dot);
+    }
+    const dots = document.querySelectorAll('.showcase-dot');
+
+    function render() {
+      images.forEach(img => img.classList.toggle('active', Number(img.dataset.index) === currentIndex));
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
+      if (capLabel && content[currentLang]) {
+        capLabel.textContent = content[currentLang].captions[currentIndex];
+      }
+    }
+
+    function goTo(i) {
+      currentIndex = (i + total) % total;
+      render();
+      restartTimer();
+    }
+
+    function goPrev() {
+      if (document.documentElement.dir === 'rtl') {
+        goTo(currentIndex + 1);
+      } else {
+        goTo(currentIndex - 1);
+      }
+    }
+
+    function goNext() {
+      if (document.documentElement.dir === 'rtl') {
+        goTo(currentIndex - 1);
+      } else {
+        goTo(currentIndex + 1);
+      }
+    }
+
+    document.getElementById('btnPrev').addEventListener('click', goPrev);
+    document.getElementById('btnNext').addEventListener('click', goNext);
+
+    function restartTimer() {
+      clearInterval(timer);
+      timer = setInterval(() => {
+        goTo(currentIndex + 1);
+      }, 5000);
+    }
+
+    // Touch Swipe Handling
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const phoneScreen = document.getElementById('phoneScreen');
+
+    phoneScreen.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+
+    phoneScreen.addEventListener('touchend', e => {
+      const diffX = e.changedTouches[0].screenX - touchStartX;
+      const diffY = e.changedTouches[0].screenY - touchStartY;
+      
+      if (Math.abs(diffX) > 30 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX > 0) {
+          goNext();
+        } else {
+          goPrev();
+        }
+      }
+    }, { passive: true });
+
+    // Initialize
+    setLanguage(currentLang);
+    restartTimer();
+
+    // Register Service Worker for offline instant loading & bandwidth saving
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
 </html>
-
