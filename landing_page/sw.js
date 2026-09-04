@@ -1,6 +1,6 @@
 // Service Worker for Natlu / Recite Quran Landing Page
 // Provides instant loading and 100% offline caching to save bandwidth
-const CACHE_NAME = 'natlu-landing-v1';
+const CACHE_NAME = 'natlu-landing-v2';
 
 const ASSETS_TO_CACHE = [
   './',

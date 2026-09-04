@@ -299,27 +299,43 @@
     .phone-wrapper {
       position: relative;
       width: min(280px, 74vw);
-      max-width: 300px;
+      max-width: 280px;
+      aspect-ratio: 1080 / 2340;
       user-select: none;
       touch-action: pan-y;
+      flex-shrink: 0;
+    }
+
+    /* 100% Cross-Browser Fallback for browsers that do not support aspect-ratio */
+    @supports not (aspect-ratio: 1080 / 2340) {
+      .phone-wrapper::before {
+        content: '';
+        display: block;
+        padding-top: calc(2340 / 1080 * 100%);
+      }
     }
 
     .phone-hardware {
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       width: 100%;
-      aspect-ratio: 1080 / 2340;
+      height: 100%;
       border-radius: 32px;
       background: #030604;
-      padding: 6px;
       box-shadow:
         0 0 0 1.5px rgba(195, 154, 63, 0.24),
         0 14px 40px -10px rgba(0, 0, 0, 0.95);
     }
 
     .phone-screen {
-      position: relative;
-      width: 100%;
-      height: 100%;
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      right: 6px;
+      bottom: 6px;
       border-radius: 26px;
       overflow: hidden;
       background: #000;
@@ -332,7 +348,10 @@
 
     .phone-screen img {
       position: absolute;
-      inset: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
