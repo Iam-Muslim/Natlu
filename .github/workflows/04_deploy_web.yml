@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'ReciteQuran-*'
+      - 'ReciteQuran-الحمدلله'
     paths:
       - 'web/**'
       - 'landing_page/**'
