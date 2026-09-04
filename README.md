@@ -19,6 +19,10 @@
     <img src="docs/badges/google_play.svg" height="45" alt="Get it on Google Play" />
   </a>
   &nbsp;&nbsp;
+  <a href="https://apps.apple.com/app/id6806614841" target="_blank">
+    <img src="docs/badges/app_store.svg" height="45" alt="Download on the App Store" />
+  </a>
+  &nbsp;&nbsp;
   <a href="https://recitequran.pages.dev/recite" target="_blank">
     <img src="docs/badges/web_app.svg" height="45" alt="Web App" />
   </a>
