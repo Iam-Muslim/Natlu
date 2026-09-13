@@ -1,107 +1,82 @@
-// PWA Installation & Offline Service Worker Manager for Recite Quran (اتلو القران)
+// PWA Installation & Service Worker Manager for Recite Quran (اتلو القران)
 (function() {
-  let deferredInstallPrompt = null;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                       window.navigator.standalone === true ||
+                       window.location.search.includes('source=pwa');
 
-  function checkIsStandalone() {
-    return window.matchMedia('(display-mode: standalone)').matches || 
-           window.navigator.standalone === true ||
-           window.location.search.includes('source=pwa');
-  }
-
-  // 1. Register Service Worker for offline functionality, background updates & COOP/COEP support
+  // 1. Register Service Worker
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').then((reg) => {
-        console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
-        if (navigator.onLine) {
-          reg.update().catch(console.warn);
-        }
-      }).catch((err) => {
-        console.warn('[PWA] ServiceWorker registration failed:', err);
-      });
+      navigator.serviceWorker.register('sw.js')
+        .then((reg) => { if (navigator.onLine) reg.update().catch(() => {}); })
+        .catch((err) => console.warn('[PWA] ServiceWorker error:', err));
     });
   }
 
-  // If currently running in standalone/installed mode, do not show prompts
-  if (checkIsStandalone()) {
-    console.log('[PWA] Running in standalone PWA mode. Prompts suppressed.');
-    return;
+  if (isStandalone) return;
+
+  function isDismissed() {
+    return sessionStorage.getItem('pwa_banner_dismissed') === 'true';
   }
 
-  // Listen for successful installation from browser
-  window.addEventListener('appinstalled', () => {
-    console.log('[PWA] Application successfully installed to home screen.');
-    deferredInstallPrompt = null;
-    const banner = document.getElementById('pwa-install-banner');
-    const iosBanner = document.getElementById('pwa-ios-banner');
-    if (banner) banner.style.display = 'none';
-    if (iosBanner) iosBanner.style.display = 'none';
-  });
+  function dismissBanner(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+    sessionStorage.setItem('pwa_banner_dismissed', 'true');
+  }
 
-  // 2. Android / Windows / Chromium Automatic Install Prompt
+  // 2. Chromium / Android / Desktop Install Prompt
+  let deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    deferredInstallPrompt = e;
-    console.log('[PWA] beforeinstallprompt captured.');
-    setTimeout(showInstallBanner, 1500);
+    deferredPrompt = e;
+    if (isDismissed()) return;
+
+    setTimeout(() => {
+      const banner = document.getElementById('pwa-install-banner');
+      const btn = document.getElementById('pwa-install-btn');
+      const close = document.getElementById('pwa-close-btn');
+
+      if (banner && !isDismissed()) {
+        banner.style.display = 'block';
+        if (btn) {
+          btn.onclick = async () => {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              await deferredPrompt.userChoice;
+              deferredPrompt = null;
+              banner.style.display = 'none';
+            }
+          };
+        }
+        if (close) close.onclick = () => dismissBanner('pwa-install-banner');
+      }
+    }, 1500);
   });
 
-  function showInstallBanner() {
-    if (checkIsStandalone()) return;
-    if (sessionStorage.getItem('pwa_banner_dismissed') === 'true') return;
-
-    const banner = document.getElementById('pwa-install-banner');
-    const installBtn = document.getElementById('pwa-install-btn');
-    const closeBtn = document.getElementById('pwa-close-btn');
-
-    if (!banner || !installBtn) return;
-    banner.style.display = 'block';
-
-    installBtn.onclick = async () => {
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        const choiceResult = await deferredInstallPrompt.userChoice;
-        console.log(`[PWA] Install prompt outcome: ${choiceResult.outcome}`);
-        deferredInstallPrompt = null;
-        banner.style.display = 'none';
-      }
-    };
-
-    if (closeBtn) {
-      closeBtn.onclick = () => {
-        banner.style.display = 'none';
-        sessionStorage.setItem('pwa_banner_dismissed', 'true');
-      };
-    }
-  }
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    ['pwa-install-banner', 'pwa-ios-banner'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  });
 
   // 3. iOS Safari Guided Install Prompt
-  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()) || 
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const ua = navigator.userAgent.toLowerCase();
+  const isIos = /iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = /safari/.test(ua) && !/crios|fxios|opios|edgios|chrome/.test(ua);
+  const isInApp = /(fban|fbav|instagram|twitter|line|whatsapp|snapchat|telegram)/i.test(ua);
 
-  const isInAppBrowser = /(FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Telegram)/i.test(navigator.userAgent);
-
-  if (isIos && !checkIsStandalone() && !isInAppBrowser) {
-    const isSafari = /safari/.test(navigator.userAgent.toLowerCase()) && 
-                     !/crios|fxios|opios|mercury|edgios/i.test(navigator.userAgent);
-    if (isSafari) {
-      setTimeout(() => {
-        if (checkIsStandalone()) return;
-        if (sessionStorage.getItem('pwa_banner_dismissed') === 'true') return;
-
-        const iosBanner = document.getElementById('pwa-ios-banner');
-        const iosCloseBtn = document.getElementById('pwa-ios-close-btn');
-        if (iosBanner) {
-          iosBanner.style.display = 'block';
-          if (iosCloseBtn) {
-            iosCloseBtn.onclick = () => {
-              iosBanner.style.display = 'none';
-              sessionStorage.setItem('pwa_banner_dismissed', 'true');
-            };
-          }
-        }
-      }, 2500);
-    }
+  if (isIos && isSafari && !isInApp && !isDismissed()) {
+    setTimeout(() => {
+      if (isDismissed()) return;
+      const banner = document.getElementById('pwa-ios-banner');
+      const close = document.getElementById('pwa-ios-close-btn');
+      if (banner) {
+        banner.style.display = 'block';
+        if (close) close.onclick = () => dismissBanner('pwa-ios-banner');
+      }
+    }, 2500);
   }
 })();
-

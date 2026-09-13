@@ -66,6 +66,9 @@ assets/model/zipformer_p_arabic_v3.int8.onnx
 **/.vagrant/
 **/DerivedData/
 Icon?
+!icons/
+!**/icons/
+!**/icons/**
 **/Pods/
 **/.symlinks/
 ios/profile

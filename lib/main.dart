@@ -33,6 +33,7 @@ import 'state/app_state.dart';
 import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
 import 'ui/widgets/dialogs/permission_dialog.dart';
+import 'ui/widgets/dialogs/model_download_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // //logs
@@ -264,7 +265,15 @@ class _OrchestratorState extends State<_Orchestrator> {
   Future<void> _init() async {
     try {
       if (mounted) setState(() => _initStatus = 'Preparing ASR engine…');
-      _engine.initialize(); // Fire-and-forget in background Isolate
+      if (kIsWeb) {
+        // On Web, warm up silently only if model is already cached in IndexedDB.
+        // If not cached, wait until user consents via record or voice search.
+        _engine.isModelCached().then((isCached) {
+          if (isCached) _engine.initialize();
+        });
+      } else {
+        _engine.initialize(); // Fire-and-forget in background Isolate
+      }
 
       if (mounted) setState(() => _initStatus = 'Loading Quran database…');
       final service = QuranMetadataService();
@@ -320,6 +329,36 @@ class _OrchestratorState extends State<_Orchestrator> {
     }
   }
 
+  /// Ensures the ASR engine is initialized.
+  /// On Web, prompts for user bandwidth consent if the ~72MB model is not yet downloaded.
+  Future<bool> _ensureEngineReady() async {
+    if (_engine.isInitialized) return true;
+
+    if (kIsWeb) {
+      final bool isCached = await _engine.isModelCached();
+      if (!isCached && mounted) {
+        final bool? proceed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => const ModelDownloadDialog(),
+        );
+        if (proceed != true) {
+          return false;
+        }
+      }
+    }
+
+    if (!_engine.isInitialized) {
+      if (mounted) setState(() => _isEngineLoading = true);
+      try {
+        await _engine.initialize();
+      } finally {
+        if (mounted) setState(() => _isEngineLoading = false);
+      }
+    }
+    return _engine.isInitialized;
+  }
+
   /// Toggles recording on/off with hardware-safe locking.
   Future<void> _toggleRecord() async {
     if (_isToggling) return;
@@ -354,14 +393,10 @@ class _OrchestratorState extends State<_Orchestrator> {
           }
         }
 
-        // Ensure engine is ready (may still be initializing in background)
-        if (!_engine.isInitialized) {
-          if (mounted) setState(() => _isEngineLoading = true);
-          try {
-            await _engine.initialize();
-          } finally {
-            if (mounted) setState(() => _isEngineLoading = false);
-          }
+        // Ensure engine is ready (with consent dialog on Web if model is not yet downloaded)
+        if (!await _ensureEngineReady()) {
+          _isToggling = false;
+          return;
         }
 
         if (!kIsWeb) {
@@ -430,13 +465,9 @@ class _OrchestratorState extends State<_Orchestrator> {
         }
       }
 
-      if (!_engine.isInitialized) {
-        if (mounted) setState(() => _isEngineLoading = true);
-        try {
-          await _engine.initialize();
-        } finally {
-          if (mounted) setState(() => _isEngineLoading = false);
-        }
+      if (!await _ensureEngineReady()) {
+        _isToggling = false;
+        return;
       }
 
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
