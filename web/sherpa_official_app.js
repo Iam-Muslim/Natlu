@@ -33,17 +33,20 @@ window.isOfficialSherpaReady = () => isRecognizerReady;
 // Write asset bytes directly into Emscripten Virtual File System (VFS)
 window.writeSherpaAssetToVFS = function(filename, bytes) {
   try {
-    const fullPath = '/' + filename;
-    if (Module.FS) {
+    if (!Module.FS) return false;
+    const cleanName = filename.replace(/^(\.\/|\/)/, '');
+    const targets = ['/' + cleanName, './' + cleanName, cleanName];
+    for (const p of targets) {
       try {
-        if (Module.FS.analyzePath && Module.FS.analyzePath(fullPath).exists) {
-          Module.FS.unlink(fullPath);
+        if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
+          Module.FS.unlink(p);
         }
       } catch (_) {}
-      Module.FS.writeFile(fullPath, bytes);
-      return true;
+      try {
+        Module.FS.writeFile(p, bytes);
+      } catch (_) {}
     }
-    return false;
+    return true;
   } catch (e) {
     console.error(`[Sherpa] Failed to write ${filename} to VFS:`, e);
     return false;
@@ -51,11 +54,26 @@ window.writeSherpaAssetToVFS = function(filename, bytes) {
 };
 
 // Initialize the Sherpa OnlineRecognizer
-window.initSherpaRecognizer = function(modelFilename) {
-  try {
-    if (modelFilename) {
-      Module.modelPath = modelFilename.startsWith('./') ? modelFilename : ('./' + modelFilename);
+window.initSherpaRecognizer = function(modelFilename, tokensFilename) {
+  const cleanM = (modelFilename || 'zipformer_p_arabic_v3.int8.onnx').replace(/^(\.\/|\/)/, '');
+  const cleanT = (tokensFilename || 'quran_tokens.txt').replace(/^(\.\/|\/)/, '');
+
+  function cleanupVFS() {
+    if (Module.FS) {
+      ['/' + cleanM, './' + cleanM, cleanM].forEach((p) => {
+        try {
+          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
+            Module.FS.unlink(p);
+          }
+        } catch (_) {}
+      });
     }
+  }
+
+  try {
+    Module.modelPath = '/' + cleanM;
+    Module.tokensPath = '/' + cleanT;
+
     recognizer = createOnlineRecognizer(Module);
     if (!recognizer || !recognizer.handle) {
       throw new Error('OnlineRecognizer handle is invalid');
@@ -63,18 +81,13 @@ window.initSherpaRecognizer = function(modelFilename) {
     isRecognizerReady = true;
     console.log('[Sherpa] Recognizer created successfully.');
 
-    // Release VFS memory after model is loaded into C++ engine
-    try {
-      const modelFile = modelFilename || 'zipformer_p_arabic_v3.int8.onnx';
-      const fullPath = modelFile.startsWith('/') ? modelFile : ('/' + modelFile);
-      if (Module.FS && Module.FS.analyzePath && Module.FS.analyzePath(fullPath).exists) {
-        Module.FS.unlink(fullPath);
-      }
-    } catch (_) {}
-
+    // Release 72MB VFS memory immediately after C++ engine loads weights into memory
+    cleanupVFS();
     return true;
   } catch (e) {
     console.error('[Sherpa] Failed to create recognizer:', e);
+    // Always clean up VFS on error to prevent memory leaks / site lag
+    cleanupVFS();
     return false;
   }
 };

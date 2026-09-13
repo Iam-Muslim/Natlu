@@ -310,7 +310,8 @@ class OnlineRecognizer {
 }
 
 function createOnlineRecognizer(Module, myConfig) {
-  const modelPath = (Module && Module.modelPath) ? Module.modelPath : './zipformer_p_arabic_v3.int8.onnx';
+  const modelPath = (Module && Module.modelPath) ? Module.modelPath : '/zipformer_p_arabic_v3.int8.onnx';
+  const tokensPath = (Module && Module.tokensPath) ? Module.tokensPath : '/quran_tokens.txt';
 
   const recognizerConfig = myConfig || {
     featConfig: { sampleRate: 16000, featureDim: 80 },
@@ -320,7 +321,7 @@ function createOnlineRecognizer(Module, myConfig) {
       zipformer2Ctc: { model: modelPath },
       nemoCtc: { model: '' },
       toneCtc: { model: '' },
-      tokens: './quran_tokens.txt',
+      tokens: tokensPath,
       numThreads: 1,
       provider: 'cpu',
       debug: 0,

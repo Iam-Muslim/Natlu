@@ -181,7 +181,13 @@
       window.location.reload(true);
     };
 
+    let domObserver = null;
+
     window.hideAppSplash = function() {
+      if (domObserver) {
+        domObserver.disconnect();
+        domObserver = null;
+      }
       const splash = document.getElementById('splash-overlay');
       if (splash && splash.style.display !== 'none') {
         splash.style.opacity = '0';
@@ -196,13 +202,12 @@
     });
 
     // Fallback: Observe Flutter elements entering DOM
-    const observer = new MutationObserver(function() {
+    domObserver = new MutationObserver(function() {
       if (document.querySelector('flutter-view, flt-glass-pane')) {
         setTimeout(window.hideAppSplash, 100);
-        observer.disconnect();
       }
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    domObserver.observe(document.documentElement, { childList: true, subtree: true });
 
     // Graceful recovery if Flutter takes unusually long or encounters a stale cache block
     setTimeout(function() {
