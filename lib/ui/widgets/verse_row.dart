@@ -217,73 +217,75 @@ class _VerseRowState extends State<VerseRow> {
       );
     }
 
-    return GestureDetector(
-      onTap: widget.isAutoScrolling ? null : widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? c.gold.withValues(alpha: 0.07) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive
-                ? c.gold.withValues(alpha: 0.18)
-                : Colors.transparent,
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Verse Text ──
-            CustomPaint(
-              painter: _cachedSpans != null && isActive && widget.isRecording
-                  ? _ActiveWordHighlightPainter(
-                      words: words,
-                      ayah: widget.verse.ayah,
-                      controller: widget.controller,
-                      app: app,
-                      cachedSpans: _cachedSpans!,
-                    )
-                  : null,
-              foregroundPainter: _cachedSpans != null
-                  ? TajweedTooltipPainter(
-                      words: words,
-                      ayah: widget.verse.ayah,
-                      controller: widget.controller,
-                      app: app,
-                      cachedSpans: _cachedSpans!,
-                    )
-                  : null,
-              child: RichText(
-                textAlign: TextAlign.justify,
-                textDirection: TextDirection.rtl,
-                text: TextSpan(children: _cachedSpans),
-              ),
+    return ExcludeSemantics(
+      child: GestureDetector(
+        onTap: widget.isAutoScrolling ? null : widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          decoration: BoxDecoration(
+            color: isActive ? c.gold.withValues(alpha: 0.07) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isActive
+                  ? c.gold.withValues(alpha: 0.18)
+                  : Colors.transparent,
+              width: 1,
             ),
-
-            // ── Ayah Number Badge ──
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Verse Text ──
+              CustomPaint(
+                painter: _cachedSpans != null && isActive && widget.isRecording
+                    ? _ActiveWordHighlightPainter(
+                        words: words,
+                        ayah: widget.verse.ayah,
+                        controller: widget.controller,
+                        app: app,
+                        cachedSpans: _cachedSpans!,
+                      )
+                    : null,
+                foregroundPainter: _cachedSpans != null
+                    ? TajweedTooltipPainter(
+                        words: words,
+                        ayah: widget.verse.ayah,
+                        controller: widget.controller,
+                        app: app,
+                        cachedSpans: _cachedSpans!,
+                      )
+                    : null,
+                child: RichText(
+                  textAlign: TextAlign.justify,
+                  textDirection: TextDirection.rtl,
+                  text: TextSpan(children: _cachedSpans),
                 ),
-                child: Text(
-                  _ayahArabicDigits,
-                  style: TextStyle(
-                    fontFamily: 'HafsSmart',
-                    fontSize: app.fontSize * 0.75,
-                    fontWeight: FontWeight.w600,
-                    color: isActive ? c.gold : c.muted.withValues(alpha: 0.6),
+              ),
+
+              // ── Ayah Number Badge ──
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 0,
+                  ),
+                  child: Text(
+                    _ayahArabicDigits,
+                    style: TextStyle(
+                      fontFamily: 'HafsSmart',
+                      fontSize: app.fontSize * 0.75,
+                      fontWeight: FontWeight.w600,
+                      color: isActive ? c.gold : c.muted.withValues(alpha: 0.6),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -364,10 +366,14 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       ),
       paint,
     );
+    painter.dispose();
   }
 
   @override
   bool shouldRepaint(covariant _ActiveWordHighlightPainter oldDelegate) {
     return oldDelegate.ayah != ayah || oldDelegate.cachedSpans != cachedSpans;
   }
+
+  @override
+  bool shouldRebuildSemantics(covariant _ActiveWordHighlightPainter oldDelegate) => false;
 }
