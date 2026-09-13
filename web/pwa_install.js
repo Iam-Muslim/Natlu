@@ -4,8 +4,19 @@
                        window.navigator.standalone === true ||
                        window.location.search.includes('source=pwa');
 
-  // 1. Register Service Worker
+  // 1. Clean up legacy / conflicting service workers and register primary sw.js
   if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        const script = (reg.active && reg.active.scriptURL) ||
+                       (reg.installing && reg.installing.scriptURL) ||
+                       (reg.waiting && reg.waiting.scriptURL) || '';
+        if (script.includes('flutter_service_worker.js') || script.includes('coi-serviceworker')) {
+          reg.unregister().then(() => console.log('[PWA] Cleaned up legacy service worker:', script));
+        }
+      }
+    }).catch(() => {});
+
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js')
         .then((reg) => { if (navigator.onLine) reg.update().catch(() => {}); })

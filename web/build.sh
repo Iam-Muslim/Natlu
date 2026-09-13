@@ -19,10 +19,11 @@ echo "=== Building Flutter Web ==="
 mkdir -p assets/model
 touch assets/model/zipformer_p_arabic_v3.int8.onnx
 flutter pub get
-flutter build web --release --base-href "/recite/"
+flutter build web --release --base-href "/recite/" --pwa-strategy=none
 
 # 3. Copy Web App to landing_page/recite
 echo "=== Copying Flutter App into landing_page/recite ==="
+rm -rf landing_page/recite/*
 mkdir -p landing_page/recite
 cp -R build/web/* landing_page/recite/
 rm -f landing_page/recite/build.sh landing_page/recite/build_web.bat

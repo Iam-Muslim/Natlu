@@ -167,6 +167,20 @@
   </style>
 
   <script>
+    window.clearAppCacheAndReload = async function() {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) await reg.unregister();
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+      } catch (_) {}
+      window.location.reload(true);
+    };
+
     window.hideAppSplash = function() {
       const splash = document.getElementById('splash-overlay');
       if (splash && splash.style.display !== 'none') {
@@ -190,8 +204,24 @@
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Safety timeout fallback
-    setTimeout(window.hideAppSplash, 3500);
+    // Graceful recovery if Flutter takes unusually long or encounters a stale cache block
+    setTimeout(function() {
+      const splash = document.getElementById('splash-overlay');
+      if (splash && !document.querySelector('flutter-view, flt-glass-pane')) {
+        const spinner = document.querySelector('.splash-spinner');
+        if (spinner) spinner.style.display = 'none';
+        let errBox = document.getElementById('splash-retry-box');
+        if (!errBox) {
+          errBox = document.createElement('div');
+          errBox.id = 'splash-retry-box';
+          errBox.style.marginTop = '1.25rem';
+          errBox.style.textAlign = 'center';
+          errBox.innerHTML = '<div style="font-size:0.85rem;color:#4b5563;margin-bottom:0.75rem;direction:rtl;">استغرق التحميل وقتاً أطول من المعتاد...</div><button onclick="window.clearAppCacheAndReload()" style="background:#059669;color:#fff;border:none;padding:0.5rem 1.15rem;border-radius:9999px;font-weight:700;font-size:0.8rem;cursor:pointer;">تحديث وحذف الذاكرة المؤقتة • Reload</button>';
+          const content = document.querySelector('.splash-content');
+          if (content) content.appendChild(errBox);
+        }
+      }
+    }, 8000);
   </script>
 </head>
 <body>

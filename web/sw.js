@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
 // Provides offline precaching, dynamic caching, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v9';
+const CACHE_NAME = 'recite-quran-pwa-v10';
 
 const STATIC_PRECACHE = [
   './',
@@ -20,10 +20,8 @@ const STATIC_PRECACHE = [
   'flutter_bootstrap.js',
   'main.dart.js',
   'assets/FontManifest.json',
-  'assets/AssetManifest.json',
   'assets/AssetManifest.bin.json',
-  'assets/fonts/HafsSmart_08.ttf',
-  'assets/packages/recite_quran/assets/model/tokens.txt'
+  'assets/fonts/HafsSmart_08.ttf'
 ];
 
 self.addEventListener('install', (event) => {
@@ -48,7 +46,10 @@ self.addEventListener('activate', (event) => {
 });
 
 function addCoopCoepHeaders(response) {
-  if (!response || response.status === 0 || response.type === 'opaque' || [101, 204, 205, 304].includes(response.status)) {
+  if (!response || response.status !== 200 || response.type === 'opaque') {
+    return response;
+  }
+  if (response.headers.get('Cross-Origin-Opener-Policy') === 'same-origin') {
     return response;
   }
   const headers = new Headers(response.headers);
