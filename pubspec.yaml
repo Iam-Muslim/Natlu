@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  recite_quran: ^1.0.2
+  recite_quran:
+    path: ../ReciteQuran
 
   audio_session: ^0.2.4
   flutter_displaymode: ^0.7.0

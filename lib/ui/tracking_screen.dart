@@ -740,6 +740,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                     key: ValueKey('verse_${v.surah}_${v.ayah}'),
                     verse: v,
                     controller: widget.controller,
+                    isRecording: widget.isRecording,
                     isAutoScrolling: _isAutoScrolling,
                     onTap: () {
                       widget.controller.setManualAyah(v.surah, v.ayah);

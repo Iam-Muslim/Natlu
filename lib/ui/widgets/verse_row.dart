@@ -16,6 +16,7 @@ import 'tajweed_tutorial_word.dart';
 class VerseRow extends StatefulWidget {
   final QuranVerse verse;
   final HighlightingController controller;
+  final bool isRecording;
   final bool isAutoScrolling;
   final VoidCallback? onTap;
   final VoidCallback? onWordErrorTap;
@@ -24,6 +25,7 @@ class VerseRow extends StatefulWidget {
     super.key,
     required this.verse,
     required this.controller,
+    this.isRecording = false,
     required this.isAutoScrolling,
     this.onTap,
     this.onWordErrorTap,
@@ -73,6 +75,10 @@ class _VerseRowState extends State<VerseRow> {
       if (AppState.instance.isBlurMode) {
         _invalidate();
       }
+    }
+    if (oldWidget.isRecording != widget.isRecording) {
+      _invalidate();
+      _onStateChanged();
     }
   }
 
@@ -149,6 +155,7 @@ class _VerseRowState extends State<VerseRow> {
 
     int hash = isActive ? 1 : 0;
     hash = hash * 31 + (isCompleted ? 1 : 0);
+    hash = hash * 31 + (widget.isRecording ? 1 : 0);
 
     final wordCount = widget.verse.uthmaniWords.length;
     for (int i = 0; i < wordCount; i++) {
@@ -232,6 +239,15 @@ class _VerseRowState extends State<VerseRow> {
           children: [
             // ── Verse Text ──
             CustomPaint(
+              painter: _cachedSpans != null && isActive && widget.isRecording
+                  ? _ActiveWordHighlightPainter(
+                      words: words,
+                      ayah: widget.verse.ayah,
+                      controller: widget.controller,
+                      app: app,
+                      cachedSpans: _cachedSpans!,
+                    )
+                  : null,
               foregroundPainter: _cachedSpans != null
                   ? TajweedTooltipPainter(
                       words: words,
@@ -271,5 +287,87 @@ class _VerseRowState extends State<VerseRow> {
         ),
       ),
     );
+  }
+}
+
+/// Paints a tight, rounded background pill behind the current active target word.
+/// Fits the word's actual font bounds instead of the entire line height.
+class _ActiveWordHighlightPainter extends CustomPainter {
+  final List<String> words;
+  final int ayah;
+  final HighlightingController controller;
+  final AppState app;
+  final List<InlineSpan> cachedSpans;
+
+  _ActiveWordHighlightPainter({
+    required this.words,
+    required this.ayah,
+    required this.controller,
+    required this.app,
+    required this.cachedSpans,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    int targetIndex = -1;
+    for (int i = 0; i < words.length; i++) {
+      if (!controller.isWordGreen(ayah, i) &&
+          !controller.isWordRed(ayah, i) &&
+          !controller.isWordYellow(ayah, i) &&
+          !controller.isWordNeutral(ayah, i)) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex == -1) return;
+
+    final painter = TextPainter(
+      text: TextSpan(children: cachedSpans),
+      textAlign: TextAlign.justify,
+      textDirection: TextDirection.rtl,
+    )..layout(minWidth: size.width, maxWidth: size.width);
+
+    int charOffset = 0;
+    for (int i = 0; i < targetIndex; i++) {
+      charOffset += words[i].length + 1;
+    }
+
+    final rects = painter.getBoxesForSelection(
+      TextSelection(
+        baseOffset: charOffset,
+        extentOffset: charOffset + words[targetIndex].length,
+      ),
+    );
+    if (rects.isEmpty) return;
+
+    final paint = Paint()
+      ..color = app.colors.gold.withValues(alpha: app.isDarkMode ? 0.20 : 0.14)
+      ..style = PaintingStyle.fill;
+
+    double left = rects.first.left;
+    double right = rects.first.right;
+    double top = rects.first.top;
+    double bottom = rects.first.bottom;
+
+    for (int k = 1; k < rects.length; k++) {
+      final r = rects[k];
+      if (r.left < left) left = r.left;
+      if (r.right > right) right = r.right;
+      if (r.top < top) top = r.top;
+      if (r.bottom > bottom) bottom = r.bottom;
+    }
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(left - 3, top - 2, right + 3, bottom + 2),
+        const Radius.circular(6),
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActiveWordHighlightPainter oldDelegate) {
+    return oldDelegate.ayah != ayah || oldDelegate.cachedSpans != cachedSpans;
   }
 }
