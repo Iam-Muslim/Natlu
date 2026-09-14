@@ -92,8 +92,12 @@ self.addEventListener('fetch', (event) => {
   // Model download endpoint is saved directly to IndexedDB
   if (url.pathname.includes('/download-model')) return;
 
-  // 1. Navigation requests: Network First, fallback to cached index.html
-  if (event.request.mode === 'navigate') {
+  // 1. Navigation requests & entry bootstrap scripts: Network First, fallback to cached
+  const isBootstrapOrVersion = url.pathname.endsWith('/flutter_bootstrap.js') ||
+                               url.pathname.endsWith('/version.json') ||
+                               url.pathname.endsWith('/pwa_install.js');
+
+  if (event.request.mode === 'navigate' || isBootstrapOrVersion) {
     event.respondWith(
       fetch(event.request)
         .then((res) => {
@@ -104,7 +108,9 @@ self.addEventListener('fetch', (event) => {
           return addCoopCoepHeaders(res);
         })
         .catch(async () => {
+          const cleanPath = url.pathname.replace(/^\/recite\//, '');
           const cached = (await caches.match(event.request, { ignoreSearch: true })) ||
+                         (await caches.match(cleanPath, { ignoreSearch: true })) ||
                          (await caches.match('index.html')) ||
                          (await caches.match('./'));
           return cached ? addCoopCoepHeaders(cached) : Response.error();

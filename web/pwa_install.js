@@ -17,6 +17,15 @@
       }
     }).catch(() => {});
 
+    // Automatically reload when a new service worker version activates
+    let hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) {
+        window.location.reload();
+      }
+      hadController = true;
+    });
+
     // Register primary sw.js immediately for fast concurrent precaching
     navigator.serviceWorker.register('sw.js')
       .then((reg) => { if (navigator.onLine) reg.update().catch(() => {}); })
