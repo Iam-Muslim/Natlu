@@ -17,11 +17,10 @@
       }
     }).catch(() => {});
 
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js')
-        .then((reg) => { if (navigator.onLine) reg.update().catch(() => {}); })
-        .catch((err) => console.warn('[PWA] ServiceWorker error:', err));
-    });
+    // Register primary sw.js immediately for fast concurrent precaching
+    navigator.serviceWorker.register('sw.js')
+      .then((reg) => { if (navigator.onLine) reg.update().catch(() => {}); })
+      .catch((err) => console.warn('[PWA] ServiceWorker error:', err));
   }
 
   if (isStandalone) return;

@@ -16,5 +16,8 @@ xcopy /E /I /Y "build\web" "landing_page\recite"
 del /f /q "landing_page\recite\build.sh" 2>nul
 del /f /q "landing_page\recite\build_web.bat" 2>nul
 
+echo // Neutralized to protect custom sw.js > "landing_page\recite\flutter_service_worker.js"
+powershell -Command "$f='landing_page\recite\flutter_bootstrap.js'; if (Test-Path $f) { (Get-Content $f) -replace 'serviceWorkerSettings:\s*\{[^}]*\}', '' | Set-Content $f }"
+
 echo === Build Complete! Output is in landing_page\recite ===
 popd

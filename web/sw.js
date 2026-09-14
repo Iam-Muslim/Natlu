@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
-// Provides offline precaching, dynamic caching, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
+// Provides complete offline caching, dynamic caching, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v10';
+const CACHE_NAME = 'recite-quran-pwa-v11';
 
 const STATIC_PRECACHE = [
   './',
@@ -11,6 +11,8 @@ const STATIC_PRECACHE = [
   'icons/apple-touch-icon.png',
   'icons/Icon-192.png',
   'icons/Icon-512.png',
+  'icons/Icon-maskable-192.png',
+  'icons/Icon-maskable-512.png',
   'pwa_install.js',
   'audio_worklet.js',
   'sherpa-onnx-asr.js',
@@ -18,10 +20,28 @@ const STATIC_PRECACHE = [
   'sherpa-onnx-wasm-main-asr.js',
   'sherpa-onnx-wasm-main-asr.wasm',
   'flutter_bootstrap.js',
+  'flutter.js',
   'main.dart.js',
-  'assets/FontManifest.json',
+  'main.dart.mjs',
+  'main.dart.wasm',
+  'canvaskit/canvaskit.js',
+  'canvaskit/canvaskit.wasm',
+  'canvaskit/skwasm.js',
+  'canvaskit/skwasm.wasm',
+  'canvaskit/skwasm_heavy.js',
+  'canvaskit/skwasm_heavy.wasm',
+  'canvaskit/chromium/canvaskit.js',
+  'canvaskit/chromium/canvaskit.wasm',
+  'assets/AssetManifest.bin',
   'assets/AssetManifest.bin.json',
-  'assets/fonts/HafsSmart_08.ttf'
+  'assets/FontManifest.json',
+  'assets/NOTICES',
+  'assets/assets/fonts/HafsSmart_08.ttf',
+  'assets/fonts/MaterialIcons-Regular.otf',
+  'assets/assets/icon/app_icon.png',
+  'assets/assets/model/tokens.txt',
+  'assets/shaders/ink_sparkle.frag',
+  'assets/shaders/stretch_effect.frag'
 ];
 
 self.addEventListener('install', (event) => {
@@ -105,7 +125,9 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       }).catch(async () => {
-        const fallback = await caches.match(url.pathname, { ignoreSearch: true });
+        const cleanPath = url.pathname.replace(/^\/recite\//, '');
+        const fallback = (await caches.match(cleanPath, { ignoreSearch: true })) ||
+                         (await caches.match(url.pathname, { ignoreSearch: true }));
         return fallback || Response.error();
       });
     })
