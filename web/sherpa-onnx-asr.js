@@ -310,8 +310,8 @@ class OnlineRecognizer {
 }
 
 function createOnlineRecognizer(Module, myConfig) {
-  const modelPath = (Module && Module.modelPath) ? Module.modelPath : './zipformer_p_arabic_v3.int8.onnx';
-  const tokensPath = (Module && Module.tokensPath) ? Module.tokensPath : './quran_tokens.txt';
+  const modelPath = (Module && Module.modelPath) ? Module.modelPath : '/zipformer_p_arabic_v3.int8.onnx';
+  const tokensPath = (Module && Module.tokensPath) ? Module.tokensPath : '/quran_tokens.txt';
 
   const recognizerConfig = myConfig || {
     featConfig: { sampleRate: 16000, featureDim: 80 },

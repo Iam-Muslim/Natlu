@@ -38,15 +38,13 @@ window.writeSherpaAssetToVFS = function(filename, bytes) {
 
     // 1. Emscripten Module.FS API
     if (Module.FS && Module.FS.writeFile) {
-      ['/' + cleanName, './' + cleanName, cleanName].forEach((p) => {
-        try {
-          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
-            Module.FS.unlink(p);
-          }
-        } catch (_) {}
-        try { Module.FS.writeFile(p, bytes); } catch (_) {}
-      });
-      console.log(`[Sherpa] Wrote ${cleanName} to VFS via Module.FS`);
+      try {
+        if (Module.FS.analyzePath && Module.FS.analyzePath(fullPath).exists) {
+          Module.FS.unlink(fullPath);
+        }
+      } catch (_) {}
+      Module.FS.writeFile(fullPath, bytes);
+      console.log(`[Sherpa] Wrote ${cleanName} to ${fullPath} via Module.FS`);
       return true;
     }
 
@@ -54,12 +52,9 @@ window.writeSherpaAssetToVFS = function(filename, bytes) {
     if (Module.FS_createDataFile) {
       if (Module.FS_unlink) {
         try { Module.FS_unlink(fullPath); } catch (_) {}
-        try { Module.FS_unlink('./' + cleanName); } catch (_) {}
-        try { Module.FS_unlink(cleanName); } catch (_) {}
       }
-      try { Module.FS_createDataFile('/', cleanName, bytes, true, true, true); } catch (_) {}
-      try { Module.FS_createDataFile('.', cleanName, bytes, true, true, true); } catch (_) {}
-      console.log(`[Sherpa] Wrote ${cleanName} to VFS via FS_createDataFile`);
+      Module.FS_createDataFile('/', cleanName, bytes, true, true, true);
+      console.log(`[Sherpa] Wrote ${cleanName} to ${fullPath} via FS_createDataFile`);
       return true;
     }
 
@@ -76,24 +71,22 @@ window.initSherpaRecognizer = function(modelFilename, tokensFilename) {
   const cleanM = (modelFilename || 'zipformer_p_arabic_v3.int8.onnx').replace(/^(\.\/|\/)/, '');
   const cleanT = (tokensFilename || 'quran_tokens.txt').replace(/^(\.\/|\/)/, '');
 
+  const fullM = '/' + cleanM;
+  const fullT = '/' + cleanT;
+
   function cleanupVFS() {
-    const targets = ['/' + cleanM, './' + cleanM, cleanM];
     if (Module.FS && Module.FS.unlink) {
-      targets.forEach((p) => {
-        try {
-          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) Module.FS.unlink(p);
-        } catch (_) {}
-      });
+      try {
+        if (Module.FS.analyzePath && Module.FS.analyzePath(fullM).exists) Module.FS.unlink(fullM);
+      } catch (_) {}
     } else if (Module.FS_unlink) {
-      targets.forEach((p) => {
-        try { Module.FS_unlink(p); } catch (_) {}
-      });
+      try { Module.FS_unlink(fullM); } catch (_) {}
     }
   }
 
   try {
-    Module.modelPath = './' + cleanM;
-    Module.tokensPath = './' + cleanT;
+    Module.modelPath = fullM;
+    Module.tokensPath = fullT;
 
     recognizer = createOnlineRecognizer(Module);
     if (!recognizer || !recognizer.handle) {
@@ -107,7 +100,6 @@ window.initSherpaRecognizer = function(modelFilename, tokensFilename) {
     return true;
   } catch (e) {
     console.error('[Sherpa] Failed to create recognizer:', e);
-    // Always clean up VFS on error to prevent memory leaks / site lag
     cleanupVFS();
     return false;
   }
