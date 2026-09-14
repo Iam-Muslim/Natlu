@@ -28,9 +28,8 @@ mkdir -p landing_page/recite
 cp -R build/web/* landing_page/recite/
 rm -f landing_page/recite/build.sh landing_page/recite/build_web.bat
 
-# Neutralize unregistering stub and strip serviceWorkerSettings from bootstrap
+# Neutralize unregistering stub to protect custom sw.js
 echo "// Neutralized to protect custom sw.js" > landing_page/recite/flutter_service_worker.js
-sed -i 's/serviceWorkerSettings:[^}]*}//g' landing_page/recite/flutter_bootstrap.js 2>/dev/null || true
 
 # 4. Copy Cloudflare Functions
 echo "=== Setting up Cloudflare Functions ==="

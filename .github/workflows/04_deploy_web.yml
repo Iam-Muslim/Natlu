@@ -60,7 +60,6 @@ jobs:
             sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" landing_page/functions/download-model.js 2>/dev/null || true
           fi
           echo "// Neutralized to protect custom sw.js" > landing_page/recite/flutter_service_worker.js
-          sed -i 's/serviceWorkerSettings:[^}]*}//g' landing_page/recite/flutter_bootstrap.js 2>/dev/null || true
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
