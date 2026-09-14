@@ -33,20 +33,38 @@ window.isOfficialSherpaReady = () => isRecognizerReady;
 // Write asset bytes directly into Emscripten Virtual File System (VFS)
 window.writeSherpaAssetToVFS = function(filename, bytes) {
   try {
-    if (!Module.FS) return false;
     const cleanName = filename.replace(/^(\.\/|\/)/, '');
-    const targets = ['/' + cleanName, './' + cleanName, cleanName];
-    for (const p of targets) {
-      try {
-        if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
-          Module.FS.unlink(p);
-        }
-      } catch (_) {}
-      try {
-        Module.FS.writeFile(p, bytes);
-      } catch (_) {}
+    const fullPath = '/' + cleanName;
+
+    // 1. Emscripten Module.FS API
+    if (Module.FS && Module.FS.writeFile) {
+      ['/' + cleanName, './' + cleanName, cleanName].forEach((p) => {
+        try {
+          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
+            Module.FS.unlink(p);
+          }
+        } catch (_) {}
+        try { Module.FS.writeFile(p, bytes); } catch (_) {}
+      });
+      console.log(`[Sherpa] Wrote ${cleanName} to VFS via Module.FS`);
+      return true;
     }
-    return true;
+
+    // 2. Emscripten FS_createDataFile / FS_unlink API
+    if (Module.FS_createDataFile) {
+      if (Module.FS_unlink) {
+        try { Module.FS_unlink(fullPath); } catch (_) {}
+        try { Module.FS_unlink('./' + cleanName); } catch (_) {}
+        try { Module.FS_unlink(cleanName); } catch (_) {}
+      }
+      try { Module.FS_createDataFile('/', cleanName, bytes, true, true, true); } catch (_) {}
+      try { Module.FS_createDataFile('.', cleanName, bytes, true, true, true); } catch (_) {}
+      console.log(`[Sherpa] Wrote ${cleanName} to VFS via FS_createDataFile`);
+      return true;
+    }
+
+    console.error('[Sherpa] No VFS API available on Module!');
+    return false;
   } catch (e) {
     console.error(`[Sherpa] Failed to write ${filename} to VFS:`, e);
     return false;
@@ -59,20 +77,23 @@ window.initSherpaRecognizer = function(modelFilename, tokensFilename) {
   const cleanT = (tokensFilename || 'quran_tokens.txt').replace(/^(\.\/|\/)/, '');
 
   function cleanupVFS() {
-    if (Module.FS) {
-      ['/' + cleanM, './' + cleanM, cleanM].forEach((p) => {
+    const targets = ['/' + cleanM, './' + cleanM, cleanM];
+    if (Module.FS && Module.FS.unlink) {
+      targets.forEach((p) => {
         try {
-          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) {
-            Module.FS.unlink(p);
-          }
+          if (Module.FS.analyzePath && Module.FS.analyzePath(p).exists) Module.FS.unlink(p);
         } catch (_) {}
+      });
+    } else if (Module.FS_unlink) {
+      targets.forEach((p) => {
+        try { Module.FS_unlink(p); } catch (_) {}
       });
     }
   }
 
   try {
-    Module.modelPath = '/' + cleanM;
-    Module.tokensPath = '/' + cleanT;
+    Module.modelPath = './' + cleanM;
+    Module.tokensPath = './' + cleanT;
 
     recognizer = createOnlineRecognizer(Module);
     if (!recognizer || !recognizer.handle) {
