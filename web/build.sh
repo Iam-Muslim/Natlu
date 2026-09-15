@@ -31,7 +31,14 @@ rm -f landing_page/recite/build.sh landing_page/recite/build_web.bat
 # Neutralize unregistering stub to protect custom sw.js
 echo "// Neutralized to protect custom sw.js" > landing_page/recite/flutter_service_worker.js
 
-# 4. Copy Cloudflare Functions
+# 4. Downlevel JS to ES2018 for Legacy Browser Compatibility
+echo "=== Downleveling JS to ES2018 for Legacy Browser Compatibility ==="
+node -e "const fs = require('fs'); const p = 'landing_page/recite/flutter_bootstrap.js'; if (fs.existsSync(p)) { let s = fs.readFileSync(p, 'utf8'); s = s.replace(/serviceWorkerSettings:\s*\{[\s\S]*?\}\s*,?/g, ''); s = s.replace('if (!window._flutter) {\n  window._flutter = {};\n}\n_flutter.buildConfig', 'var _flutter = window._flutter = window._flutter || {};\n_flutter.buildConfig'); fs.writeFileSync(p, s, 'utf8'); }"
+npx --yes esbuild "landing_page/recite/flutter_bootstrap.js" --target=es2018 --outfile="landing_page/recite/flutter_bootstrap.js" --allow-overwrite
+npx --yes esbuild "landing_page/recite/flutter.js" --target=es2018 --outfile="landing_page/recite/flutter.js" --allow-overwrite
+npx --yes esbuild "landing_page/recite/sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page/recite/sherpa-onnx-wasm-main-asr.js" --allow-overwrite
+
+# 5. Copy Cloudflare Functions
 echo "=== Setting up Cloudflare Functions ==="
 mkdir -p landing_page/functions functions
 cp web/download-model.js landing_page/functions/
