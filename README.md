@@ -36,6 +36,9 @@
 ## Overview
 
 **Natlu** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
+
+You can download the model from hugging face repo of my Brother Mustafa : https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3 
+
 ---
 
 ## Platforms
