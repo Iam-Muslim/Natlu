@@ -13,6 +13,7 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
+import 'widgets/mushaf/mushaf_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
@@ -321,7 +322,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const SettingsDialog(),
+      builder: (_) => SettingsDialog(controller: widget.controller),
     );
   }
 
@@ -613,6 +614,16 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ),
                   Expanded(
                     child: _buildActionBtn(
+                      icon: app.isMushafLayout
+                          ? Icons.menu_book_rounded
+                          : Icons.auto_stories_outlined,
+                      label: app.isArabic ? 'مصحف' : 'Mushaf',
+                      color: app.isMushafLayout ? c.gold : c.text,
+                      onTap: app.toggleMushafLayout,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildActionBtn(
                       icon: Icons.settings_rounded,
                       label: app.isArabic ? 'إعدادات' : 'Settings',
                       color: c.text,
@@ -695,6 +706,15 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
+    if (app.isMushafLayout) {
+      return MushafView(
+        controller: widget.controller,
+        isRecording: widget.isRecording,
+        isAutoScrolling: _isAutoScrolling,
+        onToggleAutoScroll: _toggleAutoScroll,
+      );
+    }
+
     return Builder(
       key: const ValueKey('verse_list_content'),
       builder: (context) {

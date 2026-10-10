@@ -91,6 +91,17 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('blurMode', isBlurMode);
   }
 
+  // ── Mushaf Layout Mode ─────────────────────────────────────────────────────
+
+  bool isMushafLayout = false;
+
+  void toggleMushafLayout() async {
+    isMushafLayout = !isMushafLayout;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('mushafLayout', isMushafLayout);
+  }
+
   // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
 
   int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
@@ -111,6 +122,33 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('fontSize', fontSize);
+  }
+
+  // ── Tracker Configuration ──────────────────────────────────────────────────
+
+  TrackerConfig _trackerConfig = const TrackerConfig();
+  TrackerConfig get trackerConfig => _trackerConfig;
+
+  void setRecitationSpeed(
+    RecitationSpeed speed, {
+    HighlightingController? controller,
+  }) async {
+    _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
+    controller?.updateConfig(_trackerConfig);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('recitationSpeed', speed.name);
+  }
+
+  void setMatchingStrictness(
+    MatchingStrictness strictness, {
+    HighlightingController? controller,
+  }) async {
+    _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
+    controller?.updateConfig(_trackerConfig);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('matchingStrictness', strictness.name);
   }
 
   // ── Colors ─────────────────────────────────────────────────────────────────
@@ -170,6 +208,7 @@ class AppState extends ChangeNotifier {
         _theme = brightness == Brightness.dark ? AppTheme.dark : AppTheme.light;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
+      isMushafLayout = prefs.getBool('mushafLayout') ?? false;
 
 
 
@@ -185,6 +224,16 @@ class AppState extends ChangeNotifier {
       // Migrate old boolean value if present
       if (tajweedClickCount == 0 && (prefs.getBool('has_clicked_tajweed_word') ?? false)) {
         tajweedClickCount = 10;
+      }
+
+      if (prefs.containsKey('recitationSpeed')) {
+        final speed = RecitationSpeed.fromName(prefs.getString('recitationSpeed'));
+        _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
+      }
+      if (prefs.containsKey('matchingStrictness')) {
+        final strictness =
+            MatchingStrictness.fromName(prefs.getString('matchingStrictness'));
+        _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
       }
 
       notifyListeners();
