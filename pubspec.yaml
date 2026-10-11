@@ -29,6 +29,7 @@ dependencies:
   sherpa_onnx: 1.13.5
   super_sliver_list: ^0.4.1
   wakelock_plus: ^1.6.1
+  audioplayers: ^6.8.1
 
 # sherpa_onnx 1.13.5 still allows sherpa_onnx_ios ^1.13.5, so the broken 1.13.6
 # iOS package gets pulled in transitively unless it is pinned here as well.
@@ -48,7 +49,6 @@ flutter:
   assets:
     - assets/model/zipformer_p_arabic_v3.int8.onnx
     - assets/icon/app_icon.png
-    - assets/data/mushaf_pages.json
 
 
   fonts:

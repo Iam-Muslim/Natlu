@@ -29,6 +29,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 import 'package:recite_quran/recite_quran.dart';
+import 'services/ayah_audio_service.dart';
 import 'state/app_state.dart';
 import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
@@ -181,7 +182,8 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isEngineLoading =
       false; // Tracks if ASR is compiling/extracting when user presses record
   bool _isVoiceSearching = false;
-  String _voiceSearchAsrText = '';
+  final ValueNotifier<String> _voiceSearchAsrNotifier = ValueNotifier('');
+  String get _voiceSearchAsrText => _voiceSearchAsrNotifier.value;
 
   // Timer logic removed, we now rely on Sherpa's VAD endpoint with 4s silence
 
@@ -193,22 +195,25 @@ class _OrchestratorState extends State<_Orchestrator> {
     // Global subscription for Voice Search text and Endpoint auto-stopping
     _engine.transcriptionStream.listen((res) {
       if (_isVoiceSearching && mounted) {
-        setState(() {
-          _voiceSearchAsrText = res.text;
-        });
+        _voiceSearchAsrNotifier.value = res.text;
 
         // REAL-TIME SEARCH EVALUATION
         _voiceSearchCtrl.processRealtime(res.text).then((rtResult) {
           if (rtResult != null) {
-            // Unique match found! Bypass VAD and jump immediately.
+            // Unique match found! Instantly navigate to it without waiting.
             _stopVoiceSearch(precalculatedResult: rtResult);
-          } else if (res.isFinal) {
-            // Sherpa's VAD detected 4s of silence
-            DebugLogger.log(
-              'VoiceSearch',
-              'Auto-stopping on VAD endpoint (4s silence)',
-            );
-            _stopVoiceSearch();
+          } else if (res.isFinal && _isVoiceSearching) {
+            final current = _voiceSearchCtrl.currentResult.value;
+            // Only auto-stop on silence endpoint if NO candidates were found at all.
+            // When candidates exist, VoiceSearchDialog handles the user selection,
+            // the dynamic countdown, and the Hold/Pause state.
+            if (current == null || !current.hasCandidates) {
+              DebugLogger.log(
+                'VoiceSearch',
+                'Auto-stopping on VAD endpoint (no matches found)',
+              );
+              _stopVoiceSearch();
+            }
           }
         });
       }
@@ -257,6 +262,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   @override
   void dispose() {
     _ctrl?.dispose();
+    _voiceSearchAsrNotifier.dispose();
     super.dispose();
   }
 
@@ -279,6 +285,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       final service = QuranMetadataService();
       _repo = QuranRepository(service);
       await _repo!.loadSurahAsync(1);
+      _voiceSearchCtrl.repository = _repo;
 
       _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background
 
@@ -404,6 +411,7 @@ class _OrchestratorState extends State<_Orchestrator> {
           try { await WakelockPlus.enable(); } catch (_) {}
         }
         _engine.resetBuffer();
+        AyahAudioService.instance.stop();
 
         // Instant UI feedback before hardware mic starts
         if (mounted) setState(() => _isRecording = true);
@@ -473,14 +481,15 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
       _ctrl?.finalize();
+      AyahAudioService.instance.stop();
 
       // SHOW UI IMMEDIATELY!
       if (mounted) {
         setState(() {
           _isVoiceSearching = true;
-          _voiceSearchAsrText = '';
         });
       }
+      _voiceSearchAsrNotifier.value = '';
 
       await _voiceSearchCtrl.startSearch();
       if (!kIsWeb) {
@@ -526,6 +535,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       if (result == null) {
         result = await _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
       }
+      _voiceSearchCtrl.clear();
       if (result != null && _ctrl != null) {
         // Automatically navigate to the found Ayah!
         await _ctrl!.setTargetSurah(result.surah);
@@ -663,9 +673,16 @@ class _OrchestratorState extends State<_Orchestrator> {
       isLoadingEngine: _isEngineLoading,
       isVoiceSearching: _isVoiceSearching,
       voiceSearchText: _voiceSearchAsrText,
+      voiceSearchTextNotifier: _voiceSearchAsrNotifier,
+      voiceSearchController: _voiceSearchCtrl,
       onToggleRecord: _toggleRecord,
       onVoiceSearchToggle: _toggleVoiceSearch,
       isVoiceSearchLoading: _voiceSearchCtrl.isIndexLoading,
+      onSelectVoiceCandidate: (surah, ayah) {
+        _stopVoiceSearch(
+          precalculatedResult: AnchorResult(surah: surah, ayah: ayah),
+        );
+      },
       onClearBuffer: () {
         _engine.resetBuffer();
         _audio.clearBuffer();

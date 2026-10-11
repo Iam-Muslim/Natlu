@@ -1,6 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
+import '../../services/ayah_audio_service.dart';
 import '../../state/app_state.dart';
 import 'dialogs/error_detail_dialog.dart';
 import 'helpers/verse_span_builder.dart';
@@ -72,9 +75,8 @@ class _VerseRowState extends State<VerseRow> {
       _invalidate();
     }
     if (oldWidget.isAutoScrolling != widget.isAutoScrolling) {
-      if (AppState.instance.isBlurMode) {
-        _invalidate();
-      }
+      _invalidate();
+      _onStateChanged();
     }
     if (oldWidget.isRecording != widget.isRecording) {
       _invalidate();
@@ -136,7 +138,15 @@ class _VerseRowState extends State<VerseRow> {
     if (fp != _lastFingerprint) {
       _lastFingerprint = fp;
       _cachedSpans = null;
-      setState(() {});
+      if (mounted) {
+        if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+        } else {
+          setState(() {});
+        }
+      }
     }
   }
 
@@ -169,6 +179,9 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + app.fontSize.hashCode;
     hash = hash * 31 + app.theme.index;
     hash = hash * 31 + (app.hasClickedTajweedWord ? 1 : 0);
+
+    hash = hash * 31 + (widget.isAutoScrolling ? 1 : 0);
+
     return hash;
   }
 
@@ -220,24 +233,21 @@ class _VerseRowState extends State<VerseRow> {
     return ExcludeSemantics(
       child: GestureDetector(
         onTap: widget.isAutoScrolling ? null : widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          decoration: BoxDecoration(
-            color: isActive ? c.gold.withValues(alpha: 0.07) : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isActive
-                  ? c.gold.withValues(alpha: 0.18)
-                  : Colors.transparent,
-              width: 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          child: CustomPaint(
+            painter: _ActiveAyahBorderPainter(
+              isActive: isActive,
+              outerColor: c.ayahOutline,
+              innerColor: c.gold.withValues(alpha: app.isDarkMode ? 0.10 : 0.05),
+              isDark: app.isDarkMode,
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              color: Colors.transparent,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
               // ── Verse Text ──
               CustomPaint(
                 painter: _cachedSpans != null && isActive && widget.isRecording
@@ -265,22 +275,39 @@ class _VerseRowState extends State<VerseRow> {
                 ),
               ),
 
-              // ── Ayah Number Badge ──
+              // ── Ayah Number Badge & Audio Play Button ──
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
-                    vertical: 0,
+                    vertical: 2,
                   ),
-                  child: Text(
-                    _ayahArabicDigits,
-                    style: TextStyle(
-                      fontFamily: 'HafsSmart',
-                      fontSize: app.fontSize * 0.75,
-                      fontWeight: FontWeight.w600,
-                      color: isActive ? c.gold : c.muted.withValues(alpha: 0.6),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        _ayahArabicDigits,
+                        style: TextStyle(
+                          fontFamily: 'HafsSmart',
+                          fontSize: app.fontSize * 0.75,
+                          fontWeight: FontWeight.w600,
+                          color: isActive ? c.gold : c.muted.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      // Non-distracting play button: hidden in Read Mode (auto-scroll) and during recording
+                      if (!widget.isAutoScrolling && !widget.isRecording) ...[
+                        const SizedBox(width: 8),
+                        _AyahPlayButton(
+                          surah: widget.verse.surah,
+                          ayah: widget.verse.ayah,
+                          colors: c,
+                          isDarkMode: app.isDarkMode,
+                          isArabic: app.isArabic,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -288,6 +315,96 @@ class _VerseRowState extends State<VerseRow> {
           ),
         ),
       ),
+    ),
+  ),
+);
+  }
+}
+
+/// Compact, reverent, non-distracting audio button for Sheikh Al-Husary recitation.
+/// Automatically converts into an eye-friendly Stop button when active with 0ms lag.
+/// Uses [ListenableBuilder] to isolate updates to this 24x24 button with zero parent rebuilds.
+class _AyahPlayButton extends StatelessWidget {
+  final int surah;
+  final int ayah;
+  final ThemeColors colors;
+  final bool isDarkMode;
+  final bool isArabic;
+
+  const _AyahPlayButton({
+    required this.surah,
+    required this.ayah,
+    required this.colors,
+    required this.isDarkMode,
+    required this.isArabic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AyahAudioService.instance,
+      builder: (context, _) {
+        final audio = AyahAudioService.instance;
+        final bool isActive = audio.isAyahActive(surah, ayah);
+
+        // Completely non-distracting button design:
+        // Maintains the calm, neutral frame of the card so peripheral vision is never drawn away.
+        final Color activeMutedGold = Color.lerp(
+          colors.muted,
+          colors.gold,
+          0.25,
+        )!.withValues(alpha: isDarkMode ? 0.68 : 0.62);
+
+        final Color iconColor = isActive
+            ? activeMutedGold
+            : colors.muted.withValues(alpha: 0.50);
+
+        final Color bgColor = colors.surfaceHigh.withValues(
+          alpha: isDarkMode ? 0.35 : 0.50,
+        );
+
+        final Color borderColor = colors.border.withValues(
+          alpha: isDarkMode ? 0.25 : 0.40,
+        );
+
+        return Semantics(
+          label: isActive
+              ? (isArabic ? 'إيقاف التلاوة' : 'Stop recitation')
+              : (isArabic ? 'استماع للآية' : 'Play Ayah'),
+          button: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              if (isActive) {
+                audio.stop();
+              } else {
+                audio.playAyah(surah, ayah);
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor, width: 0.9),
+              ),
+              child: Center(
+                child: Icon(
+                  isActive
+                      ? Icons.stop_rounded
+                      : Icons.play_arrow_rounded,
+                  size: isActive ? 10.5 : 13,
+                  color: iconColor,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -376,4 +493,58 @@ class _ActiveWordHighlightPainter extends CustomPainter {
 
   @override
   bool shouldRebuildSemantics(covariant _ActiveWordHighlightPainter oldDelegate) => false;
+}
+
+/// Renders a crisp outer outline along the Ayah card boundary and an inner stroke
+/// with lighter opacity immediately inside it. Zero background color fill.
+class _ActiveAyahBorderPainter extends CustomPainter {
+  final bool isActive;
+  final Color outerColor;
+  final Color innerColor;
+  final bool isDark;
+
+  const _ActiveAyahBorderPainter({
+    required this.isActive,
+    required this.outerColor,
+    required this.innerColor,
+    required this.isDark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!isActive || size.isEmpty) return;
+
+    final rrectOuter = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(20),
+    );
+
+    // 1. Subtle, slim inward stroke: glowing halo in dark mode, clean crisp gilded stroke in light mode
+    canvas.save();
+    canvas.clipRRect(rrectOuter);
+    final innerGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = isDark ? 5.0 : 2.0
+      ..color = innerColor
+      ..maskFilter = isDark
+          ? const MaskFilter.blur(BlurStyle.normal, 1.8)
+          : null;
+    canvas.drawRRect(rrectOuter, innerGlowPaint);
+    canvas.restore();
+
+    // 2. Crisp, delicate outer boundary line
+    final outerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..color = outerColor;
+    canvas.drawRRect(rrectOuter, outerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActiveAyahBorderPainter oldDelegate) {
+    return oldDelegate.isActive != isActive ||
+        oldDelegate.outerColor != outerColor ||
+        oldDelegate.innerColor != innerColor ||
+        oldDelegate.isDark != isDark;
+  }
 }

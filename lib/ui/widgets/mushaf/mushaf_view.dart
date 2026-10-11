@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
 
@@ -152,7 +153,15 @@ class _MushafViewState extends State<MushafView> {
   }
 
   void _onStateChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
+      } else {
+        setState(() {});
+      }
+    }
   }
 
   void _onActiveAyahChanged() {
@@ -164,7 +173,15 @@ class _MushafViewState extends State<MushafView> {
         _goToPage(targetPage);
       }
     }
-    if (mounted) setState(() {});
+    if (mounted) {
+      if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
+      } else {
+        setState(() {});
+      }
+    }
   }
 
   void _goToPage(int page) {

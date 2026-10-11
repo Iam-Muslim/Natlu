@@ -206,62 +206,6 @@ class SettingsDialog extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // ── Recitation & Recognition Configuration Card ──
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: c.surfaceHigh,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Column(
-                              children: [
-                                // 1. Recitation Speed
-                                SettingTile(
-                                  icon: Icons.speed_rounded,
-                                  title: isAr ? 'مرتبة التلاوة' : 'Recitation Speed',
-                                  c: c,
-                                  trailing: PremiumPillSelector(
-                                    labels: isAr
-                                        ? const ['حدر', 'تدوير', 'تحقيق']
-                                        : const ['Fast', 'Normal', 'Slow'],
-                                    selected: app.trackerConfig.recitationSpeed.index,
-                                    c: c,
-                                    onSelected: (i) {
-                                      app.setRecitationSpeed(
-                                        RecitationSpeed.values[i],
-                                        controller: controller,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                PremiumSettingDivider(c: c),
-
-                                // 2. Matching Strictness
-                                SettingTile(
-                                  icon: Icons.tune_rounded,
-                                  title: isAr ? 'دقة المطابقة' : 'Strictness',
-                                  c: c,
-                                  trailing: PremiumPillSelector(
-                                    labels: isAr
-                                        ? const ['سهل', 'معياري', 'دقيق']
-                                        : const ['Easy', 'Normal', 'Hard'],
-                                    selected: app.trackerConfig.matchingStrictness.index,
-                                    c: c,
-                                    onSelected: (i) {
-                                      app.setMatchingStrictness(
-                                        MatchingStrictness.values[i],
-                                        controller: controller,
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                         const SizedBox(height: 24),
 
                         // ── Footer Dua ──

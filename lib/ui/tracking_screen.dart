@@ -1,5 +1,7 @@
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:share_plus/share_plus.dart';
@@ -7,13 +9,13 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:recite_quran/recite_quran.dart';
 import '../main.dart';
+import '../services/ayah_audio_service.dart';
 import '../state/app_state.dart';
 import 'widgets/dialogs/voice_search_dialog.dart';
 import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
-import 'widgets/mushaf/mushaf_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
@@ -24,10 +26,13 @@ class TrackingScreen extends StatefulWidget {
   final bool isRecording;
   final bool isVoiceSearching;
   final String voiceSearchText;
+  final ValueListenable<String>? voiceSearchTextNotifier;
   final VoidCallback onToggleRecord;
   final VoidCallback onVoiceSearchToggle;
   final bool isLoadingEngine;
   final ValueNotifier<bool>? isVoiceSearchLoading;
+  final VoiceSearchController? voiceSearchController;
+  final void Function(int surah, int ayah)? onSelectVoiceCandidate;
   final VoidCallback onClearBuffer;
 
   const TrackingScreen({
@@ -36,6 +41,9 @@ class TrackingScreen extends StatefulWidget {
     required this.isRecording,
     required this.isVoiceSearching,
     this.voiceSearchText = '',
+    this.voiceSearchTextNotifier,
+    this.voiceSearchController,
+    this.onSelectVoiceCandidate,
     required this.onToggleRecord,
     required this.onVoiceSearchToggle,
     this.isLoadingEngine = false,
@@ -70,6 +78,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+    AyahAudioService.instance.addListener(_onAudioServiceUpdate);
   }
 
   @override
@@ -89,11 +98,14 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (_isAutoScrolling) {
         _toggleAutoScroll();
       }
+      AyahAudioService.instance.stop();
     }
   }
 
   @override
   void dispose() {
+    AyahAudioService.instance.removeListener(_onAudioServiceUpdate);
+    AyahAudioService.instance.stop();
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
       try { WakelockPlus.disable(); } catch (_) {}
@@ -116,18 +128,16 @@ class _TrackingScreenState extends State<TrackingScreen>
       }
     }
 
-    if (widget.voiceSearchText != oldWidget.voiceSearchText) {
-      _voiceSearchNotifier.value = widget.voiceSearchText;
-    }
-
     if (widget.isVoiceSearching && !oldWidget.isVoiceSearching) {
-      _voiceSearchNotifier.value = widget.voiceSearchText;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           VoiceSearchDialog.show(
-            context, 
+            context,
             onStop: widget.onVoiceSearchToggle,
             isLoading: widget.isVoiceSearchLoading,
+            asrTextNotifier: widget.voiceSearchTextNotifier ?? _voiceSearchNotifier,
+            searchResultNotifier: widget.voiceSearchController?.currentResult,
+            onSelectCandidate: widget.onSelectVoiceCandidate,
           );
         }
       });
@@ -142,20 +152,23 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _onControllerUpdate() {
     if (widget.controller.targetSurah != _lastSurah) {
-      if (mounted) {
+      void applyUpdate() {
+        if (!mounted) return;
         setState(() {
           _lastSurah = widget.controller.targetSurah;
           _keys.clear();
           _lastAyah = null;
         });
-      } else {
-        _lastSurah = widget.controller.targetSurah;
-        _keys.clear();
-        _lastAyah = null;
+
+        if (_scroll.hasClients) {
+          _scroll.jumpTo(0);
+        }
       }
 
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(0);
+      if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+        SchedulerBinding.instance.addPostFrameCallback((_) => applyUpdate());
+      } else {
+        applyUpdate();
       }
     }
   }
@@ -173,6 +186,31 @@ class _TrackingScreenState extends State<TrackingScreen>
           _forceScrollToAyah(active);
         }
       });
+    }
+  }
+
+  int? _lastAudioAyah;
+
+  void _onAudioServiceUpdate() {
+    final audio = AyahAudioService.instance;
+    final int? currentAyah = audio.currentAyah;
+    final int? currentSurah = audio.currentSurah;
+
+    if (audio.isPlaying &&
+        currentSurah == widget.controller.targetSurah &&
+        currentAyah != null &&
+        !_isAutoScrolling &&
+        !widget.isRecording) {
+      if (_lastAudioAyah != currentAyah) {
+        _lastAudioAyah = currentAyah;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _forceScrollToAyah(currentAyah);
+          }
+        });
+      }
+    } else if (!audio.isPlaying) {
+      _lastAudioAyah = null;
     }
   }
 
@@ -224,6 +262,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
       widget.controller.clearHighlights();
       widget.controller.finalize();
+      AyahAudioService.instance.stop();
       setState(() => _isAutoScrolling = true);
       _startAutoScrollLoop();
       if (!kIsWeb) {
@@ -293,6 +332,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         onToggleRecord: widget.onToggleRecord,
         onVoiceSearchToggle: widget.onVoiceSearchToggle,
         onPick: (n, {ayah}) async {
+          AyahAudioService.instance.stop();
           if (widget.isRecording) {
             widget.onToggleRecord();
           }
@@ -480,189 +520,201 @@ class _TrackingScreenState extends State<TrackingScreen>
           ),
           
           // The Actual Header Container
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: c.border.withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: c.surface.withValues(alpha: app.isDarkMode ? 0.82 : 0.88),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: c.border.withValues(alpha: app.isDarkMode ? 0.35 : 0.6),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: app.isDarkMode ? 0.28 : 0.05),
+                      blurRadius: 24,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Row(
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            // Surah Selector
-            Flexible(
-              flex: 4,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: GestureDetector(
-                  onTap: _showSurahPicker,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    height: 44,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    // Surah Selector
+                    Flexible(
+                      flex: 4,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            _showSurahPicker();
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            height: 44,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: c.gold.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: c.gold.withValues(alpha: 0.22),
+                                width: 1,
+                              ),
+                            ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return Row(
+                                  children: [
+                                    Expanded(
+                                      child: Builder(
+                                        builder: (context) {
+                                          final displayVerses = widget.controller.repository
+                                              .getSurah(widget.controller.targetSurah);
+                                          return FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: app.isArabic
+                                                ? Alignment.centerRight
+                                                : Alignment.centerLeft,
+                                            child: Text(
+                                              app.isArabic
+                                                  ? displayVerses.first.surahName
+                                                  : displayVerses.first.surahNameEn,
+                                              style: TextStyle(
+                                                fontFamily: app.isArabic ? 'HafsSmart' : null,
+                                                color: c.gold,
+                                                fontSize: app.isArabic ? 18 : 15,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    if (constraints.maxWidth > 50) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: c.gold.withValues(alpha: 0.8),
+                                        size: 18,
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
+
+                    // Vertical Micro-Divider
+                    Container(
+                      height: 22,
+                      width: 1,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: c.border.withValues(alpha: 0.5),
                     ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: Builder(
-                                builder: (context) {
-                                  final displayVerses = widget.controller.repository
-                                      .getSurah(widget.controller.targetSurah);
-                                  return FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: app.isArabic
-                                        ? Alignment.centerRight
-                                        : Alignment.centerLeft,
-                                    child: Text(
-                                      app.isArabic
-                                          ? displayVerses.first.surahName
-                                          : displayVerses.first.surahNameEn,
-                                      style: TextStyle(
-                                        fontFamily: app.isArabic ? 'HafsSmart' : null,
-                                        color: c.gold,
-                                        fontSize: app.isArabic ? 18 : 15,
-                                        fontWeight: FontWeight.w700,
+
+                    // Action Buttons
+                    Expanded(
+                      flex: 6,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _buildActionBtn(
+                              icon: Icons.auto_stories_rounded,
+                              label: app.isArabic ? 'قراءة' : 'Read',
+                              color: c.text,
+                              onTap: _toggleAutoScroll,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildActionBtn(
+                              icon: app.isBlurMode
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              label: app.isArabic ? 'إخفاء' : 'Hide',
+                              color: app.isBlurMode ? c.green : c.text,
+                              onTap: app.toggleBlurMode,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildActionBtn(
+                              icon: Icons.record_voice_over_rounded,
+                              label: app.isArabic ? 'تجويد' : 'Tajweed',
+                              color: app.currentMode == AppMode.tajweed
+                                  ? c.green
+                                  : c.text,
+                              onTap: () {
+                                final newMode = app.currentMode == AppMode.tajweed
+                                    ? AppMode.wordChecker
+                                    : AppMode.tajweed;
+                                app.setMode(newMode);
+                                widget.controller.setTajweedMode(
+                                  newMode == AppMode.tajweed,
+                                );
+
+                                if (newMode == AppMode.tajweed) {
+                                  ScaffoldMessenger.of(context).clearSnackBars();
+                                  setState(() => _showTajweedBanner = true);
+                                  Future.delayed(const Duration(seconds: 2), () {
+                                    if (mounted) setState(() => _showTajweedBanner = false);
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildActionBtn(
+                              icon: Icons.settings_rounded,
+                              label: app.isArabic ? 'إعدادات' : 'Settings',
+                              color: c.text,
+                              onTap: _showSettingsDialog,
+                              onLongPress: () async {
+                                try {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Preparing logs...',
+                                        textDirection: TextDirection.ltr,
                                       ),
                                     ),
                                   );
-                                },
-                              ),
+                                  final String allLogs = globalSessionLogs.join('\n');
+                                  await SharePlus.instance.share(
+                                    ShareParams(
+                                      text: allLogs.isNotEmpty
+                                          ? allLogs
+                                          : 'No logs recorded.',
+                                      subject: 'ReciteQuran Logs',
+                                    ),
+                                  );
+                                } catch (e) {
+                                  DebugLogger.logSimple(
+                                    'TrackingScreen',
+                                    "Error preparing logs: $e",
+                                  );
+                                }
+                              },
                             ),
-                            if (constraints.maxWidth > 40) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: c.gold,
-                                size: 20,
-                              ),
-                            ],
-                          ],
-                        );
-                      }
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
-
-            const SizedBox(width: 8),
-
-            // Action Buttons
-            Expanded(
-              flex: 6,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildActionBtn(
-                      icon: Icons.auto_stories_rounded,
-                      label: app.isArabic ? 'قراءة' : 'Read',
-                      color: c.text,
-                      onTap: _toggleAutoScroll,
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildActionBtn(
-                      icon: app.isBlurMode
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
-                      label: app.isArabic ? 'إخفاء' : 'Hide',
-                      color: app.isBlurMode ? c.green : c.text,
-                      onTap: app.toggleBlurMode,
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildActionBtn(
-                      icon: Icons.format_color_text_rounded,
-                      label: app.isArabic ? 'تجويد' : 'Tajweed',
-                      color: app.currentMode == AppMode.tajweed
-                          ? c.green
-                          : c.text,
-                      onTap: () {
-                        final newMode = app.currentMode == AppMode.tajweed
-                            ? AppMode.wordChecker
-                            : AppMode.tajweed;
-                        app.setMode(newMode);
-                        widget.controller.setTajweedMode(
-                          newMode == AppMode.tajweed,
-                        );
-
-                        if (newMode == AppMode.tajweed) {
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          setState(() => _showTajweedBanner = true);
-                          Future.delayed(const Duration(seconds: 2), () {
-                            if (mounted) setState(() => _showTajweedBanner = false);
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildActionBtn(
-                      icon: app.isMushafLayout
-                          ? Icons.menu_book_rounded
-                          : Icons.auto_stories_outlined,
-                      label: app.isArabic ? 'مصحف' : 'Mushaf',
-                      color: app.isMushafLayout ? c.gold : c.text,
-                      onTap: app.toggleMushafLayout,
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildActionBtn(
-                      icon: Icons.settings_rounded,
-                      label: app.isArabic ? 'إعدادات' : 'Settings',
-                      color: c.text,
-                      onTap: _showSettingsDialog,
-                      onLongPress: () async {
-                        try {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Preparing logs...',
-                                textDirection: TextDirection.ltr,
-                              ),
-                            ),
-                          );
-                          final String allLogs = globalSessionLogs.join('\n');
-                          await SharePlus.instance.share(
-                            ShareParams(
-                              text: allLogs.isNotEmpty
-                                  ? allLogs
-                                  : 'No logs recorded.',
-                              subject: 'ReciteQuran Logs',
-                            ),
-                          );
-                        } catch (e) {
-                          DebugLogger.logSimple(
-                            'TrackingScreen',
-                            "Error preparing logs: $e",
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      ],
+          ),
+        ],
       ),
     );
   }
@@ -675,7 +727,10 @@ class _TrackingScreenState extends State<TrackingScreen>
     VoidCallback? onLongPress,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       onLongPress: onLongPress,
       behavior: HitTestBehavior.opaque,
       child: Padding(
@@ -706,15 +761,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
-    if (app.isMushafLayout) {
-      return MushafView(
-        controller: widget.controller,
-        isRecording: widget.isRecording,
-        isAutoScrolling: _isAutoScrolling,
-        onToggleAutoScroll: _toggleAutoScroll,
-      );
-    }
-
     return Builder(
       key: const ValueKey('verse_list_content'),
       builder: (context) {

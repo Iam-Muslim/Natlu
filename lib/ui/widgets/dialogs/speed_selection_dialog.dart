@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:recite_quran/recite_quran.dart';
 import '../../../state/app_state.dart';
 
 class SpeedSelectionDialog extends StatefulWidget {
@@ -108,8 +107,7 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 0);
-                       app.setAutoScrollSpeed(1); // 0.5x
-                      app.setRecitationSpeed(RecitationSpeed.slow);
+                      app.setAutoScrollSpeed(1); // 0.5x
                       Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
                     },
                   ),
@@ -125,8 +123,7 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 1);
-                       app.setAutoScrollSpeed(2); // 1.0x
-                      app.setRecitationSpeed(RecitationSpeed.normal);
+                      app.setAutoScrollSpeed(2); // 1.0x
                       Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
                     },
                   ),
@@ -142,8 +139,7 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                     isAr: isAr,
                     onTap: () {
                       setState(() => _selectedIndex = 2);
-                       app.setAutoScrollSpeed(4); // 2.0x
-                      app.setRecitationSpeed(RecitationSpeed.fast);
+                      app.setAutoScrollSpeed(4); // 2.0x
                       Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
                     },
                   ),

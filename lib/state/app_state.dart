@@ -91,15 +91,12 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('blurMode', isBlurMode);
   }
 
-  // ── Mushaf Layout Mode ─────────────────────────────────────────────────────
-
+  // ── Mushaf Layout Mode (Bypassed) ──────────────────────────────────────────
+  // Deactivated to ensure optimal 60 FPS verse scrolling stability.
   bool isMushafLayout = false;
 
-  void toggleMushafLayout() async {
-    isMushafLayout = !isMushafLayout;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('mushafLayout', isMushafLayout);
+  void toggleMushafLayout() {
+    // Bypassed: disabled
   }
 
   // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
@@ -125,31 +122,9 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Tracker Configuration ──────────────────────────────────────────────────
-
-  TrackerConfig _trackerConfig = const TrackerConfig();
+  // Tajweed and Dictation modes use standard normal calibration with auto-reanchor enabled.
+  TrackerConfig _trackerConfig = TrackerConfig.normal(enableAutoReanchor: true);
   TrackerConfig get trackerConfig => _trackerConfig;
-
-  void setRecitationSpeed(
-    RecitationSpeed speed, {
-    HighlightingController? controller,
-  }) async {
-    _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
-    controller?.updateConfig(_trackerConfig);
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('recitationSpeed', speed.name);
-  }
-
-  void setMatchingStrictness(
-    MatchingStrictness strictness, {
-    HighlightingController? controller,
-  }) async {
-    _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
-    controller?.updateConfig(_trackerConfig);
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('matchingStrictness', strictness.name);
-  }
 
   // ── Colors ─────────────────────────────────────────────────────────────────
 
@@ -164,13 +139,14 @@ class AppState extends ChangeNotifier {
     bg: Color(0xFFFAF6F0),          // Warm ivory/cream — like Mushaf paper
     surface: Color(0xFFFFFDF8),      // Slightly brighter cream for cards
     border: Color(0xFFE8DFD3),       // Warm tan border
-    gold: Color(0xFFB8860B),         // Deep warm gold — Islamic heritage
-    green: Color(0xFF2E8B57),        // Sea green — softer than emerald
-    red: Color(0xFFCD5C5C),          // Indian red — softer, less alarming
+    gold: Color(0xFFCA8A04),         // True golden-yellow for Tajweed
+    green: Color(0xFF15803D),        // Quranic Islamic emerald green
+    red: Color(0xFFDC2626),          // Vibrant modern coral red
     muted: Color(0xFF8B7D6B),        // Warm grey-brown
-    currentWord: Color(0xFFDAA520),   // Goldenrod — warm amber highlight
+    currentWord: Color(0xFFCA8A04),   // Vibrant golden-yellow Tajweed highlight (clearly yellow)
     text: Color(0xFF2C1810),          // Deep warm brown — easier on eyes than black
     surfaceHigh: Color(0xFFF2EDE5),  // Elevated cream
+    ayahOutline: Color(0x66CA8A04),  // Golden-yellow outline for active Ayah (~40% alpha)
   );
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -188,6 +164,7 @@ class AppState extends ChangeNotifier {
     currentWord: Color(0xFFF0C050),  // Bright goldenrod
     text: Color(0xFFF0E6D6),         // Warm off-white — never pure white
     surfaceHigh: Color(0xFF1E1A16),  // Elevated warm dark
+    ayahOutline: Color(0x59DAA520),  // Clean Goldenrod outline (~35% alpha)
   );
 
   Future<void> load() async {
@@ -208,7 +185,11 @@ class AppState extends ChangeNotifier {
         _theme = brightness == Brightness.dark ? AppTheme.dark : AppTheme.light;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
-      isMushafLayout = prefs.getBool('mushafLayout') ?? false;
+      // Mushaf layout bypassed: reset to false so no user is stuck in Mushaf mode
+      isMushafLayout = false;
+      if (prefs.containsKey('mushafLayout')) {
+        await prefs.remove('mushafLayout');
+      }
 
 
 
@@ -226,15 +207,7 @@ class AppState extends ChangeNotifier {
         tajweedClickCount = 10;
       }
 
-      if (prefs.containsKey('recitationSpeed')) {
-        final speed = RecitationSpeed.fromName(prefs.getString('recitationSpeed'));
-        _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
-      }
-      if (prefs.containsKey('matchingStrictness')) {
-        final strictness =
-            MatchingStrictness.fromName(prefs.getString('matchingStrictness'));
-        _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
-      }
+
 
       notifyListeners();
     } catch (e) {
@@ -261,6 +234,9 @@ class ThemeColors {
   /// Pre-computed elevated surface color — avoids Color.lerp() allocation on every build.
   final Color surfaceHigh;
 
+  /// Dedicated outline color for active Ayah in recitation list
+  final Color ayahOutline;
+
   const ThemeColors({
     required this.bg,
     required this.surface,
@@ -272,6 +248,7 @@ class ThemeColors {
     required this.currentWord,
     required this.text,
     required this.surfaceHigh,
+    required this.ayahOutline,
   });
 
   /// A faded version of gold for subtle backgrounds.

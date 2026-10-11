@@ -34,18 +34,21 @@ class ErrorDetailDialog extends StatelessWidget {
     final app = AppState.instance;
     final c = app.colors;
     final isAr = app.isArabic;
+    final isDark = app.isDarkMode;
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.55,
+        maxHeight: MediaQuery.of(context).size.height * 0.58,
       ),
       decoration: BoxDecoration(
-        color: c.surface,
+        color: isDark ? c.surface : const Color(0xFFFFFDF9),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: c.gold.withValues(alpha: 0.08),
-            blurRadius: 40,
+            color: isDark
+                ? c.gold.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.10),
+            blurRadius: 36,
             spreadRadius: 0,
             offset: const Offset(0, -8),
           ),
@@ -63,7 +66,7 @@ class ErrorDetailDialog extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: c.border,
+                  color: isDark ? c.border : const Color(0xFFD6CCC0),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -78,19 +81,32 @@ class ErrorDetailDialog extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // ── Compact Header: Word & Error Count ──
+                    // ── Header: Word & Error Count ──
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: c.gold.withValues(alpha: 0.06),
+                        color: isDark
+                            ? c.gold.withValues(alpha: 0.06)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: c.gold.withValues(alpha: 0.15),
+                          color: isDark
+                              ? c.gold.withValues(alpha: 0.15)
+                              : const Color(0xFFEDE4D6),
                           width: 1,
                         ),
+                        boxShadow: isDark
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -111,8 +127,16 @@ class ErrorDetailDialog extends StatelessWidget {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: c.red.withValues(alpha: 0.12),
+                              color: isDark
+                                  ? c.red.withValues(alpha: 0.12)
+                                  : const Color(0xFFFEE2E2),
                               borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark
+                                    ? c.red.withValues(alpha: 0.25)
+                                    : const Color(0xFFFCA5A5),
+                                width: 1,
+                              ),
                             ),
                             child: Text(
                               errors.length == 1
@@ -121,9 +145,9 @@ class ErrorDetailDialog extends StatelessWidget {
                                       ? '${errors.length} أخطاء'
                                       : '${errors.length} Errors'),
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: c.red,
+                                color: isDark ? c.red : const Color(0xFFDC2626),
                               ),
                             ),
                           ),
@@ -133,7 +157,7 @@ class ErrorDetailDialog extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     // ── Error Cards Layout ──
-                    ..._buildErrorCardsLayout(errors, c, isAr),
+                    ..._buildErrorCardsLayout(errors, c, isAr, isDark),
                   ],
                 ),
               ),
@@ -176,9 +200,10 @@ class ErrorDetailDialog extends StatelessWidget {
     List<ReciterError> errors,
     ThemeColors c,
     bool isAr,
+    bool isDark,
   ) {
     if (errors.length == 1) {
-      return [_buildErrorCard(errors[0], c, isAr, isCompact: false)];
+      return [_buildErrorCard(errors[0], c, isAr, isDark, isCompact: false)];
     }
     List<Widget> rows = [];
     int i = 0;
@@ -192,7 +217,13 @@ class ErrorDetailDialog extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    child: _buildErrorCard(errors[i], c, isAr, isCompact: true),
+                    child: _buildErrorCard(
+                      errors[i],
+                      c,
+                      isAr,
+                      isDark,
+                      isCompact: true,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -200,6 +231,7 @@ class ErrorDetailDialog extends StatelessWidget {
                       errors[i + 1],
                       c,
                       isAr,
+                      isDark,
                       isCompact: true,
                     ),
                   ),
@@ -210,7 +242,7 @@ class ErrorDetailDialog extends StatelessWidget {
         );
         i += 2;
       } else {
-        rows.add(_buildErrorCard(errors[i], c, isAr, isCompact: false));
+        rows.add(_buildErrorCard(errors[i], c, isAr, isDark, isCompact: false));
         i += 1;
       }
     }
@@ -220,7 +252,8 @@ class ErrorDetailDialog extends StatelessWidget {
   Widget _buildErrorCard(
     ReciterError e,
     ThemeColors c,
-    bool isAr, {
+    bool isAr,
+    bool isDark, {
     bool isCompact = false,
   }) {
     final expected = e.expectedPh.isEmpty ? '—' : _cleanPhonetic(e.expectedPh);
@@ -231,9 +264,11 @@ class ErrorDetailDialog extends StatelessWidget {
         e.expectedDuration != null && e.actualDuration != null;
 
     String title;
-    IconData? icon;
+    IconData icon;
     Color accent;
     String desc;
+    String advice = '';
+    String? statusBadge;
 
     if (e.errorType == ErrorCategory.tajweed) {
       String ruleName = isAr
@@ -243,25 +278,23 @@ class ErrorDetailDialog extends StatelessWidget {
         ruleName = isAr ? 'حكم تجويد' : 'Tajweed Rule';
       }
       title = ruleName;
-      icon = null;
-      accent = const Color(0xFFDAA520);
+      icon = Icons.auto_stories_rounded;
+      accent = isDark ? c.gold : const Color(0xFFCA8A04); // Vibrant true golden-yellow
 
-      if (isDurationErr) {
-        desc = (e.actualDuration! < e.expectedDuration!)
-            ? (isAr ? 'يجب إطالة الصوت أكثر' : 'Hold the sound longer')
-            : (isAr ? 'الصوت مطوّل أكثر من اللازم' : 'Sound held too long');
-      } else {
-        desc = isAr
-            ? 'لم يتم تطبيق حكم التجويد بشكل صحيح'
-            : 'Tajweed rule not applied correctly';
+      desc = isAr ? e.messageAr : e.messageEn;
+      advice = isAr ? e.adviceAr : e.adviceEn;
+
+      if (e.durationStatus == TajweedDurationStatus.underheld) {
+        statusBadge = isAr ? 'نقص' : 'Underheld';
+      } else if (e.durationStatus == TajweedDurationStatus.overheld) {
+        statusBadge = isAr ? 'زيادة' : 'Overheld';
       }
     } else if (e.errorType == ErrorCategory.tashkeel) {
       title = isAr ? 'خطأ في التشكيل' : 'Vowel Mark Error';
       icon = Icons.spellcheck_rounded;
-      accent = const Color(0xFF5B8DEF);
-      desc = isAr
-          ? 'الحركة المنطوقة تختلف عن الصحيحة'
-          : 'Pronounced vowel differs from correct one';
+      accent = isDark ? const Color(0xFF5B8DEF) : const Color(0xFF2563EB); // Royal/Azure Blue
+      desc = isAr ? e.messageAr : e.messageEn;
+      advice = isAr ? e.adviceAr : e.adviceEn;
     } else {
       if (e.speechErrorType == SpeechErrorType.insert) {
         title = isAr ? 'إضافة حرف زائد' : 'Extra Letter Added';
@@ -269,22 +302,38 @@ class ErrorDetailDialog extends StatelessWidget {
         title = isAr ? 'خطأ في النطق' : 'Pronunciation Error';
       }
       icon = Icons.record_voice_over_rounded;
-      accent = c.red;
-      if (e.speechErrorType == SpeechErrorType.delete) {
-        desc = isAr ? 'تم حذف هذا الحرف' : 'This letter was skipped';
-      } else if (e.speechErrorType == SpeechErrorType.insert) {
-        desc = isAr ? 'تم إضافة حرف زائد' : 'An extra letter was added';
-      } else {
-        desc = isAr ? 'تم نطق حرف مختلف' : 'A different letter was pronounced';
-      }
+      accent = isDark ? c.red : const Color(0xFFDC2626); // Vibrant Coral Red
+      desc = isAr ? e.messageAr : e.messageEn;
+      advice = isAr ? e.adviceAr : e.adviceEn;
     }
+
+    final Color correctGreen = isDark ? c.green : const Color(0xFF059669);
+    final Color errorRed = isDark ? c.red : const Color(0xFFDC2626);
 
     return Container(
       margin: isCompact ? EdgeInsets.zero : const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: c.surfaceHigh,
+        color: isDark ? c.surfaceHigh : Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withValues(alpha: 0.2), width: 1),
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.22 : 0.28),
+          width: 1,
+        ),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.08),
+                  blurRadius: 14,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,17 +345,22 @@ class ErrorDetailDialog extends StatelessWidget {
               vertical: isCompact ? 10 : 12,
             ),
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.06),
+              color: accent.withValues(alpha: isDark ? 0.08 : 0.08),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(18),
               ),
             ),
             child: Row(
               children: [
-                if (icon != null) ...[
-                  Icon(icon, color: accent, size: isCompact ? 16 : 18),
-                  SizedBox(width: isCompact ? 6 : 10),
-                ],
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: isDark ? 0.15 : 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: accent, size: isCompact ? 14 : 16),
+                ),
+                SizedBox(width: isCompact ? 6 : 8),
                 Expanded(
                   child: Text(
                     title,
@@ -319,7 +373,7 @@ class ErrorDetailDialog extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (e.errorType == ErrorCategory.normal) ...[
+                if (statusBadge != null) ...[
                   SizedBox(width: isCompact ? 4 : 8),
                   Container(
                     padding: EdgeInsets.symmetric(
@@ -327,15 +381,41 @@ class ErrorDetailDialog extends StatelessWidget {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.12),
+                      color: accent.withValues(alpha: isDark ? 0.14 : 0.10),
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: accent.withValues(alpha: isDark ? 0.25 : 0.25),
+                      ),
+                    ),
+                    child: Text(
+                      statusBadge,
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: isCompact ? 10 : 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ] else if (e.errorType == ErrorCategory.normal) ...[
+                  SizedBox(width: isCompact ? 4 : 8),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isCompact ? 6 : 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: isDark ? 0.14 : 0.10),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: accent.withValues(alpha: isDark ? 0.25 : 0.25),
+                      ),
                     ),
                     child: Text(
                       _actionBadge(e.speechErrorType, isAr),
                       style: TextStyle(
                         color: accent,
                         fontSize: isCompact ? 10 : 11,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -357,14 +437,54 @@ class ErrorDetailDialog extends StatelessWidget {
               children: [
                 Text(
                   desc,
-                  maxLines: isCompact ? 2 : null,
+                  maxLines: isCompact ? 3 : null,
                   overflow: isCompact ? TextOverflow.ellipsis : null,
                   style: TextStyle(
-                    color: c.muted,
+                    color: isDark ? c.muted : const Color(0xFF4A4036),
                     fontSize: isCompact ? 12 : 13,
-                    height: isCompact ? 1.3 : 1.4,
+                    height: isCompact ? 1.35 : 1.45,
+                    fontWeight: isDark ? FontWeight.normal : FontWeight.w500,
                   ),
                 ),
+                if (advice.isNotEmpty) ...[
+                  SizedBox(height: isCompact ? 6 : 8),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isCompact ? 8 : 10,
+                      vertical: isCompact ? 6 : 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: isDark ? 0.08 : 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: accent.withValues(alpha: isDark ? 0.20 : 0.22),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.lightbulb_outline_rounded,
+                          size: isCompact ? 14 : 16,
+                          color: accent,
+                        ),
+                        SizedBox(width: isCompact ? 6 : 8),
+                        Expanded(
+                          child: Text(
+                            advice,
+                            style: TextStyle(
+                              color: isDark ? c.text : const Color(0xFF2C1810),
+                              fontSize: isCompact ? 11 : 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 SizedBox(height: isCompact ? 8 : 12),
 
                 if (isDurationErr) ...[
@@ -375,6 +495,8 @@ class ErrorDetailDialog extends StatelessWidget {
                     c,
                     isAr,
                     isCompact: isCompact,
+                    durationStatus: e.durationStatus,
+                    isDark: isDark,
                   ),
                   SizedBox(height: isCompact ? 8 : 12),
                 ],
@@ -385,10 +507,12 @@ class ErrorDetailDialog extends StatelessWidget {
                       width: double.infinity,
                       padding: EdgeInsets.all(isCompact ? 8 : 12),
                       decoration: BoxDecoration(
-                        color: c.bg,
+                        color: isDark ? c.bg : const Color(0xFFFBF8F4),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: c.border.withValues(alpha: 0.25),
+                          color: isDark
+                              ? c.border.withValues(alpha: 0.25)
+                              : const Color(0xFFE8DFD3),
                         ),
                       ),
                       alignment: Alignment.center,
@@ -408,10 +532,12 @@ class ErrorDetailDialog extends StatelessWidget {
                     Container(
                       padding: EdgeInsets.all(isCompact ? 8 : 12),
                       decoration: BoxDecoration(
-                        color: c.bg,
+                        color: isDark ? c.bg : const Color(0xFFFBF8F4),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: c.border.withValues(alpha: 0.25),
+                          color: isDark
+                              ? c.border.withValues(alpha: 0.25)
+                              : const Color(0xFFE8DFD3),
                         ),
                       ),
                       child: Row(
@@ -427,7 +553,7 @@ class ErrorDetailDialog extends StatelessWidget {
                                       width: 6,
                                       height: 6,
                                       decoration: BoxDecoration(
-                                        color: c.green,
+                                        color: correctGreen,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -437,9 +563,9 @@ class ErrorDetailDialog extends StatelessWidget {
                                         isAr ? 'الصواب' : 'Correct',
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: c.green,
+                                          color: correctGreen,
                                           fontSize: isCompact ? 10 : 11,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                     ),
@@ -467,7 +593,7 @@ class ErrorDetailDialog extends StatelessWidget {
                               isAr
                                   ? Icons.arrow_back_rounded
                                   : Icons.arrow_forward_rounded,
-                              color: c.border,
+                              color: isDark ? c.border : const Color(0xFFA89F91),
                               size: isCompact ? 14 : 18,
                             ),
                           ),
@@ -482,7 +608,7 @@ class ErrorDetailDialog extends StatelessWidget {
                                       width: 6,
                                       height: 6,
                                       decoration: BoxDecoration(
-                                        color: c.red,
+                                        color: errorRed,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -492,9 +618,9 @@ class ErrorDetailDialog extends StatelessWidget {
                                         isAr ? 'نطقك' : 'Yours',
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: c.red,
+                                          color: errorRed,
                                           fontSize: isCompact ? 10 : 11,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                     ),
@@ -533,45 +659,99 @@ class ErrorDetailDialog extends StatelessWidget {
     ThemeColors c,
     bool isAr, {
     bool isCompact = false,
+    TajweedDurationStatus? durationStatus,
+    required bool isDark,
   }) {
-    double ratio = (actual / expected).clamp(0.0, 1.0);
-    bool isTooShort = actual < expected;
+    double ratio = expected > 0 ? (actual / expected).clamp(0.0, 1.0) : 0.0;
+    final bool isUnderheld = durationStatus == TajweedDurationStatus.underheld ||
+        (durationStatus == null && actual < expected);
+    final bool isOverheld = durationStatus == TajweedDurationStatus.overheld ||
+        (durationStatus == null && actual > expected);
+
+    final String statusLabel = isUnderheld
+        ? (isAr ? 'نقص' : 'Underheld')
+        : isOverheld
+            ? (isAr ? 'زيادة' : 'Overheld')
+            : (isAr ? 'صحيح' : 'Valid');
+
+    final Color statusColor = isUnderheld
+        ? (isDark ? c.red : const Color(0xFFDC2626))
+        : isOverheld
+            ? (isDark ? c.gold : const Color(0xFFCA8A04))
+            : (isDark ? c.green : const Color(0xFF15803D));
+
     return Container(
       padding: EdgeInsets.all(isCompact ? 8 : 12),
       decoration: BoxDecoration(
-        color: c.bg,
+        color: isDark ? c.bg : const Color(0xFFFBF8F4),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.border.withValues(alpha: 0.25)),
+        border: Border.all(
+          color: isDark
+              ? c.border.withValues(alpha: 0.25)
+              : const Color(0xFFE8DFD3),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 4,
+            spacing: 6,
             children: [
-              Text(
-                isAr ? 'المدة' : 'Duration',
-                style: TextStyle(
-                  color: c.muted,
-                  fontSize: isCompact ? 11 : 12,
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isAr ? 'مدة النطق:' : 'Duration:',
+                    style: TextStyle(
+                      color: isDark ? c.muted : const Color(0xFF6B5E4F),
+                      fontSize: isCompact ? 10.5 : 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: isDark ? 0.12 : 0.10),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: isDark ? 0.25 : 0.25),
+                      ),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: isCompact ? 9.5 : 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              Text(
-                '${actual.toStringAsFixed(2)}s',
-                style: TextStyle(
-                  color: isTooShort ? c.red : c.green,
-                  fontSize: isCompact ? 11 : 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                ' / ${expected.toStringAsFixed(2)}s',
-                style: TextStyle(
-                  color: c.muted,
-                  fontSize: isCompact ? 10 : 12,
-                  fontWeight: FontWeight.w500,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${actual.toStringAsFixed(2)}s',
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: isCompact ? 11 : 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    ' / ${expected.toStringAsFixed(2)}s',
+                    style: TextStyle(
+                      color: isDark ? c.muted : const Color(0xFF8B7D6B),
+                      fontSize: isCompact ? 10 : 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -585,7 +765,9 @@ class ErrorDetailDialog extends StatelessWidget {
                 children: [
                   Container(
                     decoration: BoxDecoration(
-                      color: c.border.withValues(alpha: 0.2),
+                      color: isDark
+                          ? c.border.withValues(alpha: 0.25)
+                          : const Color(0xFFE2DCD2),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -593,9 +775,7 @@ class ErrorDetailDialog extends StatelessWidget {
                     widthFactor: ratio,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isTooShort
-                            ? c.red.withValues(alpha: 0.7)
-                            : c.green.withValues(alpha: 0.7),
+                        color: statusColor.withValues(alpha: isDark ? 0.85 : 0.95),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -605,17 +785,17 @@ class ErrorDetailDialog extends StatelessWidget {
             ),
           ),
           if (!isCompact) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
-              isTooShort
-                  ? (isAr ? 'أطِل الصوت أكثر ↑' : 'Hold sound longer ↑')
-                  : (isAr ? 'الصوت أطول من اللازم ↓' : 'Sound too long ↓'),
+              isUnderheld
+                  ? (isAr ? 'نقص: أطِل مد الصوت أكثر ↑' : 'Underheld: Hold sound longer ↑')
+                  : isOverheld
+                      ? (isAr ? 'زيادة: لا تبالغ في مد الصوت ↓' : 'Overheld: Avoid overextending sound ↓')
+                      : (isAr ? 'المدة صحيحة ✓' : 'Duration is valid ✓'),
               style: TextStyle(
-                color: isTooShort
-                    ? c.red.withValues(alpha: 0.7)
-                    : accent.withValues(alpha: 0.7),
+                color: statusColor,
                 fontSize: 11,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
