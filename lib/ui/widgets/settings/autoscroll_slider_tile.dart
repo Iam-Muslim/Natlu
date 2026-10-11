@@ -43,7 +43,7 @@ class _AutoScrollSliderTileState extends State<AutoScrollSliderTile> {
       trailing: Text(
         labels[_localSpeed.toInt()],
         style: TextStyle(
-          color: c.gold,
+          color: c.primary,
           fontSize: 14,
           fontWeight: FontWeight.bold,
         ),
@@ -53,10 +53,10 @@ class _AutoScrollSliderTileState extends State<AutoScrollSliderTile> {
           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
           overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           trackHeight: 4,
-          activeTrackColor: c.gold,
+          activeTrackColor: c.primary,
           inactiveTrackColor: c.border.withValues(alpha: 0.5),
-          thumbColor: c.gold,
-          overlayColor: c.gold.withValues(alpha: 0.15),
+          thumbColor: c.primary,
+          overlayColor: c.primary.withValues(alpha: 0.15),
           tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2),
           activeTickMarkColor: c.surface,
           inactiveTickMarkColor: c.border,

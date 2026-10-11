@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:recite_quran/recite_quran.dart';
@@ -29,15 +30,19 @@ class SettingsDialog extends StatelessWidget {
               maxHeight: MediaQuery.of(context).size.height * 0.75,
             ),
             decoration: BoxDecoration(
-              color: c.surface,
+              color: c.glassSurface,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
+              border: Border.all(
+                color: c.border.withValues(alpha: app.isDarkMode ? 0.35 : 0.6),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: c.gold.withValues(alpha: 0.08),
+                  color: Colors.black.withValues(alpha: app.isDarkMode ? 0.40 : 0.08),
                   blurRadius: 40,
-                  offset: const Offset(0, -4),
+                  offset: const Offset(0, -8),
                 ),
               ],
             ),
@@ -45,20 +50,22 @@ class SettingsDialog extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Material(
+                  color: Colors.transparent,
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                         const SizedBox(height: 12),
 
                         // ── Handle ──
                         Container(
-                          width: 40,
+                          width: 44,
                           height: 4,
                           decoration: BoxDecoration(
                             color: c.border,
@@ -69,19 +76,23 @@ class SettingsDialog extends StatelessWidget {
 
                         // ── Title ──
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          padding: const EdgeInsetsDirectional.symmetric(horizontal: 24),
                           child: Row(
                             children: [
                               Container(
-                                width: 38,
-                                height: 38,
+                                width: 40,
+                                height: 40,
                                 decoration: BoxDecoration(
-                                  color: c.gold.withValues(alpha: 0.12),
+                                  color: c.primary.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: c.primary.withValues(alpha: 0.20),
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Icon(
                                   Icons.settings_rounded,
-                                  color: c.gold,
+                                  color: c.primary,
                                   size: 20,
                                 ),
                               ),
@@ -96,11 +107,10 @@ class SettingsDialog extends StatelessWidget {
                               ),
                               const Spacer(),
                               // Reset Button
-                              // Reset Button
                               Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(10),
                                   onTap: () async {
                                     final prefs = await SharedPreferences.getInstance();
                                     await prefs.clear();
@@ -116,18 +126,18 @@ class SettingsDialog extends StatelessWidget {
                                                 : 'Settings reset successfully.',
                                               textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
                                             ),
-                                            backgroundColor: c.gold,
+                                            backgroundColor: c.primary,
                                           ),
                                         );
                                       }
                                     }
                                   },
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     child: Text(
                                       isAr ? 'إعادة تعيين' : 'Reset',
                                       style: TextStyle(
-                                        color: c.text.withValues(alpha: 0.6),
+                                        color: c.textSecondary,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -138,7 +148,7 @@ class SettingsDialog extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12), // Reduced from 20
+                        const SizedBox(height: 14),
 
                         // ── Application Preferences Card ──
                         Padding(
@@ -147,6 +157,17 @@ class SettingsDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: c.surfaceHigh,
                               borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: c.border.withValues(alpha: 0.5),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: app.isDarkMode ? 0.20 : 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: Column(
                               children: [
@@ -171,10 +192,12 @@ class SettingsDialog extends StatelessWidget {
                                 // 2. Theme
                                 SettingTile(
                                   icon: Icons.palette_rounded,
-                                  title: isAr ? 'المظهر' : 'Theme',
+                                  title: isAr ? 'مظهر التطبيق' : 'App Theme',
                                   c: c,
-                                  trailing: PremiumPillSelector(
-                                    labels: isAr ? ['أبيض', 'أسود'] : ['White', 'Black'],
+                                  bottom: PremiumPillSelector(
+                                    labels: isAr
+                                        ? ['أبيض', 'أسود']
+                                        : ['White', 'Black'],
                                     selected: app.theme.index,
                                     c: c,
                                     onSelected: (i) => app.setTheme(AppTheme.values[i]),
@@ -193,6 +216,17 @@ class SettingsDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: c.surfaceHigh,
                               borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: c.border.withValues(alpha: 0.5),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: app.isDarkMode ? 0.20 : 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: Column(
                               children: [
@@ -216,7 +250,7 @@ class SettingsDialog extends StatelessWidget {
                             textAlign: TextAlign.center,
                             textDirection: TextDirection.rtl,
                             style: TextStyle(
-                              color: c.gold.withValues(alpha: 0.45),
+                              color: c.primary.withValues(alpha: 0.35),
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                               height: 1.6,
@@ -231,8 +265,9 @@ class SettingsDialog extends StatelessWidget {
               ),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 }

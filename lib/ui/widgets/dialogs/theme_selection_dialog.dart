@@ -43,12 +43,12 @@ class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
                 color: c.surface,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: c.gold.withValues(alpha: 0.15),
-                  width: 1.5,
+                  color: c.border.withValues(alpha: 0.25),
+                  width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.gold.withValues(alpha: 0.15),
+                    color: c.primary.withValues(alpha: 0.08),
                     blurRadius: 40,
                     spreadRadius: -10,
                     offset: const Offset(0, 15),
@@ -78,7 +78,7 @@ class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.1),
+                      color: c.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -87,7 +87,7 @@ class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
                           : 'You can change this later in settings',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: c.gold,
+                        color: c.primary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.4,
@@ -95,29 +95,30 @@ class _ThemeSelectionDialogState extends State<ThemeSelectionDialog> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 36,
+                    runSpacing: 18,
                     children: [
                       _ThemeSwatch(
-                        title: isAr ? 'أبيض' : 'Light',
-                        color: const Color(0xFFFAF6F0),
-                        isSelected: _selectedIndex == 0,
+                        title: isAr ? 'أبيض' : 'White',
+                        color: const Color(0xFFFAF8F5),
+                        isSelected: _selectedIndex == 0 || (_selectedIndex == null && app.theme == AppTheme.white),
                         c: c,
                         onTap: () {
                           setState(() => _selectedIndex = 0);
-                          app.setTheme(AppTheme.light);
+                          app.setTheme(AppTheme.white);
                           Future.delayed(const Duration(milliseconds: 300), widget.onThemeSelected);
                         },
                       ),
-                      const SizedBox(width: 32),
                       _ThemeSwatch(
-                        title: isAr ? 'أسود' : 'Dark',
-                        color: const Color(0xFF1E1A16),
-                        isSelected: _selectedIndex == 1,
+                        title: isAr ? 'أسود' : 'Black',
+                        color: const Color(0xFF000000),
+                        isSelected: _selectedIndex == 1 || (_selectedIndex == null && app.theme == AppTheme.black),
                         c: c,
                         onTap: () {
                           setState(() => _selectedIndex = 1);
-                          app.setTheme(AppTheme.dark);
+                          app.setTheme(AppTheme.black);
                           Future.delayed(const Duration(milliseconds: 300), widget.onThemeSelected);
                         },
                       ),
@@ -197,13 +198,13 @@ class _ThemeSwatchState extends State<_ThemeSwatch> with SingleTickerProviderSta
                 color: widget.color,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: widget.isSelected ? widget.c.gold : widget.c.border,
+                  color: widget.isSelected ? widget.c.primary : widget.c.border,
                   width: widget.isSelected ? 3 : 1.5,
                 ),
                 boxShadow: widget.isSelected
                     ? [
                         BoxShadow(
-                          color: widget.c.gold.withValues(alpha: 0.4),
+                          color: widget.c.primary.withValues(alpha: 0.3),
                           blurRadius: 15,
                           offset: const Offset(0, 4),
                         )
@@ -221,7 +222,7 @@ class _ThemeSwatchState extends State<_ThemeSwatch> with SingleTickerProviderSta
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: widget.c.gold,
+                          color: widget.c.primary,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
@@ -238,7 +239,7 @@ class _ThemeSwatchState extends State<_ThemeSwatch> with SingleTickerProviderSta
           Text(
             widget.title,
             style: TextStyle(
-              color: widget.isSelected ? widget.c.gold : widget.c.muted,
+              color: widget.isSelected ? widget.c.primary : widget.c.muted,
               fontSize: 15,
               fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.w500,
             ),

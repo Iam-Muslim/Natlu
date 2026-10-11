@@ -29,7 +29,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 import 'package:recite_quran/recite_quran.dart';
-import 'services/ayah_audio_service.dart';
 import 'state/app_state.dart';
 import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
@@ -121,11 +120,39 @@ class QuranApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'Recite Quran - اتلو القران',
           theme: ThemeData(
+            useMaterial3: true,
             brightness: isDark ? Brightness.dark : Brightness.light,
             scaffoldBackgroundColor: c.bg,
-            colorScheme: isDark
-                ? ColorScheme.dark(primary: c.gold, surface: c.surface)
-                : ColorScheme.light(primary: c.gold, surface: c.surface),
+            colorScheme: ColorScheme(
+              brightness: isDark ? Brightness.dark : Brightness.light,
+              primary: c.primary,
+              onPrimary: c.onPrimary,
+              secondary: c.secondary,
+              onSecondary: Colors.white,
+              error: c.error,
+              onError: Colors.white,
+              surface: c.surface,
+              onSurface: c.text,
+              surfaceContainerHighest: c.surfaceHigh,
+              outline: c.border,
+            ),
+            cardTheme: CardThemeData(
+              color: c.surface,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: c.border, width: 1),
+              ),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: c.surface,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(color: c.border, width: 1),
+              ),
+            ),
+            fontFamily: AppState.instance.isArabic ? 'HafsSmart' : null,
           ),
           builder: (context, child) {
             if (!kIsWeb) return child!;
@@ -411,7 +438,6 @@ class _OrchestratorState extends State<_Orchestrator> {
           try { await WakelockPlus.enable(); } catch (_) {}
         }
         _engine.resetBuffer();
-        AyahAudioService.instance.stop();
 
         // Instant UI feedback before hardware mic starts
         if (mounted) setState(() => _isRecording = true);
@@ -481,7 +507,6 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
       _ctrl?.finalize();
-      AyahAudioService.instance.stop();
 
       // SHOW UI IMMEDIATELY!
       if (mounted) {
@@ -541,19 +566,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         await _ctrl!.setTargetSurah(result.surah);
         _ctrl!.setManualAyah(result.surah, result.ayah);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'تم الانتقال إلى سورة ${result.surah} آية ${result.ayah}',
-              ),
-              duration: const Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: AppState.instance.colors.gold,
-            ),
-          );
-        }
+
       } else {
         // Fallback: resume previous state if no Ayah was found
         _ctrl?.resumeTracking();

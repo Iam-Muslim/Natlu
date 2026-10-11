@@ -587,7 +587,7 @@ class _MushafViewState extends State<MushafView> {
             padding: const EdgeInsets.symmetric(horizontal: 1.5, vertical: 1.0),
             decoration: isWordActive
                 ? BoxDecoration(
-                    color: c.currentWord.withValues(alpha: 0.25),
+                    color: c.wordHighlight.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   )
                 : null,

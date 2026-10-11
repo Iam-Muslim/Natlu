@@ -232,7 +232,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
         decoration: BoxDecoration(
           color: c.surface,
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: c.gold.withValues(alpha: 0.28), width: 1.5),
+          border: Border.all(color: c.border.withValues(alpha: 0.25), width: 1),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.45),
@@ -241,8 +241,8 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
               offset: const Offset(0, 10),
             ),
             BoxShadow(
-              color: c.gold.withValues(alpha: 0.08),
-              blurRadius: 24,
+              color: c.primary.withValues(alpha: 0.08),
+              blurRadius: 30,
             ),
           ],
         ),
@@ -274,7 +274,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
             height: 38,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(c.gold),
+              valueColor: AlwaysStoppedAnimation<Color>(c.primary),
             ),
           ),
           const SizedBox(height: 20),
@@ -359,7 +359,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                   height: 88 + (val * 12),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: c.gold.withValues(alpha: 0.06 * (1.0 - val)),
+                    color: c.primary.withValues(alpha: 0.06 * (1.0 - val)),
                   ),
                 ),
                 Container(
@@ -367,7 +367,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                   height: 76 + (val * 6),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: c.gold.withValues(alpha: 0.12),
+                    color: c.primary.withValues(alpha: 0.12),
                   ),
                 ),
                 Container(
@@ -377,18 +377,18 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
                       colors: [
-                        c.gold.withValues(alpha: 0.28),
-                        c.gold.withValues(alpha: 0.12),
+                        c.primary.withValues(alpha: 0.28),
+                        c.primary.withValues(alpha: 0.12),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     border: Border.all(
-                      color: c.gold.withValues(alpha: 0.45),
+                      color: c.primary.withValues(alpha: 0.45),
                       width: 1.5,
                     ),
                   ),
-                  child: Icon(Icons.mic_rounded, color: c.gold, size: 28),
+                  child: Icon(Icons.mic_rounded, color: c.primary, size: 28),
                 ),
               ],
             );
@@ -429,9 +429,9 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: c.gold.withValues(alpha: 0.08),
+            color: c.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: c.gold.withValues(alpha: 0.2)),
+            border: Border.all(color: c.primary.withValues(alpha: 0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -439,13 +439,13 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(color: c.gold, shape: BoxShape.circle),
+                decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
               Text(
                 isAr ? 'في انتظار تلاوتك...' : 'Listening to recitation...',
                 style: TextStyle(
-                  color: c.gold,
+                  color: c.primary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -464,7 +464,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
           child: Text(
             isAr ? 'الآيات المتطابقة' : 'Matching Ayahs',
             style: TextStyle(
-              color: c.gold,
+              color: c.primary,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
@@ -497,7 +497,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
               width: 3,
               height: h,
               decoration: BoxDecoration(
-                color: c.gold.withValues(alpha: 0.7),
+                color: c.primary.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(2),
               ),
             );
@@ -512,12 +512,12 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
       decoration: BoxDecoration(
         color: _isCountdownPaused
             ? c.surfaceHigh.withValues(alpha: 0.5)
-            : c.gold.withValues(alpha: 0.09),
+            : c.primary.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: _isCountdownPaused
               ? c.border.withValues(alpha: 0.3)
-              : c.gold.withValues(alpha: 0.22),
+              : c.primary.withValues(alpha: 0.22),
         ),
       ),
       child: Column(
@@ -532,7 +532,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       ? Icons.pause_circle_outline_rounded
                       : Icons.timer_outlined,
                   size: 16,
-                  color: _isCountdownPaused ? c.muted : c.gold,
+                  color: _isCountdownPaused ? c.muted : c.primary,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -560,7 +560,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                             ? 'الانتقال لأقرب تطابق خلال $secRemaining ثوانٍ'
                             : 'Auto-jumping to top match in ${secRemaining}s',
                         style: TextStyle(
-                          color: c.gold,
+                          color: c.primary,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -582,12 +582,12 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       decoration: BoxDecoration(
                         color: _isCountdownPaused
                             ? c.green.withValues(alpha: 0.14)
-                            : c.gold.withValues(alpha: 0.14),
+                            : c.primary.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: _isCountdownPaused
                               ? c.green.withValues(alpha: 0.3)
-                              : c.gold.withValues(alpha: 0.28),
+                              : c.primary.withValues(alpha: 0.28),
                         ),
                       ),
                       child: Row(
@@ -598,7 +598,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                                 ? Icons.play_arrow_rounded
                                 : Icons.pause_rounded,
                             size: 13,
-                            color: _isCountdownPaused ? c.green : c.gold,
+                            color: _isCountdownPaused ? c.green : c.primary,
                           ),
                           const SizedBox(width: 3),
                           Text(
@@ -606,7 +606,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                                 ? (isAr ? 'استئناف' : 'Resume')
                                 : (isAr ? 'إيقاف' : 'Hold'),
                             style: TextStyle(
-                              color: _isCountdownPaused ? c.green : c.gold,
+                              color: _isCountdownPaused ? c.green : c.primary,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -629,9 +629,9 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                   minHeight: 3,
                   backgroundColor: _isCountdownPaused
                       ? c.border.withValues(alpha: 0.15)
-                      : c.gold.withValues(alpha: 0.12),
+                      : c.primary.withValues(alpha: 0.12),
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    _isCountdownPaused ? c.muted : c.gold,
+                    _isCountdownPaused ? c.muted : c.primary,
                   ),
                 ),
               );
@@ -682,8 +682,8 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
       child: InkWell(
         onTap: () => _selectCandidate(match.surah, match.ayah),
         borderRadius: BorderRadius.circular(16),
-        hoverColor: c.gold.withValues(alpha: 0.08),
-        splashColor: c.gold.withValues(alpha: 0.15),
+        hoverColor: c.primary.withValues(alpha: 0.08),
+        splashColor: c.primary.withValues(alpha: 0.15),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
@@ -693,7 +693,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isTop
-                  ? c.gold.withValues(alpha: 0.38)
+                  ? c.primary.withValues(alpha: 0.38)
                   : c.border.withValues(alpha: 0.25),
               width: isTop ? 1.5 : 1,
             ),
@@ -709,14 +709,14 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       fontFamily: isAr ? 'HafsSmart' : null,
                       fontWeight: FontWeight.bold,
                       fontSize: isAr ? 16 : 14,
-                      color: c.gold,
+                      color: c.primary,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.12),
+                      color: c.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -724,7 +724,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: c.gold,
+                        color: c.primary,
                       ),
                     ),
                   ),
@@ -732,9 +732,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: percentage >= 85
-                          ? c.green.withValues(alpha: 0.16)
-                          : c.gold.withValues(alpha: 0.16),
+                      color: percentage >= 85 ? c.green : c.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -742,7 +740,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: percentage >= 85 ? c.green : c.gold,
+                        color: percentage >= 85 ? c.green : c.primary,
                       ),
                     ),
                   ),

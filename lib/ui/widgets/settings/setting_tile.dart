@@ -10,8 +10,8 @@ class PremiumSettingDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 1,
-      margin: const EdgeInsets.only(left: 56, right: 16), // Flush with text, not icon
-      color: c.border.withValues(alpha: 0.15),
+      margin: const EdgeInsetsDirectional.only(start: 56, end: 16), // Flush with text, not icon
+      color: c.border.withValues(alpha: 0.25),
     );
   }
 }
@@ -36,20 +36,24 @@ class SettingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsetsDirectional.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: c.gold.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
+                  color: c.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: c.primary.withValues(alpha: 0.20),
+                    width: 1,
+                  ),
                 ),
-                child: Icon(icon, color: c.gold, size: 18),
+                child: Icon(icon, color: c.primary, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -59,7 +63,7 @@ class SettingTile extends StatelessWidget {
                   style: TextStyle(
                     color: c.text,
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: 0.2,
                   ),
                 ),
@@ -98,11 +102,15 @@ class PremiumPillSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 38,
-      padding: const EdgeInsets.all(3),
+      height: 44,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: c.border.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
+        color: c.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: c.border.withValues(alpha: 0.4),
+          width: 1,
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -123,11 +131,15 @@ class PremiumPillSelector extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: c.surface,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: c.border.withValues(alpha: 0.6),
+                      width: 1,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 4,
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
                     ],
@@ -146,10 +158,9 @@ class PremiumPillSelector extends StatelessWidget {
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
-                            color: isSel ? c.text : c.text.withValues(alpha: 0.5),
-                            fontSize: 14,
-                            fontWeight: isSel ? FontWeight.w600 : FontWeight.w500,
-                            fontFamily: 'sans-serif',
+                            color: isSel ? c.text : c.textSecondary,
+                            fontSize: 13,
+                            fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
                           ),
                           child: Text(labels[i]),
                         ),

@@ -43,12 +43,12 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                 color: c.surface,
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                  color: c.gold.withValues(alpha: 0.15),
-                  width: 1.5,
+                  color: c.border.withValues(alpha: 0.25),
+                  width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.gold.withValues(alpha: 0.15),
+                    color: c.primary.withValues(alpha: 0.08),
                     blurRadius: 50,
                     spreadRadius: -10,
                     offset: const Offset(0, 20),
@@ -78,7 +78,7 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.1),
+                      color: c.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -87,7 +87,7 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                         : 'You can change this later in settings',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: c.gold,
+                        color: c.primary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.4,
@@ -214,16 +214,16 @@ class _SpeedOptionState extends State<_SpeedOption> with SingleTickerProviderSta
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: widget.isSelected ? widget.c.gold.withValues(alpha: 0.08) : widget.c.surface,
+            color: widget.isSelected ? widget.c.primary.withValues(alpha: 0.08) : widget.c.surface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: widget.isSelected ? widget.c.gold : widget.c.border,
+              color: widget.isSelected ? widget.c.primary : widget.c.border,
               width: widget.isSelected ? 2 : 1,
             ),
             boxShadow: widget.isSelected
                 ? [
                     BoxShadow(
-                      color: widget.c.gold.withValues(alpha: 0.2),
+                      color: widget.c.primary.withValues(alpha: 0.2),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     )
@@ -239,7 +239,7 @@ class _SpeedOptionState extends State<_SpeedOption> with SingleTickerProviderSta
                   Text(
                     widget.title,
                     style: TextStyle(
-                      color: widget.isSelected ? widget.c.gold : widget.c.text,
+                      color: widget.isSelected ? widget.c.primary : widget.c.text,
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
                     ),

@@ -58,10 +58,10 @@ class _FontSliderTileState extends State<FontSliderTile> {
                   overlayRadius: 14,
                 ),
                 trackHeight: 4,
-                activeTrackColor: c.gold,
+                activeTrackColor: c.primary,
                 inactiveTrackColor: c.border.withValues(alpha: 0.5),
-                thumbColor: c.gold,
-                overlayColor: c.gold.withValues(alpha: 0.15),
+                thumbColor: c.primary,
+                overlayColor: c.primary.withValues(alpha: 0.15),
               ),
               child: Slider(
                 value: _localSize,

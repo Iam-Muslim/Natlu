@@ -52,12 +52,12 @@ class PermissionDialog extends StatelessWidget {
                 color: c.surface,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: c.gold.withValues(alpha: 0.15),
-                  width: 1.5,
+                  color: c.border.withValues(alpha: 0.25),
+                  width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.gold.withValues(alpha: 0.15),
+                    color: c.primary.withValues(alpha: 0.08),
                     blurRadius: 40,
                     spreadRadius: -10,
                     offset: const Offset(0, 15),
@@ -76,12 +76,12 @@ class PermissionDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.1),
+                      color: c.primary.withValues(alpha: 0.10),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.mic_off_rounded,
-                      color: c.gold,
+                      color: c.primary,
                       size: 32,
                     ),
                   ),
@@ -138,7 +138,7 @@ class PermissionDialog extends StatelessWidget {
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: c.gold,
+                            backgroundColor: c.primary,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 14),

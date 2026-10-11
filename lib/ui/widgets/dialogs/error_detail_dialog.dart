@@ -41,13 +41,15 @@ class ErrorDetailDialog extends StatelessWidget {
         maxHeight: MediaQuery.of(context).size.height * 0.58,
       ),
       decoration: BoxDecoration(
-        color: isDark ? c.surface : const Color(0xFFFFFDF9),
+        color: c.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border.all(
+          color: c.border.withValues(alpha: isDark ? 0.35 : 0.6),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: isDark
-                ? c.gold.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.10),
+            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
             blurRadius: 36,
             spreadRadius: 0,
             offset: const Offset(0, -8),
@@ -63,10 +65,10 @@ class ErrorDetailDialog extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 12, bottom: 4),
               child: Container(
-                width: 40,
+                width: 44,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? c.border : const Color(0xFFD6CCC0),
+                  color: c.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -89,13 +91,13 @@ class ErrorDetailDialog extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? c.gold.withValues(alpha: 0.06)
-                            : Colors.white,
+                            ? c.primary.withValues(alpha: 0.08)
+                            : c.surfaceHigh,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: isDark
-                              ? c.gold.withValues(alpha: 0.15)
-                              : const Color(0xFFEDE4D6),
+                              ? c.primary.withValues(alpha: 0.20)
+                              : c.border,
                           width: 1,
                         ),
                         boxShadow: isDark

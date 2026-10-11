@@ -40,12 +40,12 @@ class ModelDownloadDialog extends StatelessWidget {
                 color: c.surface,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: c.gold.withValues(alpha: 0.15),
-                  width: 1.5,
+                  color: c.border.withValues(alpha: 0.25),
+                  width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.gold.withValues(alpha: 0.15),
+                    color: c.primary.withValues(alpha: 0.08),
                     blurRadius: 40,
                     spreadRadius: -10,
                     offset: const Offset(0, 15),
@@ -64,12 +64,12 @@ class ModelDownloadDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.1),
+                      color: c.primary.withValues(alpha: 0.10),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.cloud_download_rounded,
-                      color: c.gold,
+                      color: c.primary,
                       size: 36,
                     ),
                   ),
@@ -98,18 +98,18 @@ class ModelDownloadDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: c.gold.withValues(alpha: 0.08),
+                      color: c.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.data_usage_rounded, size: 16, color: c.gold),
+                        Icon(Icons.data_usage_rounded, size: 16, color: c.primary),
                         const SizedBox(width: 6),
                         Text(
                           isAr ? 'حجم البيانات: ~72 ميجابايت' : 'Download size: ~72 MB',
                           style: TextStyle(
-                            color: c.gold,
+                            color: c.primary,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -144,7 +144,7 @@ class ModelDownloadDialog extends StatelessWidget {
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context, true),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: c.gold,
+                            backgroundColor: c.primary,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 13),

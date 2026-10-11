@@ -16,7 +16,7 @@ class VerseSpanBuilder {
     if (wordIndex < 0) return colors.text;
     if (controller.isWordGreen(ayah, wordIndex)) return colors.green;
     if (controller.isWordRed(ayah, wordIndex)) return colors.red;
-    if (controller.isWordYellow(ayah, wordIndex)) return colors.currentWord;
+    if (controller.isWordYellow(ayah, wordIndex)) return colors.warning;
     return colors.text;
   }
 

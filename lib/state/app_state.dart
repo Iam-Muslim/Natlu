@@ -19,8 +19,8 @@ enum AppLanguage { ar, en }
 enum AppMode { wordChecker, tajweed }
 
 
-// Available color themes.
-enum AppTheme { light, dark }
+// Available color themes: White and Black.
+enum AppTheme { white, black }
 
 class AppState extends ChangeNotifier {
   AppState._() {
@@ -69,9 +69,13 @@ class AppState extends ChangeNotifier {
 
   // ── Theme ──────────────────────────────────────────────────────────────────
 
-  AppTheme _theme = AppTheme.light;
+  AppTheme _theme = AppTheme.white;
   AppTheme get theme => _theme;
-  bool get isDarkMode => _theme == AppTheme.dark;
+  bool get isDarkMode => _theme == AppTheme.black;
+  bool get isBlack => _theme == AppTheme.black;
+  bool get isWhite => _theme == AppTheme.white;
+  bool get isOled => _theme == AppTheme.black;
+  bool get isParchment => false;
 
   void setTheme(AppTheme t) async {
     _theme = t;
@@ -101,6 +105,9 @@ class AppState extends ChangeNotifier {
 
   // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
 
+  static const List<double> autoScrollMultipliers = [0.25, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+  static const List<String> speedLabels = ['0.25x', '0.5x', '1.0x', '1.5x', '2.0x', '2.5x', '3.0x'];
+
   int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
 
   void setAutoScrollSpeed(int speed) async {
@@ -108,6 +115,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('autoScrollSpeed', autoScrollSpeed);
+  }
+
+  void cycleAutoScrollSpeed() {
+    final next = (autoScrollSpeed + 1) % autoScrollMultipliers.length;
+    setAutoScrollSpeed(next);
   }
 
   // ── Font Size ──────────────────────────────────────────────────────────────
@@ -129,42 +141,83 @@ class AppState extends ChangeNotifier {
   // ── Colors ─────────────────────────────────────────────────────────────────
 
   /// Returns the active color palette based on the current theme.
-  ThemeColors get colors => isDarkMode ? _darkColors : _lightColors;
+  ThemeColors get colors {
+    switch (_theme) {
+      case AppTheme.white:
+        return _whiteColors;
+      case AppTheme.black:
+        return _blackColors;
+    }
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // LIGHT THEME — Warm Ivory / Cream
-  // Inspired by classic Mushaf paper tones. Eye-comfortable for long reading.
+  // WHITE THEME — Warm Natural Linen (Zero Glare, Eye-Comfortable)
+  // Warm ivory foundation (#FAF8F5), soft clean surfaces, gentle borders,
+  // deep charcoal typography (#1E293B) to avoid harsh optical glare.
   // ──────────────────────────────────────────────────────────────────────────
-  static const ThemeColors _lightColors = ThemeColors(
-    bg: Color(0xFFFAF6F0),          // Warm ivory/cream — like Mushaf paper
-    surface: Color(0xFFFFFDF8),      // Slightly brighter cream for cards
-    border: Color(0xFFE8DFD3),       // Warm tan border
-    gold: Color(0xFFCA8A04),         // True golden-yellow for Tajweed
-    green: Color(0xFF15803D),        // Quranic Islamic emerald green
-    red: Color(0xFFDC2626),          // Vibrant modern coral red
-    muted: Color(0xFF8B7D6B),        // Warm grey-brown
-    currentWord: Color(0xFFCA8A04),   // Vibrant golden-yellow Tajweed highlight (clearly yellow)
-    text: Color(0xFF2C1810),          // Deep warm brown — easier on eyes than black
-    surfaceHigh: Color(0xFFF2EDE5),  // Elevated cream
-    ayahOutline: Color(0x66CA8A04),  // Golden-yellow outline for active Ayah (~40% alpha)
+  static const ThemeColors _whiteColors = ThemeColors(
+    bg: Color(0xFFFAF8F5),             // Warm natural linen paper (minimizes blue light)
+    surface: Color(0xFFFFFFFF),        // Clean white card surface
+    surfaceHigh: Color(0xFFF4F0E8),    // Soft warm elevation layer 1
+    surfaceVariant: Color(0xFFEBE5D8), // Soft warm elevation layer 2
+    glassSurface: Color(0xEEFAF8F5),   // 93% frosted linen overlay
+    border: Color(0xFFE8E2D5),          // Gentle warm border
+    cardBorder: Color(0xFFE8E2D5),
+    primary: Color(0xFF047857),        // Deep calm emerald green
+    onPrimary: Color(0xFFFFFFFF),      // Crisp white on primary
+    secondary: Color(0xFF0D9488),      // Calming Teal
+    gold: Color(0xFFB45309),           // Warm antique gold
+    green: Color(0xFF15803D),          // Soothing Quranic leaf green
+    red: Color(0xFFDC2626),            // Warm terracotta red (non-alarming)
+    muted: Color(0xFF64748B),          // Slate-500 neutral muted
+    currentWord: Color(0xFF0D9488),    // Calming teal active word highlight
+    wordHighlight: Color(0xFF0D9488),  // Calming teal active word highlight
+    text: Color(0xFF1E293B),           // Slate-800 deep charcoal (13:1 eye-gentle contrast)
+    textSecondary: Color(0xFF475569),  // Slate-600 secondary text
+    ayahOutline: Color(0x2EB45309),    // Soft warm amber outline (~18% alpha)
+    ambientGlow: Color(0x18047857),    // Ambient soft emerald glow
+    success: Color(0xFF15803D),        // Calm success green
+    warning: Color(0xFFD97706),        // Warm honey warning
+    error: Color(0xFFDC2626),          // Terracotta error
+    info: Color(0xFF2563EB),           // Calming sapphire info
+    cyan: Color(0xFF0D9488),           // Calm teal
+    indigo: Color(0xFF4338CA),         // Royal Indigo
+    emerald: Color(0xFF047857),        // Deep emerald
   );
 
   // ──────────────────────────────────────────────────────────────────────────
-  // DARK THEME — Deep Warm Black
-  // AMOLED-friendly but never harsh. Warm undertones reduce eye strain.
+  // BLACK THEME — Deep OLED True Black (Tahajjud Eye Comfort)
+  // True black foundation (#000000) for OLED battery, paired with soft
+  // moonlit pearl text (#E2E8F0) to eliminate night glare & eye fatigue.
   // ──────────────────────────────────────────────────────────────────────────
-  static const ThemeColors _darkColors = ThemeColors(
-    bg: Color(0xFF0A0806),          // Very deep warm black (not pure #000)
-    surface: Color(0xFF141210),      // Slightly elevated warm surface
-    border: Color(0xFF2A2520),       // Warm dark border
-    gold: Color(0xFFDAA520),         // Goldenrod — warm & visible on dark
-    green: Color(0xFF3CB371),        // Medium sea green — readable on dark
-    red: Color(0xFFE07070),          // Soft red — not harsh on dark bg
-    muted: Color(0xFF9A8F82),        // Warm muted
-    currentWord: Color(0xFFF0C050),  // Bright goldenrod
-    text: Color(0xFFF0E6D6),         // Warm off-white — never pure white
-    surfaceHigh: Color(0xFF1E1A16),  // Elevated warm dark
-    ayahOutline: Color(0x59DAA520),  // Clean Goldenrod outline (~35% alpha)
+  static const ThemeColors _blackColors = ThemeColors(
+    bg: Color(0xFF000000),             // Pure OLED True Black
+    surface: Color(0xFF0D0F14),        // Ultra-deep charcoal surface
+    surfaceHigh: Color(0xFF151922),    // Elevation layer 1
+    surfaceVariant: Color(0xFF1C222E), // Elevation layer 2
+    glassSurface: Color(0xE005070A),   // 88% OLED glassmorphism
+    border: Color(0xFF202736),          // Subtle boundary
+    cardBorder: Color(0xFF202736),
+    primary: Color(0xFF10B981),        // Serene Emerald
+    onPrimary: Color(0xFF000000),
+    secondary: Color(0xFF06B6D4),      // Cyan Spark
+    gold: Color(0xFFEAB308),           // Luminous Amber Gold
+    green: Color(0xFF22C55E),          // Calming leaf green
+    red: Color(0xFFE06D63),            // Gentle rose terracotta
+    muted: Color(0xFF64748B),          // Slate-500 neutral muted
+    currentWord: Color(0xFF14B8A6),    // Calming luminous teal active word highlight
+    wordHighlight: Color(0xFF14B8A6),  // Calming luminous teal active word highlight
+    text: Color(0xFFE2E8F0),           // Moonlit pearl (halation-free)
+    textSecondary: Color(0xFF94A3B8),  // Slate-400
+    ayahOutline: Color(0x35EAB308),    // Soft amber outline
+    ambientGlow: Color(0x2510B981),    // Gentle emerald glow
+    success: Color(0xFF22C55E),
+    warning: Color(0xFFF59E0B),
+    error: Color(0xFFE06D63),
+    info: Color(0xFF38BDF8),
+    cyan: Color(0xFF06B6D4),
+    indigo: Color(0xFF818CF8),
+    emerald: Color(0xFF10B981),
   );
 
   Future<void> load() async {
@@ -177,12 +230,17 @@ class AppState extends ChangeNotifier {
             : AppLanguage.ar;
       }
       if (prefs.containsKey('theme')) {
-        _theme = prefs.getString('theme') == 'dark'
-            ? AppTheme.dark
-            : AppTheme.light;
+        final themeStr = prefs.getString('theme');
+        try {
+          _theme = AppTheme.values.firstWhere((t) => t.name == themeStr);
+        } catch (_) {
+          _theme = (themeStr == 'dark' || themeStr == 'oled' || themeStr == 'black')
+              ? AppTheme.black
+              : AppTheme.white;
+        }
       } else {
         final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
-        _theme = brightness == Brightness.dark ? AppTheme.dark : AppTheme.light;
+        _theme = brightness == Brightness.dark ? AppTheme.black : AppTheme.white;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
       // Mushaf layout bypassed: reset to false so no user is stuck in Mushaf mode
@@ -191,11 +249,7 @@ class AppState extends ChangeNotifier {
         await prefs.remove('mushafLayout');
       }
 
-
-
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
-
-
       
       if (prefs.containsKey('fontSize')) {
         fontSize = prefs.getDouble('fontSize') ?? 28.0;
@@ -207,8 +261,6 @@ class AppState extends ChangeNotifier {
         tajweedClickCount = 10;
       }
 
-
-
       notifyListeners();
     } catch (e) {
       DebugLogger.logSimple('AppState', "Error loading settings: $e");
@@ -216,41 +268,72 @@ class AppState extends ChangeNotifier {
   }
 }
 
-// Immutable color palette used by all UI widgets.
-//
-// Each theme (light/dark) provides its own [ThemeColors] instance.
-// Widgets read colors via `AppState.instance.colors`.
+/// 2026 Design Token Palette used across the application.
+///
+/// Implements WCAG AA/AAA compliant Obsidian / Slate dark mode architecture,
+/// clean spacious light mode, and vibrant 2026 accents (Emerald Glow, Cyan Spark, Electric Indigo).
 class ThemeColors {
   final Color bg;
   final Color surface;
+  final Color surfaceHigh;
+  final Color surfaceVariant;
+  final Color glassSurface;
   final Color border;
+  final Color cardBorder;
+  final Color primary;
+  final Color onPrimary;
+  final Color secondary;
   final Color gold;
   final Color green;
   final Color red;
   final Color muted;
   final Color currentWord;
+  final Color wordHighlight;
   final Color text;
-
-  /// Pre-computed elevated surface color — avoids Color.lerp() allocation on every build.
-  final Color surfaceHigh;
-
-  /// Dedicated outline color for active Ayah in recitation list
+  final Color textSecondary;
   final Color ayahOutline;
+  final Color ambientGlow;
+  final Color success;
+  final Color warning;
+  final Color error;
+  final Color info;
+  final Color cyan;
+  final Color indigo;
+  final Color emerald;
 
   const ThemeColors({
     required this.bg,
     required this.surface,
+    required this.surfaceHigh,
+    required this.surfaceVariant,
+    required this.glassSurface,
     required this.border,
+    required this.cardBorder,
+    required this.primary,
+    required this.onPrimary,
+    required this.secondary,
     required this.gold,
     required this.green,
     required this.red,
     required this.muted,
     required this.currentWord,
+    required this.wordHighlight,
     required this.text,
-    required this.surfaceHigh,
+    required this.textSecondary,
     required this.ayahOutline,
+    required this.ambientGlow,
+    required this.success,
+    required this.warning,
+    required this.error,
+    required this.info,
+    required this.cyan,
+    required this.indigo,
+    required this.emerald,
   });
 
   /// A faded version of gold for subtle backgrounds.
   Color get goldFade => gold.withValues(alpha: 0.25);
+  
+  /// A faded version of primary for subtle pill backgrounds.
+  Color get primaryFade => primary.withValues(alpha: 0.12);
 }
