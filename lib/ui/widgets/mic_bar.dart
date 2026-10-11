@@ -109,144 +109,161 @@ class _BottomActionBarState extends State<BottomActionBar>
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 220),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
-                  height: 56,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: isDark
-                          ? [
-                              c.surfaceHigh.withValues(alpha: 0.72),
-                              c.surface.withValues(alpha: 0.86),
-                            ]
-                          : [
-                              Colors.white.withValues(alpha: 0.92),
-                              c.surfaceHigh.withValues(alpha: 0.80),
-                            ],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.14)
-                          : c.border.withValues(alpha: 0.65),
-                      width: 0.85,
-                    ),
-                    boxShadow: isDark
-                        ? [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              blurRadius: 22,
-                              offset: const Offset(0, 6),
-                            ),
-                          ]
-                        : [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 20,
-                              offset: const Offset(0, 6),
-                            ),
-                            BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.90),
-                              blurRadius: 2,
-                              offset: const Offset(0, -1),
-                            ),
-                          ],
+          child: AnimatedBuilder(
+            animation: anim,
+            builder: (context, child) {
+              final double t = anim.value;
+              final double dockHeight = lerpDouble(46.0, 56.0, t)!;
+              final EdgeInsets dockPadding = EdgeInsets.symmetric(
+                horizontal: 8.0 * t,
+                vertical: 4.0 * t,
+              );
+              final double radius = lerpDouble(18.0, 20.0, t)!;
+
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: 20 * t,
+                    sigmaY: 20 * t,
                   ),
-                  child: Directionality(
-                    textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // ── Subordinate Satellite 1: Tajweed Toggle (Collapsible) ──
-                        SizeTransition(
-                          axis: Axis.horizontal,
-                          alignment: Alignment.center,
-                          sizeFactor: anim,
-                          child: FadeTransition(
-                            opacity: anim,
-                            child: ScaleTransition(
-                              scale: anim,
-                              child: IgnorePointer(
-                                ignoring: widget.isAutoScrolling,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildSecondaryToggle(
-                                      icon: widget.isTajweed
-                                          ? Icons.record_voice_over_rounded
-                                          : Icons.record_voice_over_outlined,
-                                      tooltip: isAr
-                                          ? 'أحكام التجويد ومخارج الحروف'
-                                          : 'Tajweed & Pronunciation Rules',
-                                      isActive: widget.isTajweed,
-                                      c: c,
-                                      isDark: isDark,
-                                      onTap: () {
-                                        HapticFeedback.lightImpact();
-                                        widget.onToggleTajweed();
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // ── Dominant Hero Centerpiece: Recite / Stop / Pause ──
-                        _buildHeroReciteButton(c, app, isDark, isAr),
-
-                        // ── Subordinate Satellite 2: Hide Verses Toggle (Collapsible) ──
-                        SizeTransition(
-                          axis: Axis.horizontal,
-                          alignment: Alignment.center,
-                          sizeFactor: anim,
-                          child: FadeTransition(
-                            opacity: anim,
-                            child: ScaleTransition(
-                              scale: anim,
-                              child: IgnorePointer(
-                                ignoring: widget.isAutoScrolling,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const SizedBox(width: 8),
-                                    _buildSecondaryToggle(
-                                      icon: widget.isBlur
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_rounded,
-                                      tooltip: isAr
-                                          ? 'إخفاء الآيات للتسميع'
-                                          : 'Hide Verses for Memorization',
-                                      isActive: widget.isBlur,
-                                      c: c,
-                                      isDark: isDark,
-                                      onTap: () {
-                                        HapticFeedback.lightImpact();
-                                        widget.onToggleBlur();
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  child: Container(
+                    height: dockHeight,
+                    padding: dockPadding,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: isDark
+                            ? [
+                                c.surfaceHigh.withValues(alpha: 0.72 * t),
+                                c.surface.withValues(alpha: 0.86 * t),
+                              ]
+                            : [
+                                Colors.white.withValues(alpha: 0.92 * t),
+                                c.surfaceHigh.withValues(alpha: 0.80 * t),
+                              ],
+                      ),
+                      borderRadius: BorderRadius.circular(radius),
+                      border: Border.all(
+                        color: (isDark
+                                ? Colors.white.withValues(alpha: 0.14)
+                                : c.border.withValues(alpha: 0.65))
+                            .withValues(alpha: (isDark ? 0.14 : 0.65) * t),
+                        width: 0.85 * t,
+                      ),
+                      boxShadow: t > 0.05
+                          ? (isDark
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.45 * t),
+                                    blurRadius: 22,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.08 * t),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.white.withValues(alpha: 0.90 * t),
+                                    blurRadius: 2,
+                                    offset: const Offset(0, -1),
+                                  ),
+                                ])
+                          : null,
                     ),
+                    child: child,
                   ),
                 ),
+              );
+            },
+            child: Directionality(
+              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // ── Subordinate Satellite 1: Tajweed Toggle (Collapsible) ──
+                  SizeTransition(
+                    axis: Axis.horizontal,
+                    alignment: Alignment.center,
+                    sizeFactor: anim,
+                    child: FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(
+                        scale: anim,
+                        child: IgnorePointer(
+                          ignoring: widget.isAutoScrolling,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildSecondaryToggle(
+                                icon: widget.isTajweed
+                                    ? Icons.record_voice_over_rounded
+                                    : Icons.record_voice_over_outlined,
+                                tooltip: isAr
+                                    ? 'أحكام التجويد ومخارج الحروف'
+                                    : 'Tajweed & Pronunciation Rules',
+                                isActive: widget.isTajweed,
+                                c: c,
+                                isDark: isDark,
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  widget.onToggleTajweed();
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ── Dominant Hero Centerpiece: Recite / Stop / Pause ──
+                  _buildHeroReciteButton(c, app, isDark, isAr),
+
+                  // ── Subordinate Satellite 2: Hide Verses Toggle (Collapsible) ──
+                  SizeTransition(
+                    axis: Axis.horizontal,
+                    alignment: Alignment.center,
+                    sizeFactor: anim,
+                    child: FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(
+                        scale: anim,
+                        child: IgnorePointer(
+                          ignoring: widget.isAutoScrolling,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: 8),
+                              _buildSecondaryToggle(
+                                icon: widget.isBlur
+                                    ? Icons.visibility_off_rounded
+                                    : Icons.visibility_rounded,
+                                tooltip: isAr
+                                    ? 'إخفاء الآيات للتسميع'
+                                    : 'Hide Verses for Memorization',
+                                isActive: widget.isBlur,
+                                c: c,
+                                isDark: isDark,
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  widget.onToggleBlur();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -332,8 +349,12 @@ class _BottomActionBarState extends State<BottomActionBar>
       icon = Icons.stop_rounded;
       onTap = widget.onMic;
     } else if (isScroll) {
-      gradientStart = c.gold;
-      gradientEnd = const Color(0xFFB45309);
+      gradientStart = isDark
+          ? c.surfaceHigh.withValues(alpha: 0.94)
+          : c.surfaceHigh;
+      gradientEnd = isDark
+          ? c.surface.withValues(alpha: 0.98)
+          : c.surface;
       label = isAr ? 'إيقاف' : 'Pause';
       icon = Icons.pause_rounded;
       onTap = widget.onToggleAutoScroll;
@@ -363,16 +384,32 @@ class _BottomActionBarState extends State<BottomActionBar>
           ),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: Colors.white.withValues(alpha: isDark ? 0.30 : 0.45),
+            color: isScroll
+                ? (isDark
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : c.border.withValues(alpha: 0.65))
+                : Colors.white.withValues(alpha: isDark ? 0.30 : 0.45),
             width: 0.85,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: gradientStart.withValues(alpha: isRec ? 0.42 : 0.36),
-              blurRadius: 14,
-              offset: const Offset(0, 3),
-            ),
-          ],
+          boxShadow: isScroll
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: c.primary.withValues(alpha: isDark ? 0.08 : 0.04),
+                    blurRadius: 10,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: gradientStart.withValues(alpha: isRec ? 0.42 : 0.36),
+                    blurRadius: 14,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -396,7 +433,7 @@ class _BottomActionBarState extends State<BottomActionBar>
                           )
                         : Icon(
                             icon,
-                            color: Colors.white,
+                            color: isScroll ? c.primary : Colors.white,
                             size: 20,
                           )),
               ),
@@ -409,7 +446,9 @@ class _BottomActionBarState extends State<BottomActionBar>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: null,
-                color: Colors.white,
+                color: isScroll
+                    ? (isDark ? Colors.white.withValues(alpha: 0.90) : c.text)
+                    : Colors.white,
                 fontSize: isAr ? 11.5 : 10.5,
                 fontWeight: FontWeight.w800,
                 letterSpacing: isAr ? 0.2 : 0.5,

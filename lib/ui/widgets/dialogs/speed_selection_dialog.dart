@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../state/app_state.dart';
 
+/// 2026 Modern Auto-Scroll Speed Dialog matching the app's frosted glassmorphism & tactile design system.
 class SpeedSelectionDialog extends StatefulWidget {
   final VoidCallback onSpeedSelected;
 
@@ -13,6 +15,13 @@ class SpeedSelectionDialog extends StatefulWidget {
 class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
   int? _selectedIndex;
 
+  void _selectSpeed(AppState app, int speedIndex) {
+    HapticFeedback.lightImpact();
+    setState(() => _selectedIndex = speedIndex);
+    app.setAutoScrollSpeed(speedIndex);
+    Future.delayed(const Duration(milliseconds: 100), widget.onSpeedSelected);
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
@@ -21,127 +30,143 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
       builder: (context, _) {
         final c = app.colors;
         final isAr = app.isArabic;
-        
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOutBack,
-            builder: (context, value, child) {
-              return Transform.scale(
-                scale: value,
-                child: Opacity(
-                  opacity: value.clamp(0.0, 1.0),
-                  child: child,
-                ),
-              );
-            },
+        final isDark = app.isDarkMode;
+
+        return Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
             child: Container(
+              constraints: const BoxConstraints(maxWidth: 340),
               decoration: BoxDecoration(
                 color: c.surface,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: c.border.withValues(alpha: 0.25),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : c.border.withValues(alpha: 0.50),
                   width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.primary.withValues(alpha: 0.08),
-                    blurRadius: 50,
-                    spreadRadius: -10,
-                    offset: const Offset(0, 20),
+                    color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
+                    blurRadius: 32,
+                    offset: const Offset(0, 10),
                   ),
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
+                    color: c.primary.withValues(alpha: 0.08),
+                    blurRadius: 24,
                   ),
                 ],
               ),
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // ── Top Icon Badge ──
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: c.primary.withValues(alpha: isDark ? 0.18 : 0.10),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: c.primary.withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.speed_rounded,
+                      color: c.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Dialog Title ──
                   Text(
-                    isAr ? 'سرعة التلاوة' : 'Recitation Speed',
+                    isAr ? 'سرعة التمرير التلقائي' : 'Auto-Scroll Speed',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: c.text,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
+                      letterSpacing: -0.4,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+
+                  // ── Settings Reminder Banner ──
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                     decoration: BoxDecoration(
-                      color: c.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      isAr 
-                        ? 'يمكنك تغيير السرعة لاحقاً من الإعدادات'
-                        : 'You can change this later in settings',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: c.primary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : c.surfaceHigh.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: c.primary.withValues(alpha: 0.20),
+                        width: 0.8,
                       ),
                     ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          color: c.primary,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isAr
+                                ? 'يمكنك ضبط وتغيير السرعة لاحقاً من الإعدادات'
+                                : 'You can adjust speed anytime in settings',
+                            style: TextStyle(
+                              color: c.primary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  
-                  _SpeedOption(
+                  const SizedBox(height: 16),
+
+                  // ── Speed Options (Slow, Normal, Fast) ──
+                  _ModernSpeedTile(
                     title: isAr ? 'بطيء' : 'Slow',
-                    subtitle: isAr 
-                        ? 'مناسب للمبتدئين وللتلاوة الهادئة.'
-                        : 'Perfect for beginners and calm reading.',
-                    isRecommended: false,
-                    isSelected: _selectedIndex == 0,
+                    speedBadge: '0.5x',
+                    isSelected: _selectedIndex == 1 || (_selectedIndex == null && app.autoScrollSpeed == 1),
                     c: c,
-                    isAr: isAr,
-                    onTap: () {
-                      setState(() => _selectedIndex = 0);
-                      app.setAutoScrollSpeed(1); // 0.5x
-                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
-                    },
+                    isDark: isDark,
+                    onTap: () => _selectSpeed(app, 1),
                   ),
-                  const SizedBox(height: 10),
-                  _SpeedOption(
+                  const SizedBox(height: 8),
+
+                  _ModernSpeedTile(
                     title: isAr ? 'عادي' : 'Normal',
-                    subtitle: isAr 
-                        ? 'السرعة القياسية للتلاوة.'
-                        : 'The standard reading speed.',
-                    isRecommended: true,
-                    isSelected: _selectedIndex == 1,
+                    speedBadge: '1.0x',
+                    isSelected: _selectedIndex == 2 || (_selectedIndex == null && app.autoScrollSpeed == 2),
                     c: c,
-                    isAr: isAr,
-                    onTap: () {
-                      setState(() => _selectedIndex = 1);
-                      app.setAutoScrollSpeed(2); // 1.0x
-                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
-                    },
+                    isDark: isDark,
+                    onTap: () => _selectSpeed(app, 2),
                   ),
-                  const SizedBox(height: 10),
-                  _SpeedOption(
+                  const SizedBox(height: 8),
+
+                  _ModernSpeedTile(
                     title: isAr ? 'سريع' : 'Fast',
-                    subtitle: isAr 
-                        ? 'للمراجعة والقراءة السريعة (الحدر).'
-                        : 'For quick review and Hadr recitation.',
-                    isRecommended: false,
-                    isSelected: _selectedIndex == 2,
+                    speedBadge: '2.0x',
+                    isSelected: _selectedIndex == 4 || (_selectedIndex == null && app.autoScrollSpeed == 4),
                     c: c,
-                    isAr: isAr,
-                    onTap: () {
-                      setState(() => _selectedIndex = 2);
-                      app.setAutoScrollSpeed(4); // 2.0x
-                      Future.delayed(const Duration(milliseconds: 300), widget.onSpeedSelected);
-                    },
+                    isDark: isDark,
+                    onTap: () => _selectSpeed(app, 4),
                   ),
                 ],
               ),
@@ -153,127 +178,129 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
   }
 }
 
-class _SpeedOption extends StatefulWidget {
+/// Modern interactive speed option tile with speed pill and spring press feedback.
+class _ModernSpeedTile extends StatelessWidget {
   final String title;
-  final String subtitle;
-  final bool isRecommended;
+  final String speedBadge;
   final bool isSelected;
   final ThemeColors c;
-  final bool isAr;
+  final bool isDark;
   final VoidCallback onTap;
 
-  const _SpeedOption({
+  const _ModernSpeedTile({
     required this.title,
-    required this.subtitle,
-    required this.isRecommended,
+    required this.speedBadge,
     required this.isSelected,
     required this.c,
-    required this.isAr,
+    required this.isDark,
     required this.onTap,
   });
 
   @override
-  State<_SpeedOption> createState() => _SpeedOptionState();
+  Widget build(BuildContext context) {
+    return _TactileScaleWrapper(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? c.primary.withValues(alpha: isDark ? 0.16 : 0.08)
+              : (isDark ? Colors.white.withValues(alpha: 0.04) : c.surfaceHigh),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: isSelected
+                ? c.primary
+                : (isDark ? Colors.white.withValues(alpha: 0.08) : c.border.withValues(alpha: 0.55)),
+            width: isSelected ? 1.5 : 0.9,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: c.primary.withValues(alpha: 0.16),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+
+            // Speed Title
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? c.primary : c.text,
+                  fontSize: 15,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                ),
+              ),
+            ),
+
+            // Speed Multiplier Pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? c.primary.withValues(alpha: 0.18)
+                    : (isDark ? Colors.white.withValues(alpha: 0.06) : c.border.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                speedBadge,
+                style: TextStyle(
+                  color: isSelected ? c.primary : c.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
+            if (isSelected) ...[
+              const SizedBox(width: 8),
+              Icon(
+                Icons.check_circle_rounded,
+                color: c.primary,
+                size: 18,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _SpeedOptionState extends State<_SpeedOption> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
+/// 2026 Spring-scale tactile feedback button wrapper matching the app's interaction physics.
+class _TactileScaleWrapper extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const _TactileScaleWrapper({required this.child, required this.onTap});
 
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
+  State<_TactileScaleWrapper> createState() => _TactileScaleWrapperState();
+}
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+class _TactileScaleWrapperState extends State<_TactileScaleWrapper> {
+  bool _isDown = false;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: widget.isSelected ? widget.c.primary.withValues(alpha: 0.08) : widget.c.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: widget.isSelected ? widget.c.primary : widget.c.border,
-              width: widget.isSelected ? 2 : 1,
-            ),
-            boxShadow: widget.isSelected
-                ? [
-                    BoxShadow(
-                      color: widget.c.primary.withValues(alpha: 0.2),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    )
-                  ]
-                : [],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    widget.title,
-                    style: TextStyle(
-                      color: widget.isSelected ? widget.c.primary : widget.c.text,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (widget.isRecommended)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: widget.c.green.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        widget.isAr ? 'موصى به' : 'Recommended',
-                        style: TextStyle(
-                          color: widget.c.green,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                widget.subtitle,
-                style: TextStyle(
-                  color: widget.c.muted,
-                  fontSize: 13,
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
+      onTapDown: (_) => setState(() => _isDown = true),
+      onTapUp: (_) => setState(() => _isDown = false),
+      onTapCancel: () => setState(() => _isDown = false),
+      onTap: widget.onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _isDown ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: _isDown ? Curves.easeOutQuad : Curves.easeOutBack,
+        child: widget.child,
       ),
     );
   }

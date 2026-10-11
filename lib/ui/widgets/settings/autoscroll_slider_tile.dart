@@ -34,7 +34,7 @@ class _AutoScrollSliderTileState extends State<AutoScrollSliderTile> {
     final app = widget.app;
     final isAr = widget.isAr;
 
-    const labels = ['0.25x', '0.5x', '1x', '1.5x', '2x', '2.5x', '3x'];
+    final labels = AppState.speedLabels;
 
     return SettingTile(
       icon: Icons.speed_rounded,

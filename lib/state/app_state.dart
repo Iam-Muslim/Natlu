@@ -105,16 +105,23 @@ class AppState extends ChangeNotifier {
 
   // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
 
-  static const List<double> autoScrollMultipliers = [0.25, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+  static const List<double> autoScrollMultipliers = [0.25, 0.5, 1.0, 1.5, 3.0, 4.5, 6.0];
   static const List<String> speedLabels = ['0.25x', '0.5x', '1.0x', '1.5x', '2.0x', '2.5x', '3.0x'];
 
   int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
+  bool hasChosenAutoScrollSpeed = false;
 
   void setAutoScrollSpeed(int speed) async {
     autoScrollSpeed = speed;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('autoScrollSpeed', autoScrollSpeed);
+  }
+
+  void setHasChosenAutoScrollSpeed(bool chosen) async {
+    hasChosenAutoScrollSpeed = chosen;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('has_chosen_speed', chosen);
   }
 
   void cycleAutoScrollSpeed() {
@@ -250,6 +257,7 @@ class AppState extends ChangeNotifier {
       }
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
+      hasChosenAutoScrollSpeed = prefs.getBool('has_chosen_speed') ?? false;
       
       if (prefs.containsKey('fontSize')) {
         fontSize = prefs.getDouble('fontSize') ?? 28.0;

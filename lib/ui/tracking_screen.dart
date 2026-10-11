@@ -13,7 +13,6 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
@@ -77,6 +76,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+    AppState.instance.addListener(_onAppStateSpeedChanged);
   }
 
   @override
@@ -109,6 +109,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
+    AppState.instance.removeListener(_onAppStateSpeedChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
     super.dispose();
@@ -207,7 +208,19 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  void _toggleAutoScroll() async {
+  int _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
+
+  void _onAppStateSpeedChanged() {
+    if (AppState.instance.autoScrollSpeed != _lastAutoScrollSpeed) {
+      _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
+      if (_isAutoScrolling && mounted && _scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.pixels);
+        _startAutoScrollLoop();
+      }
+    }
+  }
+
+  void _toggleAutoScroll() {
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
       if (_scroll.hasClients) {
@@ -219,32 +232,36 @@ class _TrackingScreenState extends State<TrackingScreen>
         } catch (_) {}
       }
     } else {
-      final prefs = await SharedPreferences.getInstance();
-      final hasChosenSpeed = prefs.getBool('has_chosen_speed') ?? false;
-      if (!hasChosenSpeed && mounted) {
+      if (!AppState.instance.hasChosenAutoScrollSpeed && mounted) {
         showDialog(
           context: context,
-          barrierDismissible: false,
+          barrierDismissible: true,
           builder: (ctx) => SpeedSelectionDialog(
             onSpeedSelected: () {
-              prefs.setBool('has_chosen_speed', true);
-              Navigator.of(ctx).pop();
-              _toggleAutoScroll();
+              AppState.instance.setHasChosenAutoScrollSpeed(true);
+              if (Navigator.of(ctx).canPop()) {
+                Navigator.of(ctx).pop();
+              }
+              _startAutoScrolling();
             },
           ),
         );
         return;
       }
 
-      widget.controller.clearHighlights();
-      widget.controller.finalize();
-      setState(() => _isAutoScrolling = true);
-      _startAutoScrollLoop();
-      if (!kIsWeb) {
-        try {
-          WakelockPlus.enable();
-        } catch (_) {}
-      }
+      _startAutoScrolling();
+    }
+  }
+
+  void _startAutoScrolling() {
+    widget.controller.clearHighlights();
+    widget.controller.finalize();
+    setState(() => _isAutoScrolling = true);
+    _startAutoScrollLoop();
+    if (!kIsWeb) {
+      try {
+        WakelockPlus.enable();
+      } catch (_) {}
     }
   }
 
@@ -253,7 +270,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     double baseSpeed =
         ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
-    const speedMultipliers = [0.25, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+    final speedMultipliers = AppState.autoScrollMultipliers;
     int speedIndex = AppState.instance.autoScrollSpeed.clamp(
       0,
       speedMultipliers.length - 1,
