@@ -550,8 +550,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                   color: c.glassSurface,
                   borderRadius: BorderRadius.circular(28),
                   border: Border.all(
-                    color: Colors.white
-                        .withValues(alpha: app.isDarkMode ? 0.16 : 0.50),
+                    color: app.isDarkMode
+                        ? Colors.white.withValues(alpha: 0.16)
+                        : Colors.black.withValues(alpha: 0.12),
                     width: 0.9,
                   ),
                   boxShadow: [

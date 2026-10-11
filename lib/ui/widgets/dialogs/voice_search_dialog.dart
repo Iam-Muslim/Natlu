@@ -326,18 +326,6 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
           _buildCandidatesList(c, isAr),
           const SizedBox(height: 8),
         ],
-
-        // ── Bottom Action ──
-        Center(
-          child: TextButton.icon(
-            onPressed: _cancelSearch,
-            icon: Icon(Icons.close_rounded, size: 16, color: c.muted),
-            label: Text(
-              isAr ? 'إلغاء البحث' : 'Cancel Search',
-              style: TextStyle(color: c.muted, fontSize: 13),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -346,57 +334,63 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Pulsing Microphone with concentric rings
-        AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (_, __) {
-            final val = _pulseCtrl.value;
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 88 + (val * 12),
-                  height: 88 + (val * 12),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: c.primary.withValues(alpha: 0.06 * (1.0 - val)),
-                  ),
-                ),
-                Container(
-                  width: 76 + (val * 6),
-                  height: 76 + (val * 6),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: c.primary.withValues(alpha: 0.12),
-                  ),
-                ),
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        c.primary.withValues(alpha: 0.28),
-                        c.primary.withValues(alpha: 0.12),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+        // Pulsing Microphone with rigid 104x104 bounding box (prevents dialog jumping)
+        SizedBox(
+          width: 104,
+          height: 104,
+          child: Center(
+            child: AnimatedBuilder(
+              animation: _pulseCtrl,
+              builder: (_, __) {
+                final val = _pulseCtrl.value;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 88 + (val * 12),
+                      height: 88 + (val * 12),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: c.primary.withValues(alpha: 0.06 * (1.0 - val)),
+                      ),
                     ),
-                    border: Border.all(
-                      color: c.primary.withValues(alpha: 0.45),
-                      width: 1.5,
+                    Container(
+                      width: 76 + (val * 6),
+                      height: 76 + (val * 6),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: c.primary.withValues(alpha: 0.12),
+                      ),
                     ),
-                  ),
-                  child: Icon(Icons.mic_rounded, color: c.primary, size: 28),
-                ),
-              ],
-            );
-          },
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            c.primary.withValues(alpha: 0.28),
+                            c.primary.withValues(alpha: 0.12),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        border: Border.all(
+                          color: c.primary.withValues(alpha: 0.45),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Icon(Icons.mic_rounded, color: c.primary, size: 28),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
         const SizedBox(height: 18),
 
-        // Animated soundwave bars
+        // Animated soundwave bars with rigid fixed height (prevents dialog waving)
         _buildWaveBars(count: 7, baseHeight: 8, maxHeight: 26, c: c),
         const SizedBox(height: 20),
 
@@ -412,16 +406,6 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
             fontSize: isAr ? 21 : 17,
             fontWeight: FontWeight.bold,
           ),
-        ),
-        const SizedBox(height: 6),
-
-        // Subtitle instruction
-        Text(
-          isAr
-              ? 'اقرأ بصوتك للبحث الفوري في كامل المصحف'
-              : 'Recite aloud to search instantly across the Quran',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: c.muted, fontSize: 12.5),
         ),
         const SizedBox(height: 14),
 
@@ -475,35 +459,41 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     );
   }
 
-  /// Reusable soundwave equalizer visualizer.
+  /// Reusable soundwave equalizer visualizer in a fixed rigid box.
   Widget _buildWaveBars({
     required int count,
     required double baseHeight,
     required double maxHeight,
     required ThemeColors c,
   }) {
-    return AnimatedBuilder(
-      animation: _pulseCtrl,
-      builder: (_, __) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(count, (i) {
-            final h = baseHeight +
-                (maxHeight - baseHeight) *
-                    math.sin((_pulseCtrl.value * math.pi) + (i * 0.7)).abs();
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: 3,
-              height: h,
-              decoration: BoxDecoration(
-                color: c.primary.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(2),
-              ),
+    return SizedBox(
+      height: maxHeight,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (_, __) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: List.generate(count, (i) {
+                final h = baseHeight +
+                    (maxHeight - baseHeight) *
+                        math.sin((_pulseCtrl.value * math.pi) + (i * 0.7)).abs();
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  width: 3,
+                  height: h.clamp(baseHeight, maxHeight),
+                  decoration: BoxDecoration(
+                    color: c.primary.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                );
+              }),
             );
-          }),
-        );
-      },
+          },
+        ),
+      ),
     );
   }
 

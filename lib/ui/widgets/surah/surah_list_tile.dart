@@ -101,8 +101,9 @@ class _SurahListTileState extends State<SurahListTile> {
                           style: TextStyle(
                             fontFamily: app.isArabic ? 'HafsSmart' : null,
                             color: c.primary,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
+                            fontSize: app.isArabic ? 22 : 17,
+                            fontWeight: FontWeight.w800,
+                            height: 1.0,
                           ),
                         ),
                 ),
@@ -138,14 +139,11 @@ class _SurahListTileState extends State<SurahListTile> {
                   ),
                 ),
 
-                // ── Directional Arrow (mirrors in RTL) ──
-                Transform.flip(
-                  flipX: app.isArabic,
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    color: isSel ? c.primary : c.border,
-                    size: 20,
-                  ),
+                // ── Directional Arrow (points right) ──
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isSel ? c.primary : c.border.withValues(alpha: 0.8),
+                  size: 22,
                 ),
               ],
             ),

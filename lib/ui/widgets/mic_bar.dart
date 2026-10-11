@@ -1,15 +1,18 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../state/app_state.dart';
 
-/// 2026 Floating Glassmorphic Command Dock (Dynamic Floating Island)
+/// 2026 Unified Glassmorphic Floating Command Dock (Dynamic Floating Island)
 ///
-/// Features:
-/// - Frosted glassmorphism capsule with 24px backdrop blur.
-/// - Hero Recite/Listen action capsule with dynamic gradients and audio pulse glow.
-/// - Instant one-tap Voice Search shortcut to recite any Ayah across the Quran.
-/// - Reading Mode (Auto-scroll) toggle with live state indication.
-/// - Directional RTL/LTR mirroring with 48dp+ accessibility touch targets.
+/// Design Architecture:
+/// - Single unified frosted capsule dock with 20px backdrop blur (ImageFilter).
+/// - Prominent Hero Recite action centerpiece with stacked icon + micro-label ("اتلو" / "قف"),
+///   vibrant emerald-to-teal / ruby gradient, ambient bloom glow, and animated audio equalizer.
+/// - Symmetrical, clean iconographic secondary toggles for Tajweed and Hide (Hifz memorization),
+///   featuring dynamic state icons (e.g. visibility / visibility_off), micro-labels,
+///   luminous active state indicator pips, and tactile spring feedback.
+/// - Adaptive light (warm linen velvet) and dark (OLED obsidian glass) palettes.
 class BottomActionBar extends StatefulWidget {
   final bool isRecording;
   final bool isLoadingEngine;
@@ -42,40 +45,7 @@ class BottomActionBar extends StatefulWidget {
   State<BottomActionBar> createState() => _BottomActionBarState();
 }
 
-class _BottomActionBarState extends State<BottomActionBar>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-
-    if (widget.isRecording) {
-      _pulseController.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(BottomActionBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isRecording && !oldWidget.isRecording) {
-      _pulseController.repeat(reverse: true);
-    } else if (!widget.isRecording && oldWidget.isRecording) {
-      _pulseController.stop();
-      _pulseController.reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
+class _BottomActionBarState extends State<BottomActionBar> {
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
@@ -83,58 +53,112 @@ class _BottomActionBarState extends State<BottomActionBar>
     final isAr = app.isArabic;
     final isDark = app.isDarkMode;
 
-    // ── 2026 Modern Dock: Buttons Identical to Top Bar Action Buttons ──
+    // ── Unified Floating Island Dock ──
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 16, left: 10, right: 10),
+        padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Directionality(
-              textDirection: TextDirection.ltr,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // ── Left: Tajweed button (identical to top bar buttons + label) ──
-                  _buildTopBarMatchingButton(
-                    icon: Icons.record_voice_over_rounded,
-                    label: isAr ? 'التجويد' : 'Tajweed',
-                    isActive: widget.isTajweed,
-                    c: c,
-                    isDark: isDark,
-                    isAr: isAr,
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      widget.onToggleTajweed();
-                    },
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  height: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: isDark
+                          ? [
+                              c.surfaceHigh.withValues(alpha: 0.72),
+                              c.surface.withValues(alpha: 0.86),
+                            ]
+                          : [
+                              Colors.white.withValues(alpha: 0.92),
+                              c.surfaceHigh.withValues(alpha: 0.80),
+                            ],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : c.border.withValues(alpha: 0.65),
+                      width: 0.85,
+                    ),
+                    boxShadow: isDark
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              blurRadius: 22,
+                              offset: const Offset(0, 6),
+                            ),
+                          ]
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 6),
+                            ),
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.90),
+                              blurRadius: 2,
+                              offset: const Offset(0, -1),
+                            ),
+                          ],
                   ),
+                  child: Directionality(
+                    textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // ── Subordinate Satellite 1: Tajweed Toggle ──
+                        _buildSecondaryToggle(
+                          icon: widget.isTajweed
+                              ? Icons.record_voice_over_rounded
+                              : Icons.record_voice_over_outlined,
+                          tooltip: isAr
+                              ? 'أحكام التجويد ومخارج الحروف'
+                              : 'Tajweed & Pronunciation Rules',
+                          isActive: widget.isTajweed,
+                          c: c,
+                          isDark: isDark,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            widget.onToggleTajweed();
+                          },
+                        ),
 
-                  const SizedBox(width: 8),
+                        const SizedBox(width: 8),
 
-                  // ── Center: Hero Record/Stop Capsule ──
-                  _buildCenterHeroButton(c, app),
+                        // ── Dominant Hero Centerpiece: Recite / Stop ──
+                        _buildHeroReciteButton(c, app, isDark, isAr),
 
-                  const SizedBox(width: 8),
+                        const SizedBox(width: 8),
 
-                  // ── Right: Hide Verses button (identical to top bar buttons + label) ──
-                  _buildTopBarMatchingButton(
-                    icon: widget.isBlur
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    label: isAr ? 'إخفاء' : 'Hide',
-                    isActive: widget.isBlur,
-                    c: c,
-                    isDark: isDark,
-                    isAr: isAr,
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      widget.onToggleBlur();
-                    },
+                        // ── Subordinate Satellite 2: Hide Verses Toggle ──
+                        _buildSecondaryToggle(
+                          icon: widget.isBlur
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          tooltip: isAr ? 'إخفاء الآيات للتسميع' : 'Hide Verses for Memorization',
+                          isActive: widget.isBlur,
+                          c: c,
+                          isDark: isDark,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            widget.onToggleBlur();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -143,96 +167,67 @@ class _BottomActionBarState extends State<BottomActionBar>
     );
   }
 
-  /// Auxiliary button identical in square geometry (48x48) to the top bar buttons:
-  /// matching corner radius (15), surface styling, active glow border, with icon and label.
-  Widget _buildTopBarMatchingButton({
+  /// Compact Eye-Comfortable Secondary Utility Toggle Button:
+  /// - Minimalist 34x34dp circular/squircle satellite footprint.
+  /// - Refined 18dp icon with zero text clutter.
+  /// - Soft illuminated tint & border when active.
+  Widget _buildSecondaryToggle({
     required IconData icon,
-    required String label,
+    required String tooltip,
     required bool isActive,
     required ThemeColors c,
     required bool isDark,
-    required bool isAr,
     required VoidCallback onTap,
   }) {
     final Color activeColor = c.primary;
-    final Color iconColor = isActive ? activeColor : c.textSecondary;
-    final Color textColor = isActive
-        ? (isDark ? activeColor : c.text)
-        : c.textSecondary;
+    final Color contentColor = isActive
+        ? activeColor
+        : (isDark ? c.text.withValues(alpha: 0.60) : c.text.withValues(alpha: 0.65));
 
-    // Identical surface styling to tracking_screen top bar buttons
-    final Color bgColor = isActive
-        ? activeColor.withValues(alpha: isDark ? 0.22 : 0.14)
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white);
-
-    final Color borderColor = isActive
-        ? activeColor.withValues(alpha: isDark ? 0.50 : 0.38)
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : c.border.withValues(alpha: 0.55));
-
-    return _TactileScaleButton(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: borderColor,
-            width: 0.85,
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 500),
+      child: _TactileScaleButton(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: isActive
+                ? activeColor.withValues(alpha: isDark ? 0.22 : 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: isActive
+                  ? activeColor.withValues(alpha: isDark ? 0.45 : 0.35)
+                  : Colors.transparent,
+              width: 0.75,
+            ),
           ),
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: activeColor.withValues(alpha: isDark ? 0.28 : 0.15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 19,
-              color: iconColor,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: isAr ? 'HafsSmart' : null,
-                color: textColor,
-                fontSize: isAr ? 10.5 : 9.5,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                height: 1.1,
-              ),
-            ),
-          ],
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            color: contentColor,
+            size: 18,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCenterHeroButton(ThemeColors c, AppState app) {
-    final bool isDark = app.isDarkMode;
+  /// 2026 Hero Recite / Stop Action Centerpiece:
+  /// - Streamlined 86x46dp capsule with vibrant gradients and ambient bloom.
+  /// - Idle: Glowing mic + "اتلو" / "Recite".
+  /// - Recording: ONLY dancing audio wave + "قف" / "Stop" (no square icon).
+  /// - Auto-scroll: Pause icon + "إيقاف" / "Pause".
+  Widget _buildHeroReciteButton(
+    ThemeColors c,
+    AppState app,
+    bool isDark,
+    bool isAr,
+  ) {
     final bool isRec = widget.isRecording;
     final bool isScroll = widget.isAutoScrolling;
 
@@ -245,19 +240,19 @@ class _BottomActionBarState extends State<BottomActionBar>
     if (isRec) {
       gradientStart = const Color(0xFFEF4444);
       gradientEnd = const Color(0xFFDC2626);
-      label = app.isArabic ? 'إنهاء التلاوة' : 'Stop';
+      label = isAr ? 'قف' : 'Stop';
       icon = Icons.stop_rounded;
       onTap = widget.onMic;
     } else if (isScroll) {
       gradientStart = c.gold;
       gradientEnd = const Color(0xFFB45309);
-      label = app.isArabic ? 'إيقاف التمرير' : 'Pause';
+      label = isAr ? 'إيقاف' : 'Pause';
       icon = Icons.pause_rounded;
       onTap = widget.onToggleAutoScroll;
     } else {
       gradientStart = c.emerald;
       gradientEnd = const Color(0xFF0D9488);
-      label = app.isArabic ? 'ابدأ التلاوة' : 'Recite';
+      label = isAr ? 'اتلو' : 'Recite';
       icon = Icons.mic_rounded;
       onTap = widget.onMic;
     }
@@ -270,8 +265,8 @@ class _BottomActionBarState extends State<BottomActionBar>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        height: 48,
+        width: 86,
+        height: 46,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [gradientStart, gradientEnd],
@@ -280,44 +275,57 @@ class _BottomActionBarState extends State<BottomActionBar>
           ),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: Colors.white.withValues(alpha: isDark ? 0.25 : 0.45),
+            color: Colors.white.withValues(alpha: isDark ? 0.30 : 0.45),
             width: 0.85,
           ),
           boxShadow: [
             BoxShadow(
-              color: gradientStart.withValues(alpha: isRec ? 0.38 : 0.35),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+              color: gradientStart.withValues(alpha: isRec ? 0.42 : 0.36),
+              blurRadius: 14,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            if (widget.isLoadingEngine && !isRec)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.0,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            else
-              Icon(icon, color: Colors.white, size: 21),
-            if (isRec) ...[
-              const SizedBox(width: 7),
-              const _AnimatedAudioWaveform(color: Colors.white),
-            ],
-            const SizedBox(width: 7),
+            // Top: Fixed 18dp slot so button and label stay 100% rock-solid and static!
+            SizedBox(
+              height: 18,
+              child: Center(
+                child: isRec
+                    ? const _AnimatedAudioWaveform(color: Colors.white)
+                    : (widget.isLoadingEngine
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.0,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(
+                            icon,
+                            color: Colors.white,
+                            size: 20,
+                          )),
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Bottom: Crisp Micro-Label (completely stationary)
             Text(
               label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: app.isArabic ? 'HafsSmart' : null,
+                fontFamily: null,
                 color: Colors.white,
-                fontSize: app.isArabic ? 14.5 : 13,
-                fontWeight: FontWeight.bold,
+                fontSize: isAr ? 11.5 : 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: isAr ? 0.2 : 0.5,
+                height: 1.0,
               ),
             ),
           ],
@@ -345,7 +353,7 @@ class _AnimatedAudioWaveformState extends State<_AnimatedAudioWaveform>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 650),
+      duration: const Duration(milliseconds: 600),
     )..repeat(reverse: true);
   }
 
@@ -357,36 +365,41 @@ class _AnimatedAudioWaveformState extends State<_AnimatedAudioWaveform>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, _) {
-        final double v = _ctrl.value;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _buildBar(6 + 8 * v),
-            const SizedBox(width: 2.5),
-            _buildBar(14 - 8 * v),
-            const SizedBox(width: 2.5),
-            _buildBar(8 + 11 * v),
-            const SizedBox(width: 2.5),
-            _buildBar(16 - 9 * v),
-            const SizedBox(width: 2.5),
-            _buildBar(6 + 9 * (1.0 - v)),
-          ],
-        );
-      },
+    return SizedBox(
+      height: 18,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (context, _) {
+            final double v = _ctrl.value;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildBar(3.5 + 5.5 * v),
+                const SizedBox(width: 2.2),
+                _buildBar(8.5 - 4.5 * v),
+                const SizedBox(width: 2.2),
+                _buildBar(5.0 + 7.5 * v),
+                const SizedBox(width: 2.2),
+                _buildBar(11.0 - 6.5 * v),
+                const SizedBox(width: 2.2),
+                _buildBar(4.0 + 5.5 * (1.0 - v)),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
   Widget _buildBar(double height) {
     return Container(
-      width: 2.5,
-      height: height.clamp(4.0, 16.0),
+      width: 2.2,
+      height: height.clamp(3.0, 13.0),
       decoration: BoxDecoration(
         color: widget.color,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: BorderRadius.circular(1.5),
       ),
     );
   }
@@ -414,12 +427,11 @@ class _TactileScaleButtonState extends State<_TactileScaleButton> {
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
-        scale: _isDown ? 0.92 : 1.0,
-        duration: const Duration(milliseconds: 120),
+        scale: _isDown ? 0.93 : 1.0,
+        duration: const Duration(milliseconds: 110),
         curve: _isDown ? Curves.easeOutQuad : Curves.easeOutBack,
         child: widget.child,
       ),
     );
   }
 }
-
