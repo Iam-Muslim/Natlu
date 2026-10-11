@@ -749,34 +749,10 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ]
                 : null,
           ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isActive ? c.primary : c.textSecondary,
-              ),
-              if (isActive)
-                Positioned(
-                  bottom: 4,
-                  child: Container(
-                    width: 10,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: c.primary,
-                      borderRadius: BorderRadius.circular(2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: c.primary.withValues(alpha: 0.85),
-                          blurRadius: 5,
-                          spreadRadius: 0.5,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+          child: Icon(
+            icon,
+            size: 20,
+            color: isActive ? c.primary : c.textSecondary,
           ),
         ),
       ),
@@ -793,13 +769,13 @@ class _TrackingScreenState extends State<TrackingScreen>
 
         final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
         final topPadding = isFullscreenMode ? top + 10.0 : top + 74.0;
-        final bottomPadding = isFullscreenMode ? 60.0 : 140.0;
+        final bottomPadding = isFullscreenMode ? 40.0 : 88.0;
 
         return CustomScrollView(
           controller: _scroll,
           physics: _isAutoScrolling
               ? const NeverScrollableScrollPhysics()
-              : const BouncingScrollPhysics(),
+              : const AlwaysScrollableScrollPhysics(),
           slivers: [
             SuperSliverList(
               listController: _listController,
@@ -813,7 +789,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                     );
                   }
 
-                  if (i == displayVerses.length + 1) {
+                  if (i == displayVerses.length + 2) {
                     return AnimatedContainer(
                       duration: const Duration(milliseconds: 400),
                       curve: Curves.easeOutCubic,
@@ -821,26 +797,255 @@ class _TrackingScreenState extends State<TrackingScreen>
                     );
                   }
 
+                  if (i == displayVerses.length + 1) {
+                    return _buildEndOfSurahSection(c, app);
+                  }
+
                   final v = displayVerses[i - 1];
 
-                  return VerseRow(
-                    key: ValueKey('verse_${v.surah}_${v.ayah}'),
-                    verse: v,
-                    controller: widget.controller,
-                    isRecording: widget.isRecording,
-                    isAutoScrolling: _isAutoScrolling,
-                    onTap: () {
-                      widget.controller.setManualAyah(v.surah, v.ayah);
-                    },
-                    onWordErrorTap: null,
+                  return RepaintBoundary(
+                    child: VerseRow(
+                      key: ValueKey('verse_${v.surah}_${v.ayah}'),
+                      verse: v,
+                      controller: widget.controller,
+                      isRecording: widget.isRecording,
+                      isAutoScrolling: _isAutoScrolling,
+                      onTap: () {
+                        widget.controller.setManualAyah(v.surah, v.ayah);
+                      },
+                      onWordErrorTap: null,
+                    ),
                   );
                 },
-                childCount: displayVerses.length + 2,
+                childCount: displayVerses.length + 3,
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  void _navigateToSurah(int newSurah) async {
+    if (newSurah < 1 || newSurah > 114) return;
+    HapticFeedback.mediumImpact();
+
+    if (widget.isRecording) {
+      widget.onToggleRecord();
+    }
+    if (_isAutoScrolling) {
+      _toggleAutoScroll();
+    }
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(0);
+    }
+
+    await widget.controller.setTargetSurah(newSurah);
+
+    if (mounted) {
+      setState(() {
+        _keys.clear();
+        _lastAyah = null;
+      });
+    }
+  }
+
+  void _scrollToTop() {
+    HapticFeedback.lightImpact();
+    if (_scroll.hasClients) {
+      _scroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  /// 2026 End-of-Surah Navigation Section:
+  /// - Minimalist 3-button navigation capsule (Previous, Go to Top, Next).
+  /// - Exact theme and color token conformity. Zero scroll overhead.
+  Widget _buildEndOfSurahSection(ThemeColors c, AppState app) {
+    final int currentSurah = widget.controller.targetSurah;
+    final bool hasPrev = currentSurah > 1;
+    final bool hasNext = currentSurah < 114;
+    final bool isAr = app.isArabic;
+    final bool isDark = app.isDarkMode;
+
+    final metadataList = widget.controller.repository.surahMetadata;
+    final prevMeta = hasPrev ? metadataList[currentSurah - 2] : null;
+    final nextMeta = hasNext ? metadataList[currentSurah] : null;
+
+    // Outer-edge directional chevrons:
+    // Left side of screen always points left (<)
+    // Right side of screen always points right (>)
+    final IconData prevIcon =
+        isAr ? Icons.chevron_right_rounded : Icons.chevron_left_rounded;
+    final IconData nextIcon =
+        isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 64, bottom: 8, left: 16, right: 16),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 350),
+          child: Container(
+            height: 50,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? c.surfaceHigh.withValues(alpha: 0.75)
+                  : c.surfaceHigh.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : c.border.withValues(alpha: 0.60),
+                width: 0.85,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Child 0: Visual Left in LTR (Previous), Visual Right in RTL (السابقة)
+                Expanded(
+                  child: _buildSurahNavButton(
+                    icon: prevIcon,
+                    label: isAr ? 'السابقة' : 'Previous',
+                    hint: prevMeta != null
+                        ? (isAr ? prevMeta.surahName : prevMeta.surahNameEn)
+                        : null,
+                    isEnabled: hasPrev,
+                    iconOnLeft: !isAr,
+                    c: c,
+                    isDark: isDark,
+                    onTap: () => _navigateToSurah(currentSurah - 1),
+                  ),
+                ),
+
+                // Subtle Vertical Divider
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: (isDark ? Colors.white : c.border).withValues(alpha: 0.15),
+                ),
+
+                // Scroll to Top (Go Up) Center Button (NO default highlight)
+                Expanded(
+                  child: _buildSurahNavButton(
+                    icon: Icons.arrow_upward_rounded,
+                    label: isAr ? 'للأعلى' : 'Top',
+                    hint: null,
+                    isEnabled: true,
+                    iconOnLeft: false,
+                    c: c,
+                    isDark: isDark,
+                    onTap: _scrollToTop,
+                  ),
+                ),
+
+                // Subtle Vertical Divider
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: (isDark ? Colors.white : c.border).withValues(alpha: 0.15),
+                ),
+
+                // Child 2: Visual Right in LTR (Next), Visual Left in RTL (التالية)
+                Expanded(
+                  child: _buildSurahNavButton(
+                    icon: nextIcon,
+                    label: isAr ? 'التالية' : 'Next',
+                    hint: nextMeta != null
+                        ? (isAr ? nextMeta.surahName : nextMeta.surahNameEn)
+                        : null,
+                    isEnabled: hasNext,
+                    iconOnLeft: isAr,
+                    c: c,
+                    isDark: isDark,
+                    onTap: () => _navigateToSurah(currentSurah + 1),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSurahNavButton({
+    required IconData icon,
+    required String label,
+    required String? hint,
+    required bool isEnabled,
+    required bool iconOnLeft,
+    required ThemeColors c,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    final Color textColor =
+        !isEnabled ? c.muted.withValues(alpha: 0.35) : c.text;
+    final Color iconColor =
+        !isEnabled ? c.muted.withValues(alpha: 0.35) : c.textSecondary;
+
+    final Widget iconWidget = Icon(icon, size: 18, color: iconColor);
+    final Widget textWidget = Text(
+      label,
+      style: TextStyle(
+        fontFamily: null,
+        fontSize: 12.0,
+        fontWeight: FontWeight.w600,
+        color: textColor,
+        height: 1.0,
+      ),
+    );
+
+    final Widget content = Container(
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: iconOnLeft
+              ? [
+                  iconWidget,
+                  const SizedBox(width: 4),
+                  textWidget,
+                ]
+              : [
+                  textWidget,
+                  const SizedBox(width: 4),
+                  iconWidget,
+                ],
+        ),
+      ),
+    );
+
+    if (!isEnabled) {
+      return Opacity(opacity: 0.40, child: content);
+    }
+
+    return Tooltip(
+      message: hint != null
+          ? (AppState.instance.isArabic ? 'سورة $hint' : 'Surah $hint')
+          : label,
+      waitDuration: const Duration(milliseconds: 500),
+      child: _TactileScaleButton(
+        onTap: onTap,
+        child: content,
+      ),
     );
   }
 }

@@ -571,13 +571,13 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       ),
                       decoration: BoxDecoration(
                         color: _isCountdownPaused
-                            ? c.green.withValues(alpha: 0.14)
-                            : c.primary.withValues(alpha: 0.14),
+                            ? c.primary.withValues(alpha: 0.14)
+                            : c.red.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: _isCountdownPaused
-                              ? c.green.withValues(alpha: 0.3)
-                              : c.primary.withValues(alpha: 0.28),
+                              ? c.primary.withValues(alpha: 0.3)
+                              : c.red.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Row(
@@ -588,7 +588,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                                 ? Icons.play_arrow_rounded
                                 : Icons.pause_rounded,
                             size: 13,
-                            color: _isCountdownPaused ? c.green : c.primary,
+                            color: _isCountdownPaused ? c.primary : c.red,
                           ),
                           const SizedBox(width: 3),
                           Text(
@@ -596,7 +596,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                                 ? (isAr ? 'استئناف' : 'Resume')
                                 : (isAr ? 'إيقاف' : 'Hold'),
                             style: TextStyle(
-                              color: _isCountdownPaused ? c.green : c.primary,
+                              color: _isCountdownPaused ? c.primary : c.red,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -667,6 +667,14 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
         ? (match.surahNameAr ?? 'سورة ${match.surah}')
         : (match.surahNameEn ?? 'Surah ${match.surah}');
 
+    // Harmonized score colors adhering to Natlu 2026 design system:
+    // - High confidence (>= 85%): Quranic leaf green
+    // - Good confidence (>= 70%): Serene primary emerald
+    // - Fair confidence (< 70%): Antique amber gold
+    final Color scoreColor = percentage >= 85
+        ? c.green
+        : (percentage >= 70 ? c.primary : c.gold);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -693,13 +701,16 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
             children: [
               Row(
                 children: [
-                  Text(
-                    surahTitle,
-                    style: TextStyle(
-                      fontFamily: isAr ? 'HafsSmart' : null,
-                      fontWeight: FontWeight.bold,
-                      fontSize: isAr ? 16 : 14,
-                      color: c.primary,
+                  Flexible(
+                    child: Text(
+                      surahTitle,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: isAr ? 'HafsSmart' : null,
+                        fontWeight: FontWeight.bold,
+                        fontSize: isAr ? 16 : 14,
+                        color: c.primary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -708,6 +719,10 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                     decoration: BoxDecoration(
                       color: c.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: c.primary.withValues(alpha: 0.22),
+                        width: 0.8,
+                      ),
                     ),
                     child: Text(
                       isAr ? 'آية ${match.ayah}' : 'Ayah ${match.ayah}',
@@ -720,27 +735,27 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                   ),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      color: percentage >= 85 ? c.green : c.primary,
+                      color: scoreColor.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: scoreColor.withValues(alpha: 0.30),
+                        width: 1,
+                      ),
                     ),
                     child: Text(
                       '$percentage%',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: percentage >= 85 ? c.green : c.primary,
+                        color: scoreColor,
+                        letterSpacing: 0.2,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    isAr
-                        ? Icons.arrow_back_ios_new_rounded
-                        : Icons.arrow_forward_ios_rounded,
-                    size: 12,
-                    color: c.muted.withValues(alpha: 0.6),
                   ),
                 ],
               ),

@@ -269,7 +269,7 @@ class _VerseRowState extends State<VerseRow> {
                             cachedSpans: _cachedSpans!,
                           )
                         : null,
-                    foregroundPainter: _cachedSpans != null
+                    foregroundPainter: _cachedSpans != null && !app.hasClickedTajweedWord
                         ? TajweedTooltipPainter(
                             words: words,
                             ayah: widget.verse.ayah,

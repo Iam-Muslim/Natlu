@@ -45,9 +45,59 @@ class BottomActionBar extends StatefulWidget {
   State<BottomActionBar> createState() => _BottomActionBarState();
 }
 
-class _BottomActionBarState extends State<BottomActionBar> {
+class _BottomActionBarState extends State<BottomActionBar>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _collapseController;
+  Animation<double>? _expandAnimation;
+
+  void _ensureAnimation() {
+    _collapseController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: widget.isAutoScrolling ? 0.0 : 1.0,
+    );
+    _expandAnimation ??= CurvedAnimation(
+      parent: _collapseController!,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureAnimation();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _ensureAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant BottomActionBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _ensureAnimation();
+    if (oldWidget.isAutoScrolling != widget.isAutoScrolling) {
+      if (widget.isAutoScrolling) {
+        _collapseController?.reverse();
+      } else {
+        _collapseController?.forward();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _collapseController?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureAnimation();
+    final anim = _expandAnimation!;
     final c = widget.c;
     final app = AppState.instance;
     final isAr = app.isArabic;
@@ -117,43 +167,81 @@ class _BottomActionBarState extends State<BottomActionBar> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // ── Subordinate Satellite 1: Tajweed Toggle ──
-                        _buildSecondaryToggle(
-                          icon: widget.isTajweed
-                              ? Icons.record_voice_over_rounded
-                              : Icons.record_voice_over_outlined,
-                          tooltip: isAr
-                              ? 'أحكام التجويد ومخارج الحروف'
-                              : 'Tajweed & Pronunciation Rules',
-                          isActive: widget.isTajweed,
-                          c: c,
-                          isDark: isDark,
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            widget.onToggleTajweed();
-                          },
+                        // ── Subordinate Satellite 1: Tajweed Toggle (Collapsible) ──
+                        SizeTransition(
+                          axis: Axis.horizontal,
+                          alignment: Alignment.center,
+                          sizeFactor: anim,
+                          child: FadeTransition(
+                            opacity: anim,
+                            child: ScaleTransition(
+                              scale: anim,
+                              child: IgnorePointer(
+                                ignoring: widget.isAutoScrolling,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildSecondaryToggle(
+                                      icon: widget.isTajweed
+                                          ? Icons.record_voice_over_rounded
+                                          : Icons.record_voice_over_outlined,
+                                      tooltip: isAr
+                                          ? 'أحكام التجويد ومخارج الحروف'
+                                          : 'Tajweed & Pronunciation Rules',
+                                      isActive: widget.isTajweed,
+                                      c: c,
+                                      isDark: isDark,
+                                      onTap: () {
+                                        HapticFeedback.lightImpact();
+                                        widget.onToggleTajweed();
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
 
-                        const SizedBox(width: 8),
-
-                        // ── Dominant Hero Centerpiece: Recite / Stop ──
+                        // ── Dominant Hero Centerpiece: Recite / Stop / Pause ──
                         _buildHeroReciteButton(c, app, isDark, isAr),
 
-                        const SizedBox(width: 8),
-
-                        // ── Subordinate Satellite 2: Hide Verses Toggle ──
-                        _buildSecondaryToggle(
-                          icon: widget.isBlur
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          tooltip: isAr ? 'إخفاء الآيات للتسميع' : 'Hide Verses for Memorization',
-                          isActive: widget.isBlur,
-                          c: c,
-                          isDark: isDark,
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            widget.onToggleBlur();
-                          },
+                        // ── Subordinate Satellite 2: Hide Verses Toggle (Collapsible) ──
+                        SizeTransition(
+                          axis: Axis.horizontal,
+                          alignment: Alignment.center,
+                          sizeFactor: anim,
+                          child: FadeTransition(
+                            opacity: anim,
+                            child: ScaleTransition(
+                              scale: anim,
+                              child: IgnorePointer(
+                                ignoring: widget.isAutoScrolling,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const SizedBox(width: 8),
+                                    _buildSecondaryToggle(
+                                      icon: widget.isBlur
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded,
+                                      tooltip: isAr
+                                          ? 'إخفاء الآيات للتسميع'
+                                          : 'Hide Verses for Memorization',
+                                      isActive: widget.isBlur,
+                                      c: c,
+                                      isDark: isDark,
+                                      onTap: () {
+                                        HapticFeedback.lightImpact();
+                                        widget.onToggleBlur();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
