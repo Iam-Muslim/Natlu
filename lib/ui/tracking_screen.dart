@@ -77,6 +77,21 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     AppState.instance.addListener(_onAppStateSpeedChanged);
+    AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
+  }
+
+  void _onActiveAudioAyahChanged() {
+    final ayah = AppState.instance.activeAudioAyah.value;
+    if (ayah != null &&
+        AppState.instance.isAudioPlaying.value &&
+        !widget.isRecording &&
+        !_isAutoScrolling) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _forceScrollToAyah(ayah);
+        }
+      });
+    }
   }
 
   @override
@@ -110,6 +125,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     AppState.instance.removeListener(_onAppStateSpeedChanged);
+    AppState.instance.activeAudioAyah.removeListener(_onActiveAudioAyahChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
     super.dispose();
@@ -254,6 +270,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _startAutoScrolling() {
+    AppState.instance.stopVerseAudio();
     widget.controller.clearHighlights();
     widget.controller.finalize();
     setState(() => _isAutoScrolling = true);
@@ -846,6 +863,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   void _navigateToSurah(int newSurah) async {
     if (newSurah < 1 || newSurah > 114) return;
     HapticFeedback.mediumImpact();
+    AppState.instance.stopVerseAudio();
 
     if (widget.isRecording) {
       widget.onToggleRecord();

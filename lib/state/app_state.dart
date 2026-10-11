@@ -145,6 +145,70 @@ class AppState extends ChangeNotifier {
   TrackerConfig _trackerConfig = TrackerConfig.normal(enableAutoReanchor: true);
   TrackerConfig get trackerConfig => _trackerConfig;
 
+  // ── Verse Audio Playback (UI state ready for backend audio wiring) ───────────
+  /// Currently active audio verse playback.
+  final ValueNotifier<int?> activeAudioAyah = ValueNotifier<int?>(null);
+  final ValueNotifier<int?> activeAudioSurah = ValueNotifier<int?>(null);
+  final ValueNotifier<bool> isAudioPlaying = ValueNotifier<bool>(false);
+
+  /// Determines whether playback automatically advances to next Ayah (continuous mode)
+  /// or stops after playing a single Ayah (record mode).
+  final ValueNotifier<bool> isContinuousPlayback = ValueNotifier<bool>(true);
+
+  /// Toggles play/pause state for a specific verse.
+  /// When [continuous] is true (outside record mode), playback advances to the next Ayah on finish.
+  /// When [continuous] is false (in record mode), only this single Ayah is played.
+  void toggleVerseAudio({
+    required int surah,
+    required int ayah,
+    bool continuous = true,
+  }) {
+    if (activeAudioSurah.value == surah &&
+        activeAudioAyah.value == ayah &&
+        isAudioPlaying.value) {
+      isAudioPlaying.value = false;
+    } else {
+      activeAudioSurah.value = surah;
+      activeAudioAyah.value = ayah;
+      isContinuousPlayback.value = continuous;
+      isAudioPlaying.value = true;
+    }
+  }
+
+  /// Advances playback to the next Ayah if continuous mode is active.
+  /// Stops playback if [isContinuousPlayback] is false (e.g. record mode) or if surah end is reached.
+  void onAyahAudioFinished({int? totalAyahsInSurah}) {
+    if (!isAudioPlaying.value) return;
+
+    if (!isContinuousPlayback.value) {
+      // In record mode: single ayah only per click
+      stopVerseAudio();
+      return;
+    }
+
+    // Out of record mode: advance to next ayah
+    final currentAyah = activeAudioAyah.value;
+    if (currentAyah == null) {
+      stopVerseAudio();
+      return;
+    }
+
+    final maxAyah = totalAyahsInSurah ?? 286;
+    if (currentAyah < maxAyah) {
+      activeAudioAyah.value = currentAyah + 1;
+      isAudioPlaying.value = true;
+    } else {
+      stopVerseAudio();
+    }
+  }
+
+  /// Pauses or stops active verse audio playback.
+  void stopVerseAudio() {
+    if (isAudioPlaying.value) {
+      isAudioPlaying.value = false;
+    }
+  }
+
   // ── Colors ─────────────────────────────────────────────────────────────────
 
   /// Returns the active color palette based on the current theme.

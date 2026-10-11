@@ -22,6 +22,8 @@ class VerseRow extends StatefulWidget {
   final bool isAutoScrolling;
   final VoidCallback? onTap;
   final VoidCallback? onWordErrorTap;
+  final bool? isAudioPlaying;
+  final VoidCallback? onAudioPlayToggle;
 
   const VerseRow({
     super.key,
@@ -31,6 +33,8 @@ class VerseRow extends StatefulWidget {
     required this.isAutoScrolling,
     this.onTap,
     this.onWordErrorTap,
+    this.isAudioPlaying,
+    this.onAudioPlayToggle,
   });
 
   @override
@@ -78,6 +82,9 @@ class _VerseRowState extends State<VerseRow> {
     if (oldWidget.isRecording != widget.isRecording) {
       _invalidate();
       _onStateChanged();
+    }
+    if (oldWidget.isAudioPlaying != widget.isAudioPlaying) {
+      setState(() {});
     }
   }
 
@@ -238,8 +245,8 @@ class _VerseRowState extends State<VerseRow> {
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOutCubic,
             margin: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 4,
+              horizontal: 10,
+              vertical: 3.5,
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
@@ -254,10 +261,10 @@ class _VerseRowState extends State<VerseRow> {
               children: [
                 Padding(
                   padding: const EdgeInsets.only(
-                    right: 12,
-                    left: 42,
-                    top: 8,
-                    bottom: 8,
+                    right: 8,
+                    left: 26,
+                    top: 6,
+                    bottom: 6,
                   ),
                   child: CustomPaint(
                     painter: _cachedSpans != null && isActive && widget.isRecording
@@ -286,23 +293,190 @@ class _VerseRowState extends State<VerseRow> {
                   ),
                 ),
 
-                // Fixed Ayah number at bottom left of the card
+                // Injected Ayah number & audio play button pushed tightly to the outer edge
                 Positioned(
-                  left: 10,
-                  bottom: 8,
-                  child: Text(
-                    _toArabicDigits(widget.verse.ayah),
-                    style: TextStyle(
-                      fontFamily: 'HafsSmart',
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      color: isActive
-                          ? c.gold
-                          : c.textSecondary.withValues(alpha: 0.65),
-                    ),
+                  left: 3,
+                  bottom: 6,
+                  width: 22,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (!widget.isAutoScrolling) ...[
+                        _VerseAudioButton(
+                          surah: widget.verse.surah,
+                          ayah: widget.verse.ayah,
+                          colors: c,
+                          isDark: app.isDarkMode,
+                          isActiveVerse: isActive,
+                          isRecording: widget.isRecording,
+                          explicitIsPlaying: widget.isAudioPlaying,
+                          onExplicitToggle: widget.onAudioPlayToggle,
+                        ),
+                        const SizedBox(height: 1),
+                      ],
+                      Text(
+                        _toArabicDigits(widget.verse.ayah),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'HafsSmart',
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.bold,
+                          color: isActive
+                              ? c.gold
+                              : c.textSecondary.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Injected minimal audio play/pause button located above the Ayah number.
+///
+/// Designed with:
+/// - Zero disruption to verse layout & typography (fitted inside the 42px left margin).
+/// - Eye-comfortable palettes adaptive to both White (Linen) and Black (OLED) themes.
+/// - Fluid animated play/pause state ready for backend audio engine binding.
+class _VerseAudioButton extends StatelessWidget {
+  final int surah;
+  final int ayah;
+  final ThemeColors colors;
+  final bool isDark;
+  final bool isActiveVerse;
+  final bool isRecording;
+  final bool? explicitIsPlaying;
+  final VoidCallback? onExplicitToggle;
+
+  const _VerseAudioButton({
+    required this.surah,
+    required this.ayah,
+    required this.colors,
+    required this.isDark,
+    required this.isActiveVerse,
+    required this.isRecording,
+    this.explicitIsPlaying,
+    this.onExplicitToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (explicitIsPlaying != null) {
+      return _buildButton(context, explicitIsPlaying!);
+    }
+
+    final app = AppState.instance;
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        app.activeAudioAyah,
+        app.activeAudioSurah,
+        app.isAudioPlaying,
+      ]),
+      builder: (context, _) {
+        final bool isPlaying = app.activeAudioSurah.value == surah &&
+            app.activeAudioAyah.value == ayah &&
+            app.isAudioPlaying.value;
+        return _buildButton(context, isPlaying);
+      },
+    );
+  }
+
+  Widget _buildButton(BuildContext context, bool isPlaying) {
+    final Color iconColor;
+    final Color bgColor;
+    final Color borderColor;
+
+    if (isPlaying) {
+      // Playing state: Serene, dignified emerald accent across both themes
+      if (isDark) {
+        bgColor = colors.primary.withValues(alpha: 0.22);
+        borderColor = colors.primary.withValues(alpha: 0.60);
+        iconColor = colors.primary;
+      } else {
+        bgColor = colors.primary.withValues(alpha: 0.12);
+        borderColor = colors.primary.withValues(alpha: 0.45);
+        iconColor = colors.primary;
+      }
+    } else {
+      // Idle state: Subtle, gentle, eye-comforting — never competing with the Quran text
+      if (isDark) {
+        bgColor = colors.surfaceHigh.withValues(alpha: 0.35);
+        borderColor = isActiveVerse
+            ? colors.gold.withValues(alpha: 0.35)
+            : colors.border.withValues(alpha: 0.28);
+        iconColor = isActiveVerse
+            ? colors.gold.withValues(alpha: 0.85)
+            : colors.textSecondary.withValues(alpha: 0.60);
+      } else {
+        bgColor = colors.surfaceHigh.withValues(alpha: 0.50);
+        borderColor = isActiveVerse
+            ? colors.gold.withValues(alpha: 0.40)
+            : colors.border.withValues(alpha: 0.55);
+        iconColor = isActiveVerse
+            ? colors.gold
+            : colors.textSecondary.withValues(alpha: 0.65);
+      }
+    }
+
+    return Semantics(
+      button: true,
+      label: isPlaying ? 'إيقاف مؤقت' : 'تشغيل التلاوة',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          if (onExplicitToggle != null) {
+            onExplicitToggle!();
+          } else {
+            AppState.instance.toggleVerseAudio(
+              surah: surah,
+              ayah: ayah,
+              continuous: !isRecording,
+            );
+          }
+        },
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              width: 19.5,
+              height: 19.5,
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: borderColor,
+                  width: 0.75,
+                ),
+              ),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(scale: anim, child: child),
+                  ),
+                  child: Padding(
+                    key: ValueKey(isPlaying),
+                    padding: EdgeInsets.only(left: isPlaying ? 0 : 0.8),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      size: 11.5,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

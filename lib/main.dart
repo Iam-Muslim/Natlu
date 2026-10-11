@@ -218,6 +218,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   void initState() {
     super.initState();
     _voiceSearchCtrl = VoiceSearchController(engine: _engine);
+    AppState.instance.isAudioPlaying.addListener(_onVerseAudioPlayingChanged);
 
     // Global subscription for Voice Search text and Endpoint auto-stopping
     _engine.transcriptionStream.listen((res) {
@@ -394,6 +395,13 @@ class _OrchestratorState extends State<_Orchestrator> {
     return _engine.isInitialized;
   }
 
+  void _onVerseAudioPlayingChanged() {
+    if (!AppState.instance.isAudioPlaying.value && _isRecording) {
+      _audio.clearBuffer();
+      _engine.resetBuffer();
+    }
+  }
+
   /// Toggles recording on/off with hardware-safe locking.
   Future<void> _toggleRecord() async {
     if (_isToggling) return;
@@ -437,6 +445,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         if (!kIsWeb) {
           try { await WakelockPlus.enable(); } catch (_) {}
         }
+        AppState.instance.stopVerseAudio();
         _engine.resetBuffer();
 
         // Instant UI feedback before hardware mic starts
@@ -446,8 +455,12 @@ class _OrchestratorState extends State<_Orchestrator> {
           _ctrl!.startRecordingSession();
           _audio
               .start(
-                onChunk: (chunk, isFinal) =>
-                    _ctrl?.feed(chunk, isFinal: isFinal),
+                onChunk: (chunk, isFinal) {
+                  // Software mute: drop mic frames while verse audio is playing
+                  // so the AI model never hears the phone speaker or accepts input!
+                  if (AppState.instance.isAudioPlaying.value) return;
+                  _ctrl?.feed(chunk, isFinal: isFinal);
+                },
               )
               .catchError((e) {
                 DebugLogger.logSimple('AUDIO', '❌ ERROR: $e');
