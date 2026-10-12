@@ -365,11 +365,14 @@ class AppState extends ChangeNotifier {
     required int ayah,
     bool continuous = true,
   }) {
-    if (activeAudioSurah.value == surah &&
+    final bool isWord = QuranAudioService.instance.isSingleWordMode;
+    if (!isWord &&
+        activeAudioSurah.value == surah &&
         activeAudioAyah.value == ayah &&
         isAudioPlaying.value) {
       QuranAudioService.instance.pause();
-    } else if (activeAudioSurah.value == surah &&
+    } else if (!isWord &&
+               activeAudioSurah.value == surah &&
                activeAudioAyah.value == ayah &&
                QuranAudioService.instance.isPaused) {
       QuranAudioService.instance.resume();

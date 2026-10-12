@@ -78,6 +78,9 @@ class _MushafViewState extends State<MushafView> {
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     widget.controller.globalRevision.addListener(_onStateChanged);
     AppState.instance.addListener(_onStateChanged);
+    AppState.instance.activeAudioAyah.addListener(_onAudioAyahChanged);
+    AppState.instance.activeAudioWordIndex.addListener(_onStateChanged);
+    AppState.instance.isAudioPlaying.addListener(_onStateChanged);
 
     _initMushafData();
   }
@@ -148,9 +151,24 @@ class _MushafViewState extends State<MushafView> {
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     widget.controller.globalRevision.removeListener(_onStateChanged);
     AppState.instance.removeListener(_onStateChanged);
+    AppState.instance.activeAudioAyah.removeListener(_onAudioAyahChanged);
+    AppState.instance.activeAudioWordIndex.removeListener(_onStateChanged);
+    AppState.instance.isAudioPlaying.removeListener(_onStateChanged);
     _pageController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onAudioAyahChanged() {
+    final active = AppState.instance.activeAudioAyah.value;
+    final surah = AppState.instance.activeAudioSurah.value;
+    if (active != null && surah != null && _ayahToPageCache != null) {
+      final targetPage = _ayahToPageCache!['$surah:$active'];
+      if (targetPage != null && targetPage != _currentPage) {
+        _goToPage(targetPage);
+      }
+    }
+    _onStateChanged();
   }
 
   void _onStateChanged() {
@@ -577,8 +595,14 @@ class _MushafViewState extends State<MushafView> {
           activeMatch.verse.surah == surah &&
           activeMatch.verse.ayah == ayah;
 
+      final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
+          app.activeAudioSurah.value == surah &&
+          app.activeAudioAyah.value == ayah;
+
       bool isWordActive = false;
-      if (isVerseActive) {
+      if (isAudioActive) {
+        isWordActive = (app.activeAudioWordIndex.value == wordIndex0);
+      } else if (isVerseActive) {
         int targetIdx = -1;
         for (int w = 0; w < verse.uthmaniWords.length; w++) {
           if (!widget.controller.isWordGreen(ayah, w) &&

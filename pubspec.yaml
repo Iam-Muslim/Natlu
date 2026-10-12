@@ -28,8 +28,9 @@ dependencies:
   sherpa_onnx: 1.13.5
   super_sliver_list: ^0.4.1
   wakelock_plus: ^1.6.1
-  audioplayers: ^6.8.1
   http: ^1.6.0
+  just_audio: ^0.10.6
+  just_audio_windows: ^0.2.3
 
 # sherpa_onnx 1.13.5 still allows sherpa_onnx_ios ^1.13.5, so the broken 1.13.6
 # iOS package gets pulled in transitively unless it is pinned here as well.

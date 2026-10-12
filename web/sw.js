@@ -92,6 +92,9 @@ self.addEventListener('fetch', (event) => {
   // Model download endpoint is saved directly to IndexedDB
   if (url.pathname.includes('/download-model')) return;
 
+  // Stream MP3Quran audio directly through browser native HTTP range request pipeline
+  if (url.hostname.includes('mp3quran.net')) return;
+
   // 1. Navigation requests & entry bootstrap scripts: Network First, fallback to cached
   const isBootstrapOrVersion = url.pathname.endsWith('/flutter_bootstrap.js') ||
                                url.pathname.endsWith('/version.json') ||
