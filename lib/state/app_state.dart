@@ -448,7 +448,7 @@ class AppState extends ChangeNotifier {
     onPrimary: Color(0xFFFFFFFF),      // Crisp white on primary
     secondary: Color(0xFF0D9488),      // Calming Teal
     gold: Color(0xFFB45309),           // Warm antique gold
-    green: Color(0xFF15803D),          // Soothing Quranic leaf green
+    green: Color(0xFF028090),          // Calming Oceanic Petrol (distinct blue-green blend, soothing, zero glare)
     red: Color(0xFFDC2626),            // Warm terracotta red (non-alarming)
     muted: Color(0xFF64748B),          // Slate-500 neutral muted
     currentWord: Color(0xFF0D9488),    // Calming teal active word highlight
@@ -457,7 +457,7 @@ class AppState extends ChangeNotifier {
     textSecondary: Color(0xFF475569),  // Slate-600 secondary text
     ayahOutline: Color(0x2EB45309),    // Soft warm amber outline (~18% alpha)
     ambientGlow: Color(0x18047857),    // Ambient soft emerald glow
-    success: Color(0xFF15803D),        // Calm success green
+    success: Color(0xFF028090),        // Oceanic petrol success
     warning: Color(0xFFD97706),        // Warm honey warning
     error: Color(0xFFDC2626),          // Terracotta error
     info: Color(0xFF2563EB),           // Calming sapphire info
