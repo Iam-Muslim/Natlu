@@ -71,8 +71,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   Duration? _lastAutoScrollElapsed;
   double _currentAutoScrollVelocity = 0.0;
 
-  bool _showTajweedBanner = false;
-  Timer? _tajweedBannerTimer;
+  AppBannerInfo? _lastBanner;
   bool _wasAudioPlaying = false;
 
   @override
@@ -143,7 +142,6 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void dispose() {
-    _tajweedBannerTimer?.cancel();
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
       try {
@@ -166,6 +164,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   void didUpdateWidget(TrackingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isRecording && !oldWidget.isRecording) {
+      AppState.instance.dismissBanner();
       final int targetAyah = widget.controller.currentMatchedVerse?.verse.ayah ??
           widget.controller.activeAyah.value ??
           1;
@@ -250,8 +249,8 @@ class _TrackingScreenState extends State<TrackingScreen>
     // Floating bottom bar takes ~64 in recording/autoscroll, ~96 in normal mode.
     double bottomBarHeight = isFullscreenMode ? 64.0 : 96.0;
 
-    // Account for any active bottom banners (Tajweed banner or Audio error banner):
-    if (_showTajweedBanner || AppState.instance.isAudioErrorBannerVisible) {
+    // Account for any active bottom banners:
+    if (AppState.instance.isBannerVisible) {
       bottomBarHeight += 64.0;
     }
     final double bottomObstruction = bottomPadding + bottomBarHeight;
@@ -271,17 +270,25 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   /// Unified "Eye-Comfort" verse viewport manager:
-  /// - ZERO-MOTION RULE: If the Ayah (or its beginning for big Ayahs) is already comfortably visible,
+  /// - ZERO-MOTION RULE: If the Ayah is already comfortably seated in the upper/mid reading zone (>50% visible),
   ///   the viewport DOES NOT MOVE AT ALL! The reader's eye is completely undisturbed.
-  /// - MINIMAL REVEAL: If slightly clipped by the bottom/top bar, scrolls ONLY by the minimal delta needed.
+  /// - NEW PAGE ADVANCE: If the coming Ayah is in the lower danger zone (>50% screen) or mostly out of bounds
+  ///   (>45% cut off by the bottom bar), it smoothly advances to the natural reciter eye view (~25% horizon).
+  /// - TOP RECOVERY: If scrolled too far up under the top bar, glides down to the natural eye view.
   /// - DISTANT NAVIGATION: If completely off-screen (picker, voice search), animates to natural 25% gaze.
   void _ensureAyahVisibleSmart(int ayah, {bool isManualTap = false}) {
-    if (!_scroll.hasClients) return;
+    if (!_scroll.hasClients || _isAutoScrolling) return;
+    if (_isUserDragging && !isManualTap) return;
 
     final bounds = _getSafeViewportBounds();
     final upperSafeY = bounds.upperSafeY;
     final lowerSafeY = bounds.lowerSafeY;
     final screenHeight = bounds.screenHeight;
+
+    // Natural reciter eye horizon: ~25% from top of screen, with comfortable breathing cushion under top header
+    final double targetGazeY = screenHeight > 0
+        ? (screenHeight * 0.25).clamp(upperSafeY + 32.0, lowerSafeY - 100.0)
+        : upperSafeY + 32.0;
 
     final renderBox =
         _keys[ayah]?.currentContext?.findRenderObject() as RenderBox?;
@@ -293,50 +300,41 @@ class _TrackingScreenState extends State<TrackingScreen>
       final double ayahHeight = renderBox.size.height;
       final double ayahBottom = ayahTop + ayahHeight;
 
-      // 1. Entire Ayah is fully within the clear window: ZERO SCROLLING!
-      if (ayahTop >= upperSafeY && ayahBottom <= lowerSafeY) {
-        return;
-      }
-
-      // 2. Large / Multi-Line Ayah:
-      // If the top/start of the Ayah is comfortably readable:
-      // (at least 48px of content is clear above the bottom obstruction):
-      // - If manual tap: User eye is ALREADY looking right here! ZERO SCROLLING!
-      // - If recording/audio: Reciter starts at word 0 (top line). ZERO SCROLLING!
-      //   Word-level tracking will smoothly scroll when lower lines are reached.
-      if (ayahTop >= upperSafeY && ayahTop <= (lowerSafeY - 48.0)) {
-        return;
-      }
-
-      // 3. Obscured under top bar (scrolled too far up):
-      // Scroll DOWN just enough so its top clears the top bar with a comfortable margin.
+      // 1. Obscured under top bar (scrolled too far up):
+      // Gently glide down to the comfortable eye view.
       if (ayahTop < upperSafeY) {
-        final double delta = ayahTop - (upperSafeY + 12.0);
+        final double delta = ayahTop - targetGazeY;
         _smoothScrollByDelta(delta);
         return;
       }
 
-      // 4. Clipped by bottom bar (scrolled too far down):
-      // If the entire Ayah fits within the viewport height, reveal it with minimal upward scroll:
-      if (ayahTop > (lowerSafeY - 48.0)) {
-        if (ayahHeight <= (lowerSafeY - upperSafeY)) {
-          final double delta = (ayahBottom - lowerSafeY) + 16.0;
-          _smoothScrollByDelta(delta);
-        } else {
-          // Very tall Ayah: gently position its top into the comfortable upper reading area
-          final double targetY =
-              (upperSafeY + 24.0).clamp(upperSafeY, lowerSafeY);
-          final double delta = ayahTop - targetY;
-          _smoothScrollByDelta(delta);
-        }
+      // 2. High/Mid Comfort Zone Check:
+      // How much of this Ayah is visible before the bottom bar obstruction?
+      final double visibleHeight = (lowerSafeY - ayahTop).clamp(0.0, ayahHeight);
+      final double visibleRatio =
+          ayahHeight > 0 ? (visibleHeight / ayahHeight) : 1.0;
+      final double midScreenY = screenHeight * 0.50;
+
+      // If Ayah starts in the comfortable upper half (<50% of screen)
+      // AND at least 55% of it is visible above the bottom bar:
+      final bool isComfortablyInEyeView = ayahTop < midScreenY &&
+          (ayahBottom <= lowerSafeY || visibleRatio >= 0.55);
+
+      if (isComfortablyInEyeView) {
+        // ZERO SCROLLING! Reader's eye is undisturbed in the upper/mid screen.
         return;
       }
+
+      // 3. NEW PAGE ADVANCE:
+      // Ayah is starting down in the lower screen (>= 50%) OR is more than 45% cut off by bottom bar.
+      // Instead of trapping the reader at the bottom edge with micro-reveals,
+      // smoothly glide the start of this Ayah to the natural reciter eye view (~25% horizon).
+      final double delta = ayahTop - targetGazeY;
+      _smoothScrollByDelta(delta);
+      return;
     }
 
     // ── CASE 2: AYAH IS COMPLETELY OFF-SCREEN / UNRENDERED (Far off navigation / search) ──
-    final double targetGazeY = screenHeight > 0
-        ? (screenHeight * 0.25).clamp(upperSafeY + 16.0, lowerSafeY - 60.0)
-        : upperSafeY + 20.0;
     final double targetAlignment =
         screenHeight > 0 ? (targetGazeY / screenHeight).clamp(0.0, 1.0) : 0.25;
 
@@ -390,43 +388,28 @@ class _TrackingScreenState extends State<TrackingScreen>
     final bounds = _getSafeViewportBounds();
     final upperSafeY = bounds.upperSafeY;
     final lowerSafeY = bounds.lowerSafeY;
-    final screenHeight = bounds.screenHeight;
 
     if (lowerSafeY <= upperSafeY) return;
-
-    // Reading Trigger Thresholds:
-    // Bottom trigger: when the word gets within 36px of the bottom bar (about 1 line),
-    // it's time to gently provide a reading runway ahead.
-    final double bottomTriggerY = lowerSafeY - 36.0;
-    final double topTriggerY = upperSafeY;
 
     final double wordTop = globalWordRect.top;
     final double wordBottom = globalWordRect.bottom;
 
-    // ── CORE EYE COMFORT: ZERO SCROLLING AS LONG AS WORDS ARE IN VIEWPORT ──
-    if (wordTop >= topTriggerY && wordBottom <= bottomTriggerY) {
+    // ── ABSOLUTE ZERO-MOTION RULE: NEVER SCROLL WHILE WORD IS WITHIN SAFE EYE BOUNDS ──
+    if (wordTop >= upperSafeY && wordBottom <= lowerSafeY) {
       return;
     }
 
-    // ── WORD REACHING BOTTOM: GENTLE READING RUNWAY ADVANCE ──
-    if (wordBottom > bottomTriggerY) {
-      // Instead of an aggressive jump to 30% from top (which disorients the eye),
-      // smoothly bring the active reading line to the comfortable middle-reading band (~52%),
-      // leaving a generous 4-5 line runway of unread text ahead!
-      final double comfortableMidY = (screenHeight * 0.52).clamp(
-        upperSafeY + 40.0,
-        lowerSafeY - 140.0,
-      );
-      final double delta = globalWordRect.center.dy - comfortableMidY;
-
+    // ── WORD IS OUT OF BOUNDS AT BOTTOM: GENTLE, MINIMAL REVEAL ──
+    // Scrolls only by the small space needed to bring the word comfortably clear of the bottom bar
+    if (wordBottom > lowerSafeY) {
+      final double delta = (wordBottom - lowerSafeY) + 36.0;
       _smoothScrollByDelta(delta);
       return;
     }
 
-    // ── WORD IS ABOVE TOP SAFE ZONE ──
-    if (wordTop < topTriggerY) {
-      final double comfortableTopY = upperSafeY + 36.0;
-      final double delta = globalWordRect.center.dy - comfortableTopY;
+    // ── WORD IS OUT OF BOUNDS AT TOP: GENTLE DOWNWARD REVEAL ──
+    if (wordTop < upperSafeY) {
+      final double delta = wordTop - (upperSafeY + 16.0);
       _smoothScrollByDelta(delta);
       return;
     }
@@ -686,11 +669,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isAutoScrolling: _isAutoScrolling,
                       c: c,
                       onMic: () {
-                        _tajweedBannerTimer?.cancel();
-                        if (_showTajweedBanner) {
-                          setState(() => _showTajweedBanner = false);
-                        }
-                        app.dismissAudioError();
+                        app.dismissBanner();
                         if (widget.isVoiceSearching) {
                           widget.onVoiceSearchToggle();
                         } else {
@@ -698,11 +677,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         }
                       },
                       onToggleAutoScroll: () {
-                        _tajweedBannerTimer?.cancel();
-                        if (_showTajweedBanner) {
-                          setState(() => _showTajweedBanner = false);
-                        }
-                        app.dismissAudioError();
+                        app.dismissBanner();
                         _toggleAutoScroll();
                       },
                       onSettingsTap: _showSettingsDialog,
@@ -713,37 +688,28 @@ class _TrackingScreenState extends State<TrackingScreen>
                         if (newIsTajweed) {
                           app.setMode(AppMode.tajweed);
                           widget.controller.setTajweedMode(true);
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          _tajweedBannerTimer?.cancel();
-                          app.dismissAudioError();
-                          setState(() => _showTajweedBanner = true);
-                          _tajweedBannerTimer = Timer(const Duration(milliseconds: 4500), () {
-                            if (mounted) {
-                              setState(() => _showTajweedBanner = false);
-                            }
-                          });
+                          app.showTajweedBanner();
                         } else {
                           app.setMode(AppMode.wordChecker);
                           widget.controller.setTajweedMode(false);
-                          _tajweedBannerTimer?.cancel();
-                          if (_showTajweedBanner) {
-                            setState(() => _showTajweedBanner = false);
-                          }
+                          app.dismissTajweedBanner();
                         }
                       },
                       isBlur: app.isBlurMode,
                       onToggleBlur: () {
                         app.toggleBlurMode();
+                        if (app.isBlurMode && !widget.isRecording) {
+                          app.showBlurBanner(true);
+                        } else {
+                          app.dismissBanner();
+                        }
                       },
                     ),
                   ),
                 ),
 
-                // Tajweed Mode Banner (Slides UP above bottom toolbar)
-                _buildTajweedBottomBanner(c, app, bottom),
-
-                // Audio Playback Error Banner (Slides UP above bottom toolbar, fully visible & interactive)
-                _buildAudioErrorBottomBanner(c, app, bottom),
+                // Modern Floating Slide-Up Banner (Slides UP above bottom toolbar for all notifications)
+                _buildModernBottomBanner(c, app, bottom),
               ],
             ),
           ),
@@ -890,9 +856,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                               : 'Auto-scroll Read'),
                       onTap: () {
                         HapticFeedback.mediumImpact();
-                        if (_showTajweedBanner) {
-                          setState(() => _showTajweedBanner = false);
-                        }
+                        app.dismissBanner();
                         _toggleAutoScroll();
                       },
                     ),
@@ -907,9 +871,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       tooltip: app.isArabic ? 'بحث صوتي' : 'Voice Search',
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        if (_showTajweedBanner) {
-                          setState(() => _showTajweedBanner = false);
-                        }
+                        app.dismissBanner();
                         widget.onVoiceSearchToggle();
                       },
                     ),
@@ -940,132 +902,34 @@ class _TrackingScreenState extends State<TrackingScreen>
 
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Tajweed Mode Slide-Up Banner (Slides UP from bottom toolbar)
+  // Modern Floating Slide-Up Banner (Slides UP from bottom toolbar for all notices)
   // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildTajweedBottomBanner(ThemeColors c, AppState app, double bottom) {
+  Widget _buildModernBottomBanner(ThemeColors c, AppState app, double bottom) {
     final bool isDark = app.isDarkMode;
     final bool isAr = app.isArabic;
+    final bool isVisible = app.isBannerVisible;
 
-    return AnimatedPositioned(
-      duration: Duration(milliseconds: _showTajweedBanner ? 600 : 300),
-      curve: _showTajweedBanner ? Curves.elasticOut : Curves.easeOutCubic,
-      bottom: _showTajweedBanner ? (bottom + 84) : (bottom + 16),
-      left: 16,
-      right: 16,
-      child: IgnorePointer(
-        ignoring: !_showTajweedBanner,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 260),
-          opacity: _showTajweedBanner ? 1.0 : 0.0,
-          child: Center(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: c.glassSurface,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: c.primary.withValues(alpha: isDark ? 0.35 : 0.28),
-                      width: 1.1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
-                        blurRadius: 24,
-                        offset: const Offset(0, -4),
-                      ),
-                      BoxShadow(
-                        color: c.primary.withValues(alpha: isDark ? 0.18 : 0.08),
-                        blurRadius: 18,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: c.primary.withValues(alpha: isDark ? 0.20 : 0.12),
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(
-                            color: c.primary.withValues(alpha: isDark ? 0.40 : 0.30),
-                            width: 0.8,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.record_voice_over_rounded,
-                          color: c.primary,
-                          size: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Text(
-                          isAr
-                              ? 'تم تفعيل التجويد • اضغط على الكلمات الصفراء لمعرفة الخطأ'
-                              : 'Tajweed Enabled • Tap yellow words for error details',
-                          style: TextStyle(
-                            color: c.text,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12.5,
-                          ),
-                          textAlign: isAr ? TextAlign.right : TextAlign.left,
-                          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Audio Playback Error Slide-Up Banner (Slides UP from bottom toolbar)
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildAudioErrorBottomBanner(ThemeColors c, AppState app, double bottom) {
-    final bool isDark = app.isDarkMode;
-    final bool isAr = app.isArabic;
-
-    final String message;
-    final IconData iconData;
-    switch (app.lastAudioFailureReason) {
-      case AudioFailureReason.serverUnavailable:
-        iconData = Icons.cloud_off_rounded;
-        message = isAr
-            ? 'تعذر الوصول إلى خادم التلاوة • يرجى المحاولة لاحقاً'
-            : 'Audio server temporarily unavailable • Please try again later';
-        break;
-      case AudioFailureReason.rateLimited:
-        iconData = Icons.hourglass_top_rounded;
-        message = isAr
-            ? 'تم تجاوز حد الطلبات المؤقت • يرجى الانتظار قليلاً'
-            : 'Rate limit reached • Please wait a moment and try again';
-        break;
-      case AudioFailureReason.networkOffline:
-      case AudioFailureReason.unknown:
-        iconData = Icons.wifi_off_rounded;
-        message = isAr
-            ? 'يتطلب تشغيل التلاوة اتصالاً بالإنترنت • تحقق من الشبكة وحاول ثانية'
-            : 'Audio playback requires internet • Check connection and try again';
-        break;
+    if (app.currentBanner != null) {
+      _lastBanner = app.currentBanner;
+    }
+    final banner = app.currentBanner ?? _lastBanner;
+    if (banner == null) {
+      return const SizedBox.shrink();
     }
 
-    final bool isVisible = app.isAudioErrorBannerVisible;
-    final accentColor = isDark ? const Color(0xFFF59E0B) : const Color(0xFFD97706);
+    final Color accentColor;
+    if (banner.customColor != null) {
+      accentColor = banner.customColor!(c, isDark);
+    } else if (banner.isWarning) {
+      accentColor = isDark ? const Color(0xFFF59E0B) : const Color(0xFFD97706);
+    } else {
+      accentColor = c.primary;
+    }
+
+    final Color iconColor = (banner.isWarning && isDark)
+        ? const Color(0xFFFBBF24)
+        : accentColor;
+    final String message = isAr ? banner.messageAr : banner.messageEn;
 
     return AnimatedPositioned(
       duration: Duration(milliseconds: isVisible ? 600 : 300),
@@ -1081,7 +945,7 @@ class _TrackingScreenState extends State<TrackingScreen>
           child: Center(
             child: GestureDetector(
               onTap: () {
-                app.dismissAudioError();
+                app.dismissBanner();
               },
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(20),
@@ -1126,8 +990,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                           ),
                           alignment: Alignment.center,
                           child: Icon(
-                            iconData,
-                            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                            banner.icon,
+                            color: iconColor,
                             size: 16,
                           ),
                         ),

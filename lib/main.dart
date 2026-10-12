@@ -584,14 +584,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         // Fallback: resume previous state if no Ayah was found
         _ctrl?.resumeTracking();
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('لم يتم العثور على الآية، حاول مرة أخرى'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
+        AppState.instance.showAyahNotFoundBanner();
       }
     } catch (e) {
       DebugLogger.logSimple('VOICE_SEARCH', '❌ STOP ERROR: $e');

@@ -313,7 +313,7 @@ class _BottomActionBarState extends State<BottomActionBar>
   }) {
     final double size = isRecording ? 28.0 : 34.0;
     final double iconSize = isRecording ? 15.0 : 18.0;
-    final double opacity = isRecording ? (isActive ? 0.80 : 0.40) : 1.0;
+    const double opacity = 1.0;
     final Color activeColor = c.primary;
     final Color contentColor = isActive
         ? activeColor

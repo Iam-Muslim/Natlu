@@ -118,17 +118,7 @@ class SettingsDialog extends StatelessWidget {
                                       await app.load();
                                       if (context.mounted) {
                                         Navigator.of(context).pop();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              isAr 
-                                                ? 'تمت إعادة التعيين بنجاح.'
-                                                : 'Settings reset successfully.',
-                                              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                                            ),
-                                            backgroundColor: c.primary,
-                                          ),
-                                        );
+                                        app.showSettingsResetBanner();
                                       }
                                     }
                                   },

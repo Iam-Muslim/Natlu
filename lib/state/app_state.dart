@@ -32,6 +32,27 @@ enum AudioFailureReason {
   unknown,
 }
 
+/// Data payload for modern floating slide-up banners across the app.
+class AppBannerInfo {
+  final String id;
+  final String messageAr;
+  final String messageEn;
+  final IconData icon;
+  final Color Function(ThemeColors c, bool isDark)? customColor;
+  final bool isWarning;
+  final Duration? customDuration;
+
+  const AppBannerInfo({
+    required this.id,
+    required this.messageAr,
+    required this.messageEn,
+    required this.icon,
+    this.customColor,
+    this.isWarning = false,
+    this.customDuration,
+  });
+}
+
 class AppState extends ChangeNotifier {
   AppState._() {
     // Initialize default language from the device's OS setting.
@@ -171,30 +192,165 @@ class AppState extends ChangeNotifier {
   /// or stops after playing a single Ayah (record mode).
   final ValueNotifier<bool> isContinuousPlayback = ValueNotifier<bool>(true);
 
-  /// Whether the non-distracting audio playback failure banner is currently visible.
-  bool isAudioErrorBannerVisible = false;
-  AudioFailureReason lastAudioFailureReason = AudioFailureReason.networkOffline;
-  Timer? _audioErrorTimer;
+  /// Currently active modern banner (replaces old SnackBars and unifies feedback).
+  AppBannerInfo? currentBanner;
+  Timer? _bannerTimer;
 
-  /// Dispatches an audio failure event to display the serene banner.
-  void triggerAudioError([AudioFailureReason reason = AudioFailureReason.networkOffline]) {
-    lastAudioFailureReason = reason;
-    isAudioErrorBannerVisible = true;
-    _audioErrorTimer?.cancel();
+  bool get isBannerVisible => currentBanner != null;
+
+  /// Whether audio failure banner is visible (backward compatibility).
+  bool get isAudioErrorBannerVisible => currentBanner?.id == 'audio_error';
+  AudioFailureReason lastAudioFailureReason = AudioFailureReason.networkOffline;
+
+  /// Set of banner IDs already seen by the user to provide adaptive display durations.
+  final Set<String> _seenBannerIds = <String>{};
+
+  /// Computes adaptive duration: readable on first impression, fast and non-intrusive on subsequent views.
+  Duration _getDynamicBannerDuration(AppBannerInfo banner) {
+    if (banner.customDuration != null) return banner.customDuration!;
+
+    final bool isFirstTime = !_seenBannerIds.contains(banner.id);
+    if (isFirstTime) {
+      _seenBannerIds.add(banner.id);
+      unawaited(_saveSeenBanners());
+      // First appearance: comfortably readable
+      if (banner.id == 'ayah_not_found') {
+        return const Duration(milliseconds: 2400);
+      }
+      return const Duration(milliseconds: 3200);
+    } else {
+      // Subsequent appearances: fast, snappy confirmation
+      if (banner.id == 'ayah_not_found') {
+        return const Duration(milliseconds: 1700);
+      }
+      return const Duration(milliseconds: 1800);
+    }
+  }
+
+  Future<void> _saveSeenBanners() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('seen_banner_ids', _seenBannerIds.toList());
+    } catch (_) {}
+  }
+
+  /// Displays the modern slide-up floating banner.
+  void showBanner(AppBannerInfo banner) {
+    currentBanner = banner;
+    _bannerTimer?.cancel();
     notifyListeners();
 
-    _audioErrorTimer = Timer(const Duration(milliseconds: 4500), () {
-      isAudioErrorBannerVisible = false;
-      notifyListeners();
+    final Duration effectiveDuration = _getDynamicBannerDuration(banner);
+    _bannerTimer = Timer(effectiveDuration, () {
+      if (currentBanner?.id == banner.id) {
+        currentBanner = null;
+        notifyListeners();
+      }
     });
+  }
+
+  /// Dismisses any currently visible modern banner.
+  void dismissBanner() {
+    _bannerTimer?.cancel();
+    if (currentBanner != null) {
+      currentBanner = null;
+      notifyListeners();
+    }
+  }
+
+  /// Dispatches an audio failure event to display the modern serene banner.
+  void triggerAudioError([AudioFailureReason reason = AudioFailureReason.networkOffline]) {
+    lastAudioFailureReason = reason;
+
+    final String arMsg;
+    final String enMsg;
+    final IconData icon;
+    switch (reason) {
+      case AudioFailureReason.serverUnavailable:
+        icon = Icons.cloud_off_rounded;
+        arMsg = 'تعذر الوصول إلى خادم التلاوة • يرجى المحاولة لاحقاً';
+        enMsg = 'Audio server temporarily unavailable • Please try again later';
+        break;
+      case AudioFailureReason.rateLimited:
+        icon = Icons.hourglass_top_rounded;
+        arMsg = 'تم تجاوز حد الطلبات المؤقت • يرجى الانتظار قليلاً';
+        enMsg = 'Rate limit reached • Please wait a moment and try again';
+        break;
+      case AudioFailureReason.networkOffline:
+      case AudioFailureReason.unknown:
+        icon = Icons.wifi_off_rounded;
+        arMsg = 'يتطلب تشغيل التلاوة اتصالاً بالإنترنت • تحقق من الشبكة وحاول ثانية';
+        enMsg = 'Audio playback requires internet • Check connection and try again';
+        break;
+    }
+
+    showBanner(AppBannerInfo(
+      id: 'audio_error',
+      messageAr: arMsg,
+      messageEn: enMsg,
+      icon: icon,
+      isWarning: true,
+      customDuration: const Duration(milliseconds: 3600),
+    ));
   }
 
   /// Immediately dismisses the audio error banner.
   void dismissAudioError() {
-    _audioErrorTimer?.cancel();
-    if (isAudioErrorBannerVisible) {
-      isAudioErrorBannerVisible = false;
-      notifyListeners();
+    if (currentBanner?.id == 'audio_error') {
+      dismissBanner();
+    }
+  }
+
+  /// Dispatches the modern Tajweed mode enabled banner.
+  void showTajweedBanner() {
+    showBanner(const AppBannerInfo(
+      id: 'tajweed',
+      messageAr: 'تم تفعيل التجويد • اضغط على الكلمات الصفراء لمعرفة الخطأ',
+      messageEn: 'Tajweed Enabled • Tap yellow words for error details',
+      icon: Icons.record_voice_over_rounded,
+      isWarning: false,
+    ));
+  }
+
+  /// Dismisses the Tajweed banner.
+  void dismissTajweedBanner() {
+    if (currentBanner?.id == 'tajweed') {
+      dismissBanner();
+    }
+  }
+
+  /// Dispatches the modern Ayah Not Found banner (replacing old SnackBar).
+  void showAyahNotFoundBanner() {
+    showBanner(const AppBannerInfo(
+      id: 'ayah_not_found',
+      messageAr: 'لم يتم العثور على أي آية • حاول مرة أخرى',
+      messageEn: 'No Ayah found • Please try again',
+      icon: Icons.search_off_rounded,
+      isWarning: true,
+    ));
+  }
+
+  /// Dispatches the modern Settings Reset banner (replacing old SnackBar).
+  void showSettingsResetBanner() {
+    showBanner(const AppBannerInfo(
+      id: 'settings_reset',
+      messageAr: 'تمت إعادة ضبط الإعدادات بنجاح',
+      messageEn: 'Settings reset successfully',
+      icon: Icons.check_circle_outline_rounded,
+      isWarning: false,
+    ));
+  }
+
+  /// Dispatches the modern Memorization (Blur) banner.
+  void showBlurBanner(bool isEnabled) {
+    if (isEnabled) {
+      showBanner(const AppBannerInfo(
+        id: 'blur_mode',
+        messageAr: 'تم تفعيل وضع الحفظ • إخفاء الكلمات لاختبار التسميع',
+        messageEn: 'Memorization Mode Enabled • Words hidden for recitation test',
+        icon: Icons.visibility_off_rounded,
+        isWarning: false,
+      ));
     }
   }
 
@@ -382,6 +538,11 @@ class AppState extends ChangeNotifier {
       // Migrate old boolean value if present
       if (tajweedClickCount == 0 && (prefs.getBool('has_clicked_tajweed_word') ?? false)) {
         tajweedClickCount = 10;
+      }
+
+      final seenBanners = prefs.getStringList('seen_banner_ids');
+      if (seenBanners != null) {
+        _seenBannerIds.addAll(seenBanners);
       }
 
       notifyListeners();
