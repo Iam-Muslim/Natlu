@@ -94,7 +94,25 @@ class _TrackingScreenState extends State<TrackingScreen>
     unawaited(QuranTimingService.instance.ensureSurahLoaded(widget.controller.targetSurah));
   }
 
+  void _syncScreenWakeLock() {
+    if (kIsWeb) return;
+    final bool shouldStayAwake =
+        widget.isRecording ||
+        widget.isVoiceSearching ||
+        _isAutoScrolling ||
+        AppState.instance.isAudioPlaying.value;
+
+    try {
+      if (shouldStayAwake) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    } catch (_) {}
+  }
+
   void _onActiveAudioAyahChanged() {
+    _syncScreenWakeLock();
     final isPlaying = AppState.instance.isAudioPlaying.value;
     final ayah = AppState.instance.activeAudioAyah.value;
 
@@ -122,6 +140,12 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      AppState.instance.stopVerseAudio();
+    }
     if (kIsWeb) return;
 
     if (state == AppLifecycleState.paused ||
@@ -142,6 +166,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void dispose() {
+    AppState.instance.stopVerseAudio();
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
       try {
@@ -163,6 +188,10 @@ class _TrackingScreenState extends State<TrackingScreen>
   @override
   void didUpdateWidget(TrackingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.isRecording != oldWidget.isRecording ||
+        widget.isVoiceSearching != oldWidget.isVoiceSearching) {
+      _syncScreenWakeLock();
+    }
     if (widget.isRecording && !oldWidget.isRecording) {
       AppState.instance.dismissBanner();
       final int targetAyah = widget.controller.currentMatchedVerse?.verse.ayah ??
@@ -434,6 +463,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (_isAutoScrolling) {
       _stopAutoScrolling();
     } else {
+      AppState.instance.stopVerseAudio();
       if (!AppState.instance.hasChosenAutoScrollSpeed && mounted) {
         showDialog(
           context: context,
@@ -468,11 +498,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       _autoScrollTicker!.start();
     }
 
-    if (!kIsWeb) {
-      try {
-        WakelockPlus.enable();
-      } catch (_) {}
-    }
+    _syncScreenWakeLock();
   }
 
   void _stopAutoScrolling() {
@@ -482,11 +508,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
     }
-    if (!kIsWeb) {
-      try {
-        WakelockPlus.disable();
-      } catch (_) {}
-    }
+    _syncScreenWakeLock();
   }
 
   /// Hardware VSYNC frame-rate independent teleprompter engine:
@@ -862,6 +884,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       onTap: () {
                         HapticFeedback.mediumImpact();
                         app.dismissBanner();
+                        AppState.instance.stopVerseAudio();
                         _toggleAutoScroll();
                       },
                     ),
@@ -877,6 +900,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       onTap: () {
                         HapticFeedback.lightImpact();
                         app.dismissBanner();
+                        AppState.instance.stopVerseAudio();
                         widget.onVoiceSearchToggle();
                       },
                     ),

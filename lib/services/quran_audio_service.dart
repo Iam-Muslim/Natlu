@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../state/app_state.dart';
 import 'quran_timing_service.dart';
 
@@ -72,6 +73,28 @@ class QuranAudioService {
   /// Guaranteed non-null AudioPlayer instance with robust event listeners.
   AudioPlayer get _audioPlayer {
     if (_player == null) {
+      if (!kIsWeb) {
+        try {
+          final AudioContext audioContext = AudioContext(
+            iOS: AudioContextIOS(
+              category: AVAudioSessionCategory.playAndRecord,
+              options: const {
+                AVAudioSessionOptions.defaultToSpeaker,
+                AVAudioSessionOptions.allowBluetooth,
+              },
+            ),
+            android: AudioContextAndroid(
+              isSpeakerphoneOn: true,
+              stayAwake: true,
+              contentType: AndroidContentType.music,
+              usageType: AndroidUsageType.media,
+              audioFocus: AndroidAudioFocus.gain,
+            ),
+          );
+          AudioPlayer.global.setAudioContext(audioContext);
+        } catch (_) {}
+      }
+
       final p = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
 
       // 35ms update timer for 30fps smooth word highlight synchronization
@@ -133,7 +156,9 @@ class QuranAudioService {
       if (AppState.instance.activeAudioWordIndex.value != _singleWordIndex) {
         AppState.instance.activeAudioWordIndex.value = _singleWordIndex;
       }
-      if (posMs >= _singleWordStartMs! && posMs >= _singleWordEndMs!) {
+      // Stale position guard: ignore ticks that are far outside the word window from previous playback
+      final bool isNearWord = posMs >= (_singleWordStartMs! - 300) && posMs <= (_singleWordEndMs! + 2500);
+      if (isNearWord && posMs >= _singleWordEndMs!) {
         stop();
       }
       return;
@@ -243,13 +268,19 @@ class QuranAudioService {
         _loadedSurah = surah;
         final url = getSurahAudioUrl(surah);
         _isPreparingTrack = true;
-        await player.stop();
-        _isPreparingTrack = false;
-        if (session != _playSessionId) return;
-        await player.play(
-          UrlSource(url),
-          position: startDuration,
-        );
+        try {
+          await player.stop();
+          if (session != _playSessionId) return;
+          await player.play(
+            UrlSource(url),
+            position: startDuration,
+          );
+          if (startDuration > Duration.zero) {
+            await player.seek(startDuration);
+          }
+        } finally {
+          _isPreparingTrack = false;
+        }
       }
 
       if (session != _playSessionId) return;
@@ -261,6 +292,9 @@ class QuranAudioService {
       app.isContinuousPlayback.value = false;
       app.isAudioBuffering.value = false;
       app.isAudioPlaying.value = true;
+      if (!kIsWeb) {
+        try { WakelockPlus.enable(); } catch (_) {}
+      }
     } catch (e, stack) {
       debugPrint('[QuranAudioService] Error playing word ($surah:$ayah:$wordIndex): $e\n$stack');
       _resetStateToStopped(triggerErrorBanner: true);
@@ -343,13 +377,19 @@ class QuranAudioService {
         _loadedSurah = surah;
         final url = getSurahAudioUrl(surah);
         _isPreparingTrack = true;
-        await player.stop();
-        _isPreparingTrack = false;
-        if (session != _playSessionId) return;
-        await player.play(
-          UrlSource(url),
-          position: startDuration,
-        );
+        try {
+          await player.stop();
+          if (session != _playSessionId) return;
+          await player.play(
+            UrlSource(url),
+            position: startDuration,
+          );
+          if (startDuration > Duration.zero) {
+            await player.seek(startDuration);
+          }
+        } finally {
+          _isPreparingTrack = false;
+        }
       }
 
       if (session != _playSessionId) return;
@@ -361,6 +401,9 @@ class QuranAudioService {
       app.isContinuousPlayback.value = continuous;
       app.isAudioBuffering.value = false;
       app.isAudioPlaying.value = true;
+      if (!kIsWeb) {
+        try { WakelockPlus.enable(); } catch (_) {}
+      }
     } catch (e, stack) {
       debugPrint('[QuranAudioService] Error playing $surah:$ayah (network or player): $e\n$stack');
       _resetStateToStopped(triggerErrorBanner: true);
@@ -409,6 +452,9 @@ class QuranAudioService {
 
       await _audioPlayer.resume();
       AppState.instance.isAudioPlaying.value = true;
+      if (!kIsWeb) {
+        try { WakelockPlus.enable(); } catch (_) {}
+      }
     } catch (e) {
       debugPrint('[QuranAudioService] Error resuming: $e');
       _resetStateToStopped(triggerErrorBanner: true);
@@ -458,5 +504,14 @@ class QuranAudioService {
         errorReason ?? QuranTimingService.instance.lastFailureReason,
       );
     }
+  }
+
+  /// Releases player resources completely.
+  Future<void> dispose() async {
+    await stop();
+    try {
+      await _player?.dispose();
+    } catch (_) {}
+    _player = null;
   }
 }

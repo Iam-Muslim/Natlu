@@ -194,7 +194,7 @@ class _Orchestrator extends StatefulWidget {
   State<_Orchestrator> createState() => _OrchestratorState();
 }
 
-class _OrchestratorState extends State<_Orchestrator> {
+class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserver {
   final SherpaEngine _engine = SherpaEngine();
   final AudioProcessor _audio = AudioProcessor();
   late final VoiceSearchController _voiceSearchCtrl;
@@ -217,6 +217,9 @@ class _OrchestratorState extends State<_Orchestrator> {
   @override
   void initState() {
     super.initState();
+    if (!kIsWeb) {
+      WidgetsBinding.instance.addObserver(this);
+    }
     _voiceSearchCtrl = VoiceSearchController(engine: _engine);
     AppState.instance.isAudioPlaying.addListener(_onVerseAudioPlayingChanged);
 
@@ -288,7 +291,21 @@ class _OrchestratorState extends State<_Orchestrator> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      AppState.instance.stopVerseAudio();
+    }
+  }
+
+  @override
   void dispose() {
+    if (!kIsWeb) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
+    AppState.instance.stopVerseAudio();
     _ctrl?.dispose();
     _voiceSearchAsrNotifier.dispose();
     super.dispose();
@@ -396,9 +413,17 @@ class _OrchestratorState extends State<_Orchestrator> {
   }
 
   void _onVerseAudioPlayingChanged() {
-    if (!AppState.instance.isAudioPlaying.value && _isRecording) {
+    final bool isAudio = AppState.instance.isAudioPlaying.value;
+    if (!isAudio && _isRecording) {
       _audio.clearBuffer();
       _engine.resetBuffer();
+    }
+    if (!kIsWeb) {
+      if (isAudio || _isRecording || _isVoiceSearching) {
+        try { WakelockPlus.enable(); } catch (_) {}
+      } else {
+        try { WakelockPlus.disable(); } catch (_) {}
+      }
     }
   }
 
@@ -412,7 +437,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         await _audio.stop();
         _engine.resetBuffer();
         _ctrl?.finalize();
-        if (!kIsWeb) {
+        if (!kIsWeb && !AppState.instance.isAudioPlaying.value) {
           try { await WakelockPlus.disable(); } catch (_) {}
         }
         if (mounted) {
@@ -481,6 +506,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
   /// Toggles global voice search across the Quran
   Future<void> _toggleVoiceSearch() async {
+    AppState.instance.stopVerseAudio();
     if (_isToggling) return;
 
     if (_isVoiceSearching) {
@@ -494,6 +520,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   }
 
   Future<void> _startVoiceSearch() async {
+    AppState.instance.stopVerseAudio();
     if (_isVoiceSearching || _isToggling) return;
     _isToggling = true;
 
@@ -559,7 +586,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     try {
       await _audio.stop();
       _engine.resetBuffer();
-      if (!kIsWeb) {
+      if (!kIsWeb && !AppState.instance.isAudioPlaying.value) {
         try { await WakelockPlus.disable(); } catch (_) {}
       }
 

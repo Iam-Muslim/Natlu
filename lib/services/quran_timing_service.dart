@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../state/app_state.dart';
 
 /// Single word timing interval matching MP3Quran v4 audio timestamps.
@@ -147,9 +146,7 @@ class SurahTiming {
 ///
 /// Notice: Word timings are produced automatically via the MP3Quran v4 API.
 class QuranTimingService {
-  QuranTimingService._() {
-    unawaited(cleanLegacyDiskCache());
-  }
+  QuranTimingService._();
   static final QuranTimingService instance = QuranTimingService._();
 
   /// MP3Quran v4 API base URL as documented.
@@ -158,10 +155,8 @@ class QuranTimingService {
   /// Default reciter code (stored as permanent code string, never numeric ID).
   String recitationCode = 'mahmoud-husary/r1';
 
-  /// Persistent Keep-Alive client avoiding socket exhaustion with fast offline failure.
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(minutes: 5)
-    ..connectionTimeout = const Duration(milliseconds: 1500);
+  /// Cross-platform HTTP Client (handles Android, iOS, Web, Windows).
+  static final http.Client _client = http.Client();
 
   /// In-memory cache of loaded Surahs during this session (no disk file persistence).
   final Map<int, SurahTiming> _inMemorySurahs = {};
@@ -174,18 +169,6 @@ class QuranTimingService {
 
   /// Tracks the last encountered failure reason for UI banner dispatch.
   AudioFailureReason lastFailureReason = AudioFailureReason.networkOffline;
-
-  /// One-time cleanup utility to remove old disk cache files from previous versions.
-  static Future<void> cleanLegacyDiskCache() async {
-    try {
-      final baseDir = await getApplicationDocumentsDirectory();
-      final legacyDir = Directory('${baseDir.path}/quran_audio/timing');
-      if (await legacyDir.exists()) {
-        await legacyDir.delete(recursive: true);
-        debugPrint('[QuranTimingService] Cleaned legacy disk cache directory.');
-      }
-    } catch (_) {}
-  }
 
   /// Synchronously gets an already loaded [SurahTiming] from in-memory cache.
   SurahTiming? getSurahTiming(int surah) => _inMemorySurahs[surah];
@@ -245,41 +228,39 @@ class QuranTimingService {
     final uri = Uri.parse(endpoint);
 
     try {
-      final request = await _client.getUrl(uri).timeout(const Duration(milliseconds: 1800));
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
+      final headers = <String, String>{
+        'Accept': 'application/json',
+      };
       final savedEtag = _etagMap[surah];
       if (savedEtag != null && savedEtag.isNotEmpty) {
-        request.headers.set(HttpHeaders.ifNoneMatchHeader, savedEtag);
+        headers['If-None-Match'] = savedEtag;
       }
 
-      final response = await request.close().timeout(const Duration(milliseconds: 1800));
+      final response = await _client.get(uri, headers: headers).timeout(const Duration(milliseconds: 4500));
 
       // ── 304 Not Modified ──
-      if (response.statusCode == HttpStatus.notModified) {
-        await response.drain();
+      if (response.statusCode == 304) {
         return _inMemorySurahs[surah];
       }
 
       // ── 200 OK ──
-      if (response.statusCode == HttpStatus.ok) {
-        final etag = response.headers.value(HttpHeaders.etagHeader);
-        if (etag != null) {
+      if (response.statusCode == 200) {
+        final etag = response.headers['etag'];
+        if (etag != null && etag.isNotEmpty) {
           _etagMap[surah] = etag;
         }
 
-        final body = await response.transform(utf8.decoder).join();
+        final body = utf8.decode(response.bodyBytes);
         return _parseSurahJson(surah, body);
       }
 
       // ── 429 Rate Limited or 503 Service Unavailable (Wait Retry-After) ──
-      if (response.statusCode == 429 || response.statusCode == HttpStatus.serviceUnavailable) {
+      if (response.statusCode == 429 || response.statusCode == 503) {
         lastFailureReason = response.statusCode == 429
             ? AudioFailureReason.rateLimited
             : AudioFailureReason.serverUnavailable;
-        final retryAfterHeader = response.headers.value(HttpHeaders.retryAfterHeader);
+        final retryAfterHeader = response.headers['retry-after'];
         final int retryAfterSeconds = int.tryParse(retryAfterHeader ?? '2') ?? 2;
-        await response.drain();
 
         debugPrint(
           '[QuranTimingService] HTTP ${response.statusCode} (Rate Limit / Queue Full). Retry-After: $retryAfterSeconds s',
@@ -296,12 +277,7 @@ class QuranTimingService {
       lastFailureReason = response.statusCode >= 500
           ? AudioFailureReason.serverUnavailable
           : AudioFailureReason.unknown;
-      final errorBody = await response.transform(utf8.decoder).join();
-      _handleApiError(response.statusCode, errorBody);
-      return null;
-    } on SocketException catch (e) {
-      lastFailureReason = AudioFailureReason.networkOffline;
-      debugPrint('[QuranTimingService] Network unreachable / No internet ($e)');
+      _handleApiError(response.statusCode, response.body);
       return null;
     } on TimeoutException {
       lastFailureReason = AudioFailureReason.networkOffline;
