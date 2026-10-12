@@ -166,18 +166,11 @@ class _BottomActionBarState extends State<BottomActionBar>
                   );
                   final double radius = lerpDouble(18.0, 20.0, t)!;
 
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(radius),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                        sigmaX: 20 * t,
-                        sigmaY: 20 * t,
-                      ),
-                      child: Container(
+                  return Container(
                     height: dockHeight,
                     padding: dockPadding,
                     decoration: BoxDecoration(
-                      color: c.glassSurface,
+                      color: isDark ? c.surfaceHigh : c.surface,
                       borderRadius: BorderRadius.circular(radius),
                       border: Border.all(
                         color: (isDark
@@ -191,16 +184,14 @@ class _BottomActionBarState extends State<BottomActionBar>
                               BoxShadow(
                                 color: Colors.black.withValues(
                                     alpha: (isDark ? 0.35 : 0.06) * t),
-                                blurRadius: 28,
-                                offset: const Offset(0, 8),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
                               ),
                             ]
                           : null,
                     ),
                     child: child,
-                  ),
-                ),
-              );
+                  );
             },
             child: Directionality(
               textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,

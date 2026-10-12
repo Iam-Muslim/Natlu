@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -762,31 +761,27 @@ class _TrackingScreenState extends State<TrackingScreen>
         end: 14,
         bottom: 8,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: c.glassSurface,
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: app.isDarkMode
-                        ? Colors.white.withValues(alpha: 0.16)
-                        : Colors.black.withValues(alpha: 0.12),
-                    width: 0.9,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black
-                          .withValues(alpha: app.isDarkMode ? 0.35 : 0.06),
-                      blurRadius: 28,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: app.isDarkMode
+                ? Colors.white.withValues(alpha: 0.16)
+                : Colors.black.withValues(alpha: 0.12),
+            width: 0.9,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black
+                  .withValues(alpha: app.isDarkMode ? 0.35 : 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
                 child: Row(
                   mainAxisSize: MainAxisSize.max,
                   children: [
@@ -925,10 +920,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ],
                 ),
               ),
-            ),
-          ),
-        );
-      }
+            );
+          }
 
 
 
@@ -980,33 +973,24 @@ class _TrackingScreenState extends State<TrackingScreen>
               onTap: () {
                 app.dismissBanner();
               },
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 460),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: c.glassSurface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: isDark ? 0.38 : 0.30),
-                        width: 1.1,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
-                          blurRadius: 24,
-                          offset: const Offset(0, -4),
-                        ),
-                        BoxShadow(
-                          color: accentColor.withValues(alpha: isDark ? 0.16 : 0.08),
-                          blurRadius: 18,
-                          offset: const Offset(0, -2),
-                        ),
-                      ],
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 460),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? c.surfaceHigh : c.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: accentColor.withValues(alpha: isDark ? 0.38 : 0.30),
+                    width: 1.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      blurRadius: 14,
+                      offset: const Offset(0, -3),
                     ),
+                  ],
+                ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1043,16 +1027,14 @@ class _TrackingScreenState extends State<TrackingScreen>
                           ),
                         ),
                       ],
-                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildIconActionButton({
     required IconData icon,
@@ -1250,31 +1232,27 @@ class _TrackingScreenState extends State<TrackingScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 290),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(19),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: c.glassSurface,
-                  borderRadius: BorderRadius.circular(19),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.16)
-                        : Colors.black.withValues(alpha: 0.12),
-                    width: 0.9,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black
-                          .withValues(alpha: isDark ? 0.35 : 0.06),
-                      blurRadius: 28,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: isDark ? c.surfaceHigh : c.surface,
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : Colors.black.withValues(alpha: 0.12),
+                width: 0.9,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black
+                      .withValues(alpha: isDark ? 0.35 : 0.06),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
+              ],
+            ),
                 child: Directionality(
                   textDirection: TextDirection.ltr,
                   child: Row(
@@ -1341,10 +1319,8 @@ class _TrackingScreenState extends State<TrackingScreen>
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
+        );
+      }
 
   Widget _buildSurahNavButton({
     required IconData icon,
