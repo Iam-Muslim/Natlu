@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +64,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   bool _isAutoScrolling = false;
 
   bool _showTajweedBanner = false;
+  Timer? _tajweedBannerTimer;
 
   @override
   void initState() {
@@ -78,16 +80,17 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     AppState.instance.addListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
+    AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
   }
 
   void _onActiveAudioAyahChanged() {
     final ayah = AppState.instance.activeAudioAyah.value;
     if (ayah != null &&
         AppState.instance.isAudioPlaying.value &&
-        !widget.isRecording &&
         !_isAutoScrolling) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
           _forceScrollToAyah(ayah);
         }
       });
@@ -116,6 +119,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void dispose() {
+    _tajweedBannerTimer?.cancel();
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
       try {
@@ -126,6 +130,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     AppState.instance.removeListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.removeListener(_onActiveAudioAyahChanged);
+    AppState.instance.isAudioPlaying.removeListener(_onActiveAudioAyahChanged);
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
     super.dispose();
@@ -383,6 +388,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final bottom = MediaQuery.of(context).padding.bottom;
     final app = AppState.instance;
 
     return ListenableBuilder(
@@ -425,6 +431,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ),
                 ),
 
+                // Tajweed Mode Banner (Slides UP from bottom toolbar)
+                _buildTajweedBottomBanner(c, app, bottom),
+
                 // Bottom Action Bar
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 250),
@@ -455,8 +464,10 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isAutoScrolling: _isAutoScrolling,
                       c: c,
                       onMic: () {
-                        if (_showTajweedBanner)
+                        _tajweedBannerTimer?.cancel();
+                        if (_showTajweedBanner) {
                           setState(() => _showTajweedBanner = false);
+                        }
                         if (widget.isVoiceSearching) {
                           widget.onVoiceSearchToggle();
                         } else {
@@ -464,8 +475,10 @@ class _TrackingScreenState extends State<TrackingScreen>
                         }
                       },
                       onToggleAutoScroll: () {
-                        if (_showTajweedBanner)
+                        _tajweedBannerTimer?.cancel();
+                        if (_showTajweedBanner) {
                           setState(() => _showTajweedBanner = false);
+                        }
                         _toggleAutoScroll();
                       },
                       onSettingsTap: _showSettingsDialog,
@@ -477,14 +490,17 @@ class _TrackingScreenState extends State<TrackingScreen>
                           app.setMode(AppMode.tajweed);
                           widget.controller.setTajweedMode(true);
                           ScaffoldMessenger.of(context).clearSnackBars();
+                          _tajweedBannerTimer?.cancel();
                           setState(() => _showTajweedBanner = true);
-                          Future.delayed(const Duration(seconds: 2), () {
-                            if (mounted)
+                          _tajweedBannerTimer = Timer(const Duration(milliseconds: 4500), () {
+                            if (mounted) {
                               setState(() => _showTajweedBanner = false);
+                            }
                           });
                         } else {
                           app.setMode(AppMode.wordChecker);
                           widget.controller.setTajweedMode(false);
+                          _tajweedBannerTimer?.cancel();
                           if (_showTajweedBanner) {
                             setState(() => _showTajweedBanner = false);
                           }
@@ -518,68 +534,13 @@ class _TrackingScreenState extends State<TrackingScreen>
         end: 14,
         bottom: 8,
       ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // The Dropdown Banner
-          AnimatedPositioned(
-            duration: Duration(milliseconds: _showTajweedBanner ? 600 : 300),
-            curve: _showTajweedBanner ? Curves.elasticOut : Curves.easeOutCubic,
-            top: _showTajweedBanner
-                ? 54
-                : 0, // Slides out from beneath the container
-            left: 16,
-            right: 16,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 300),
-              opacity: _showTajweedBanner ? 1.0 : 0.0,
-              child: Container(
-                padding: const EdgeInsets.only(
-                    top: 16, bottom: 8, left: 12, right: 12),
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(16),
-                    bottomRight: Radius.circular(16),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    )
-                  ],
-                  border: Border(
-                    bottom: BorderSide(color: c.gold.withValues(alpha: 0.3)),
-                    left: BorderSide(color: c.gold.withValues(alpha: 0.3)),
-                    right: BorderSide(color: c.gold.withValues(alpha: 0.3)),
-                  ),
-                ),
-                child: Text(
-                  app.isArabic
-                      ? 'تم تفعيل التجويد و يمكنك الضغط على الكلمات باللون الاصفر لمعرفة نوع الخطأ'
-                      : 'Tajweed Enabled. Tap on yellow words to see error details.',
-                  style: TextStyle(
-                      color: c.text,
-                      height: 1.4,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12),
-                  textAlign: TextAlign.center,
-                  textDirection:
-                      app.isArabic ? TextDirection.rtl : TextDirection.ltr,
-                ),
-              ),
-            ),
-          ),
-
-          // The Actual Header Container
-          ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: c.glassSurface,
                   borderRadius: BorderRadius.circular(28),
@@ -740,7 +701,99 @@ class _TrackingScreenState extends State<TrackingScreen>
               ),
             ),
           ),
-        ],
+        );
+      }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Tajweed Mode Slide-Up Banner (Slides UP from bottom toolbar)
+  // ──────────────────────────────────────────────────────────────────────────
+  Widget _buildTajweedBottomBanner(ThemeColors c, AppState app, double bottom) {
+    final bool isDark = app.isDarkMode;
+    final bool isAr = app.isArabic;
+
+    return AnimatedPositioned(
+      duration: Duration(milliseconds: _showTajweedBanner ? 600 : 300),
+      curve: _showTajweedBanner ? Curves.elasticOut : Curves.easeOutCubic,
+      bottom: _showTajweedBanner ? (bottom + 84) : (bottom + 16),
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        ignoring: !_showTajweedBanner,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 260),
+          opacity: _showTajweedBanner ? 1.0 : 0.0,
+          child: Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: c.glassSurface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: c.primary.withValues(alpha: isDark ? 0.35 : 0.28),
+                      width: 1.1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
+                        blurRadius: 24,
+                        offset: const Offset(0, -4),
+                      ),
+                      BoxShadow(
+                        color: c.primary.withValues(alpha: isDark ? 0.18 : 0.08),
+                        blurRadius: 18,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: c.primary.withValues(alpha: isDark ? 0.20 : 0.12),
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(
+                            color: c.primary.withValues(alpha: isDark ? 0.40 : 0.30),
+                            width: 0.8,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.record_voice_over_rounded,
+                          color: c.primary,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          isAr
+                              ? 'تم تفعيل التجويد • اضغط على الكلمات الصفراء لمعرفة الخطأ'
+                              : 'Tajweed Enabled • Tap yellow words for error details',
+                          style: TextStyle(
+                            color: c.text,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
+                          ),
+                          textAlign: isAr ? TextAlign.right : TextAlign.left,
+                          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -803,7 +856,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
         final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
         final topPadding = isFullscreenMode ? top + 10.0 : top + 74.0;
-        final bottomPadding = isFullscreenMode ? 40.0 : 88.0;
+        final bottomPadding = isFullscreenMode ? 48.0 : 100.0;
 
         return CustomScrollView(
           controller: _scroll,
@@ -846,6 +899,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isAutoScrolling: _isAutoScrolling,
                       onTap: () {
                         widget.controller.setManualAyah(v.surah, v.ayah);
+                        _forceScrollToAyah(v.ayah);
                       },
                       onWordErrorTap: null,
                     ),
@@ -897,8 +951,14 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   /// 2026 End-of-Surah Navigation Section:
-  /// - Minimalist 3-button navigation capsule (Previous, Go to Top, Next).
-  /// - Exact theme and color token conformity. Zero scroll overhead.
+  /// - Minimalist 3-button navigation capsule (Next, Go to Top, Previous).
+  /// - Direction-invariant layout (identical across English & Arabic):
+  ///   Visual Left   = Next Surah (التالية / Next) with chevron left (←),
+  ///   Visual Center = Scroll to Top (للأعلى / Top) with arrow up (↑),
+  ///   Visual Right  = Previous Surah (السابقة / Previous) with chevron right (→).
+  /// - Color parity with the bottom bar:
+  ///   Dark mode  = c.surfaceHigh (alpha 0.75),
+  ///   White mode = Colors.white (alpha 0.92) matching the bottom bar.
   Widget _buildEndOfSurahSection(ThemeColors c, AppState app) {
     final int currentSurah = widget.controller.targetSurah;
     final bool hasPrev = currentSurah > 1;
@@ -906,107 +966,100 @@ class _TrackingScreenState extends State<TrackingScreen>
     final bool isAr = app.isArabic;
     final bool isDark = app.isDarkMode;
 
-    final metadataList = widget.controller.repository.surahMetadata;
-    final prevMeta = hasPrev ? metadataList[currentSurah - 2] : null;
-    final nextMeta = hasNext ? metadataList[currentSurah] : null;
-
-    // Outer-edge directional chevrons:
-    // Left side of screen always points left (<)
-    // Right side of screen always points right (>)
-    final IconData prevIcon =
-        isAr ? Icons.chevron_right_rounded : Icons.chevron_left_rounded;
-    final IconData nextIcon =
-        isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded;
-
     return Padding(
-      padding: const EdgeInsets.only(top: 64, bottom: 8, left: 16, right: 16),
+      padding: const EdgeInsets.only(top: 24, bottom: 16, left: 16, right: 16),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 350),
-          child: Container(
-            height: 50,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? c.surfaceHigh.withValues(alpha: 0.75)
-                  : c.surfaceHigh.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.12)
-                    : c.border.withValues(alpha: 0.60),
-                width: 0.85,
+          constraints: const BoxConstraints(maxWidth: 290),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(19),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.glassSurface,
+                  borderRadius: BorderRadius.circular(19),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.16)
+                        : Colors.black.withValues(alpha: 0.12),
+                    width: 0.9,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black
+                          .withValues(alpha: isDark ? 0.35 : 0.06),
+                      blurRadius: 28,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Row(
+                    children: [
+                      // Visual Left: Next Surah (التالية / Next)
+                      // Advances deeper in Quran (Surah + 1), chevron points left (←)
+                      Expanded(
+                        child: _buildSurahNavButton(
+                          icon: Icons.chevron_left_rounded,
+                          label: isAr ? 'التالية' : 'Next',
+                          isEnabled: hasNext,
+                          iconOnLeft: true,
+                          c: c,
+                          isDark: isDark,
+                          onTap: () => _navigateToSurah(currentSurah + 1),
+                        ),
+                      ),
+
+                      // Subtle Vertical Divider
+                      Container(
+                        width: 1,
+                        height: 14,
+                        color: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: isDark ? 0.14 : 0.08),
+                      ),
+
+                      // Visual Center: Scroll to Top (للأعلى / Top)
+                      Expanded(
+                        child: _buildSurahNavButton(
+                          icon: Icons.arrow_upward_rounded,
+                          label: isAr ? 'للأعلى' : 'Top',
+                          isEnabled: true,
+                          iconOnLeft: true,
+                          c: c,
+                          isDark: isDark,
+                          onTap: _scrollToTop,
+                        ),
+                      ),
+
+                      // Subtle Vertical Divider
+                      Container(
+                        width: 1,
+                        height: 14,
+                        color: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: isDark ? 0.14 : 0.08),
+                      ),
+
+                      // Visual Right: Previous Surah (السابقة / Previous)
+                      // Returns to previous surah (Surah - 1), chevron points right (→)
+                      Expanded(
+                        child: _buildSurahNavButton(
+                          icon: Icons.chevron_right_rounded,
+                          label: isAr ? 'السابقة' : 'Previous',
+                          isEnabled: hasPrev,
+                          iconOnLeft: false,
+                          c: c,
+                          isDark: isDark,
+                          onTap: () => _navigateToSurah(currentSurah - 1),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // Child 0: Visual Left in LTR (Previous), Visual Right in RTL (السابقة)
-                Expanded(
-                  child: _buildSurahNavButton(
-                    icon: prevIcon,
-                    label: isAr ? 'السابقة' : 'Previous',
-                    hint: prevMeta != null
-                        ? (isAr ? prevMeta.surahName : prevMeta.surahNameEn)
-                        : null,
-                    isEnabled: hasPrev,
-                    iconOnLeft: !isAr,
-                    c: c,
-                    isDark: isDark,
-                    onTap: () => _navigateToSurah(currentSurah - 1),
-                  ),
-                ),
-
-                // Subtle Vertical Divider
-                Container(
-                  width: 1,
-                  height: 24,
-                  color: (isDark ? Colors.white : c.border).withValues(alpha: 0.15),
-                ),
-
-                // Scroll to Top (Go Up) Center Button (NO default highlight)
-                Expanded(
-                  child: _buildSurahNavButton(
-                    icon: Icons.arrow_upward_rounded,
-                    label: isAr ? 'للأعلى' : 'Top',
-                    hint: null,
-                    isEnabled: true,
-                    iconOnLeft: false,
-                    c: c,
-                    isDark: isDark,
-                    onTap: _scrollToTop,
-                  ),
-                ),
-
-                // Subtle Vertical Divider
-                Container(
-                  width: 1,
-                  height: 24,
-                  color: (isDark ? Colors.white : c.border).withValues(alpha: 0.15),
-                ),
-
-                // Child 2: Visual Right in LTR (Next), Visual Left in RTL (التالية)
-                Expanded(
-                  child: _buildSurahNavButton(
-                    icon: nextIcon,
-                    label: isAr ? 'التالية' : 'Next',
-                    hint: nextMeta != null
-                        ? (isAr ? nextMeta.surahName : nextMeta.surahNameEn)
-                        : null,
-                    isEnabled: hasNext,
-                    iconOnLeft: isAr,
-                    c: c,
-                    isDark: isDark,
-                    onTap: () => _navigateToSurah(currentSurah + 1),
-                  ),
-                ),
-              ],
             ),
           ),
         ),
@@ -1017,7 +1070,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   Widget _buildSurahNavButton({
     required IconData icon,
     required String label,
-    required String? hint,
     required bool isEnabled,
     required bool iconOnLeft,
     required ThemeColors c,
@@ -1029,12 +1081,12 @@ class _TrackingScreenState extends State<TrackingScreen>
     final Color iconColor =
         !isEnabled ? c.muted.withValues(alpha: 0.35) : c.textSecondary;
 
-    final Widget iconWidget = Icon(icon, size: 18, color: iconColor);
+    final Widget iconWidget = Icon(icon, size: 15, color: iconColor);
     final Widget textWidget = Text(
       label,
       style: TextStyle(
         fontFamily: null,
-        fontSize: 12.0,
+        fontSize: 11.0,
         fontWeight: FontWeight.w600,
         color: textColor,
         height: 1.0,
@@ -1042,11 +1094,11 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
 
     final Widget content = Container(
-      height: 42,
+      height: 32,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Directionality(
         textDirection: TextDirection.ltr,
@@ -1056,12 +1108,12 @@ class _TrackingScreenState extends State<TrackingScreen>
           children: iconOnLeft
               ? [
                   iconWidget,
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 3),
                   textWidget,
                 ]
               : [
                   textWidget,
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 3),
                   iconWidget,
                 ],
         ),
@@ -1069,18 +1121,12 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
 
     if (!isEnabled) {
-      return Opacity(opacity: 0.40, child: content);
+      return Opacity(opacity: 0.35, child: content);
     }
 
-    return Tooltip(
-      message: hint != null
-          ? (AppState.instance.isArabic ? 'سورة $hint' : 'Surah $hint')
-          : label,
-      waitDuration: const Duration(milliseconds: 500),
-      child: _TactileScaleButton(
-        onTap: onTap,
-        child: content,
-      ),
+    return _TactileScaleButton(
+      onTap: onTap,
+      child: content,
     );
   }
 }

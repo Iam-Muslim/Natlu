@@ -32,6 +32,7 @@ class VerseSpanBuilder {
     required List<TapGestureRecognizer> recognizersSink,
     required VoidCallback? onVerseTap,
     required void Function(int ayah, int wordIndex, String word) onWordErrorTap,
+    void Function(int ayah, int wordIndex)? onWordAudioTap,
   }) {
     final List<InlineSpan> spans = [];
 
@@ -54,14 +55,14 @@ class VerseSpanBuilder {
             );
 
       final word = words[i];
+      final wordIdx = i;
       final recognizer = TapGestureRecognizer()
         ..onTap = () {
           if (isAutoScrolling) return;
-          if (!isActive) {
-            onVerseTap?.call();
-          }
-          if (controller.isWordYellow(ayah, i)) {
-            onWordErrorTap(ayah, i, word);
+          if (controller.isWordYellow(ayah, wordIdx)) {
+            onWordErrorTap(ayah, wordIdx, word);
+          } else {
+            onWordAudioTap?.call(ayah, wordIdx);
           }
         };
       recognizersSink.add(recognizer);

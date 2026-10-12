@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
 
+import '../../../services/quran_audio_service.dart';
 import '../../../state/app_state.dart';
 import '../dialogs/error_detail_dialog.dart';
 import '../helpers/verse_span_builder.dart';
@@ -244,12 +245,24 @@ class _MushafViewState extends State<MushafView> {
       AppState.instance.markTajweedWordClicked();
       final errors = widget.controller.getWordErrors(ayah, wordIdx);
       if (errors != null && errors.isNotEmpty) {
-        ErrorDetailDialog.show(context, word: word, errors: errors);
+        ErrorDetailDialog.show(
+          context,
+          word: word,
+          errors: errors,
+          surah: surah,
+          ayah: ayah,
+          wordIndex: wordIdx,
+        );
         return;
       }
     }
 
     widget.controller.setManualAyah(surah, ayah);
+    QuranAudioService.instance.playWord(
+      surah: surah,
+      ayah: ayah,
+      wordIndex: wordIdx,
+    );
   }
 
   static String _toArabicDigits(int number) {

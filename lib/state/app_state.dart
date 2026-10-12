@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:recite_quran/recite_quran.dart';
+import '../services/quran_audio_service.dart';
 
 // Supported UI languages.
 enum AppLanguage { ar, en }
@@ -151,6 +152,9 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<int?> activeAudioSurah = ValueNotifier<int?>(null);
   final ValueNotifier<bool> isAudioPlaying = ValueNotifier<bool>(false);
 
+  /// Active word index (0-based) inside the active audio Ayah, synchronized to audio playback.
+  final ValueNotifier<int?> activeAudioWordIndex = ValueNotifier<int?>(null);
+
   /// Determines whether playback automatically advances to next Ayah (continuous mode)
   /// or stops after playing a single Ayah (record mode).
   final ValueNotifier<bool> isContinuousPlayback = ValueNotifier<bool>(true);
@@ -166,12 +170,17 @@ class AppState extends ChangeNotifier {
     if (activeAudioSurah.value == surah &&
         activeAudioAyah.value == ayah &&
         isAudioPlaying.value) {
-      isAudioPlaying.value = false;
+      QuranAudioService.instance.pause();
+    } else if (activeAudioSurah.value == surah &&
+               activeAudioAyah.value == ayah &&
+               QuranAudioService.instance.isPaused) {
+      QuranAudioService.instance.resume();
     } else {
-      activeAudioSurah.value = surah;
-      activeAudioAyah.value = ayah;
-      isContinuousPlayback.value = continuous;
-      isAudioPlaying.value = true;
+      QuranAudioService.instance.play(
+        surah: surah,
+        ayah: ayah,
+        continuous: continuous,
+      );
     }
   }
 
@@ -188,15 +197,19 @@ class AppState extends ChangeNotifier {
 
     // Out of record mode: advance to next ayah
     final currentAyah = activeAudioAyah.value;
-    if (currentAyah == null) {
+    final currentSurah = activeAudioSurah.value;
+    if (currentAyah == null || currentSurah == null) {
       stopVerseAudio();
       return;
     }
 
     final maxAyah = totalAyahsInSurah ?? 286;
     if (currentAyah < maxAyah) {
-      activeAudioAyah.value = currentAyah + 1;
-      isAudioPlaying.value = true;
+      QuranAudioService.instance.play(
+        surah: currentSurah,
+        ayah: currentAyah + 1,
+        continuous: true,
+      );
     } else {
       stopVerseAudio();
     }
@@ -204,9 +217,7 @@ class AppState extends ChangeNotifier {
 
   /// Pauses or stops active verse audio playback.
   void stopVerseAudio() {
-    if (isAudioPlaying.value) {
-      isAudioPlaying.value = false;
-    }
+    QuranAudioService.instance.stop();
   }
 
   // ── Colors ─────────────────────────────────────────────────────────────────

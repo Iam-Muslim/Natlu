@@ -49,12 +49,14 @@ class _BottomActionBarState extends State<BottomActionBar>
     with SingleTickerProviderStateMixin {
   AnimationController? _collapseController;
   Animation<double>? _expandAnimation;
+  bool _isHovered = false;
 
   void _ensureAnimation() {
+    final bool isCollapsed = widget.isAutoScrolling || widget.isRecording;
     _collapseController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
-      value: widget.isAutoScrolling ? 0.0 : 1.0,
+      value: isCollapsed ? 0.0 : 1.0,
     );
     _expandAnimation ??= CurvedAnimation(
       parent: _collapseController!,
@@ -79,8 +81,12 @@ class _BottomActionBarState extends State<BottomActionBar>
   void didUpdateWidget(covariant BottomActionBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     _ensureAnimation();
-    if (oldWidget.isAutoScrolling != widget.isAutoScrolling) {
-      if (widget.isAutoScrolling) {
+    final bool oldCollapsed =
+        oldWidget.isAutoScrolling || oldWidget.isRecording;
+    final bool newCollapsed =
+        widget.isAutoScrolling || widget.isRecording;
+    if (oldCollapsed != newCollapsed) {
+      if (newCollapsed) {
         _collapseController?.reverse();
       } else {
         _collapseController?.forward();
@@ -103,76 +109,63 @@ class _BottomActionBarState extends State<BottomActionBar>
     final isAr = app.isArabic;
     final isDark = app.isDarkMode;
 
+    final double dockOpacity = widget.isAutoScrolling
+        ? (_isHovered ? 1.0 : 0.55)
+        : (widget.isRecording ? 0.85 : 1.0);
+
     // ── Unified Floating Island Dock ──
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
         child: Center(
-          child: AnimatedBuilder(
-            animation: anim,
-            builder: (context, child) {
-              final double t = anim.value;
-              final double dockHeight = lerpDouble(46.0, 56.0, t)!;
-              final EdgeInsets dockPadding = EdgeInsets.symmetric(
-                horizontal: 8.0 * t,
-                vertical: 4.0 * t,
-              );
-              final double radius = lerpDouble(18.0, 20.0, t)!;
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              opacity: dockOpacity,
+              child: AnimatedBuilder(
+                animation: anim,
+                builder: (context, child) {
+                  final double t = anim.value;
+                  final double dockHeight = lerpDouble(46.0, 56.0, t)!;
+                  final EdgeInsets dockPadding = EdgeInsets.symmetric(
+                    horizontal: 8.0 * t,
+                    vertical: 4.0 * t,
+                  );
+                  final double radius = lerpDouble(18.0, 20.0, t)!;
 
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(radius),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: 20 * t,
-                    sigmaY: 20 * t,
-                  ),
-                  child: Container(
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(radius),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                        sigmaX: 20 * t,
+                        sigmaY: 20 * t,
+                      ),
+                      child: Container(
                     height: dockHeight,
                     padding: dockPadding,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: isDark
-                            ? [
-                                c.surfaceHigh.withValues(alpha: 0.72 * t),
-                                c.surface.withValues(alpha: 0.86 * t),
-                              ]
-                            : [
-                                Colors.white.withValues(alpha: 0.92 * t),
-                                c.surfaceHigh.withValues(alpha: 0.80 * t),
-                              ],
-                      ),
+                      color: c.glassSurface,
                       borderRadius: BorderRadius.circular(radius),
                       border: Border.all(
                         color: (isDark
-                                ? Colors.white.withValues(alpha: 0.14)
-                                : c.border.withValues(alpha: 0.65))
-                            .withValues(alpha: (isDark ? 0.14 : 0.65) * t),
-                        width: 0.85 * t,
+                                ? Colors.white.withValues(alpha: 0.16)
+                                : Colors.black.withValues(alpha: 0.12))
+                            .withValues(alpha: (isDark ? 0.16 : 0.12) * t),
+                        width: 0.9 * t,
                       ),
                       boxShadow: t > 0.05
-                          ? (isDark
-                              ? [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.45 * t),
-                                    blurRadius: 22,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ]
-                              : [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.08 * t),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                  BoxShadow(
-                                    color: Colors.white.withValues(alpha: 0.90 * t),
-                                    blurRadius: 2,
-                                    offset: const Offset(0, -1),
-                                  ),
-                                ])
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                    alpha: (isDark ? 0.35 : 0.06) * t),
+                                blurRadius: 28,
+                                offset: const Offset(0, 8),
+                              ),
+                            ]
                           : null,
                     ),
                     child: child,
@@ -269,7 +262,9 @@ class _BottomActionBarState extends State<BottomActionBar>
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   /// Compact Eye-Comfortable Secondary Utility Toggle Button:
@@ -343,8 +338,12 @@ class _BottomActionBarState extends State<BottomActionBar>
     final VoidCallback onTap;
 
     if (isRec) {
-      gradientStart = const Color(0xFFEF4444);
-      gradientEnd = const Color(0xFFDC2626);
+      gradientStart = isDark
+          ? const Color(0xFFF43F5E) // Dark mode: Soft Ruby Rose (zero halation)
+          : const Color(0xFFE11D48); // White mode: Persian Rose Carmine
+      gradientEnd = isDark
+          ? const Color(0xFFE11D48)
+          : const Color(0xFFBE123C);
       label = isAr ? 'قف' : 'Stop';
       icon = Icons.stop_rounded;
       onTap = widget.onMic;
@@ -359,8 +358,12 @@ class _BottomActionBarState extends State<BottomActionBar>
       icon = Icons.pause_rounded;
       onTap = widget.onToggleAutoScroll;
     } else {
-      gradientStart = c.emerald;
-      gradientEnd = const Color(0xFF0D9488);
+      gradientStart = isDark
+          ? const Color(0xFF10B981) // Dark mode: Luminous Aurora Emerald
+          : const Color(0xFF047857); // White mode: Deep Royal Forest Emerald
+      gradientEnd = isDark
+          ? const Color(0xFF059669) // Dark mode: Calm Jade Mint
+          : const Color(0xFF065F46); // White mode: Deep Pine Jade
       label = isAr ? 'اتلو' : 'Recite';
       icon = Icons.mic_rounded;
       onTap = widget.onMic;
@@ -382,32 +385,30 @@ class _BottomActionBarState extends State<BottomActionBar>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isScroll
                 ? (isDark
                     ? Colors.white.withValues(alpha: 0.16)
-                    : c.border.withValues(alpha: 0.65))
-                : Colors.white.withValues(alpha: isDark ? 0.30 : 0.45),
-            width: 0.85,
+                    : Colors.black.withValues(alpha: 0.10))
+                : Colors.white.withValues(alpha: isDark ? 0.24 : 0.40),
+            width: 0.9,
           ),
           boxShadow: isScroll
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  ),
-                  BoxShadow(
-                    color: c.primary.withValues(alpha: isDark ? 0.08 : 0.04),
-                    blurRadius: 10,
+                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
                 ]
               : [
                   BoxShadow(
-                    color: gradientStart.withValues(alpha: isRec ? 0.42 : 0.36),
-                    blurRadius: 14,
-                    offset: const Offset(0, 3),
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.35)
+                        : gradientStart.withValues(alpha: 0.22),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
                 ],
         ),
