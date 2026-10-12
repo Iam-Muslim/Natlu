@@ -13,6 +13,7 @@ dependencies:
 
   audio_session: ^0.2.4
   flutter_displaymode: ^0.7.0
+  http: ^1.2.2
   in_app_update: ^5.0.0
   path_provider: ^2.1.5
   permission_handler: ^13.0.1
@@ -28,9 +29,9 @@ dependencies:
   sherpa_onnx: 1.13.5
   super_sliver_list: ^0.4.1
   wakelock_plus: ^1.6.1
-  http: ^1.6.0
   just_audio: ^0.10.6
-  just_audio_windows: ^0.2.3
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.9
 
 # sherpa_onnx 1.13.5 still allows sherpa_onnx_ios ^1.13.5, so the broken 1.13.6
 # iOS package gets pulled in transitively unless it is pinned here as well.

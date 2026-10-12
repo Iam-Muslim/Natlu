@@ -36,6 +36,8 @@ import 'ui/widgets/dialogs/permission_dialog.dart';
 import 'ui/widgets/dialogs/model_download_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+
 // //logs
 List<String> globalSessionLogs = [];
 
@@ -43,6 +45,14 @@ void main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Initialize Windows audio backend as in reference app (alquranalkareem / quran_library)
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+        try {
+          JustAudioMediaKit.bufferSize = 2 * 1024 * 1024;
+          JustAudioMediaKit.ensureInitialized(windows: true, linux: false);
+        } catch (_) {}
+      }
 
       // Initialize iOS audio session to disable VPIO processing for accurate ASR
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
