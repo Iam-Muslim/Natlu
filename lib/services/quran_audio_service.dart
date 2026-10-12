@@ -88,6 +88,13 @@ class QuranAudioService {
       _playerStateSub = p.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
           _handleTrackComplete();
+        } else if (state.processingState == ProcessingState.ready && p.playing) {
+          if (AppState.instance.isAudioBuffering.value) {
+            AppState.instance.isAudioBuffering.value = false;
+          }
+          if (!AppState.instance.isAudioPlaying.value) {
+            AppState.instance.isAudioPlaying.value = true;
+          }
         }
       });
 
@@ -104,7 +111,11 @@ class QuranAudioService {
 
   /// High-frequency position listener for word highlighting and Ayah boundary checks.
   void _handlePosition(Duration pos) {
-    if (!AppState.instance.isAudioPlaying.value) return;
+    if (!AppState.instance.isAudioPlaying.value && !(_player?.playing ?? false)) return;
+
+    if (AppState.instance.isAudioBuffering.value) {
+      AppState.instance.isAudioBuffering.value = false;
+    }
 
     final surah = _currentSurah;
     final ayah = _currentAyah;
@@ -242,6 +253,11 @@ class QuranAudioService {
         return;
       }
 
+      app.isContinuousPlayback.value = false;
+      app.isAudioBuffering.value = false;
+      app.isAudioPlaying.value = true;
+      app.activeAudioWordIndex.value = targetWord.wordIndex;
+
       // Arm the millisecond timer BEFORE starting playback
       _wordEndTimer?.cancel();
       _wordEndTimer = Timer(Duration(milliseconds: durationMs), () {
@@ -250,18 +266,11 @@ class QuranAudioService {
         }
       });
 
-      await player.play();
-
-      if (session != _playSessionId) {
-        _wordEndTimer?.cancel();
-        unawaited(player.pause().catchError((_) {}));
-        return;
-      }
-
-      app.isContinuousPlayback.value = false;
-      app.isAudioBuffering.value = false;
-      app.isAudioPlaying.value = true;
-      app.activeAudioWordIndex.value = targetWord.wordIndex;
+      unawaited(player.play().catchError((e) {
+        if (session == _playSessionId) {
+          debugPrint('[QuranAudioService] Error playing word: $e');
+        }
+      }));
 
       if (!kIsWeb) {
         try { WakelockPlus.enable(); } catch (_) {}
@@ -373,19 +382,18 @@ class QuranAudioService {
         return;
       }
 
-      await player.play();
-
-      if (session != _playSessionId) {
-        unawaited(player.pause().catchError((_) {}));
-        return;
-      }
-
       app.activeAudioSurah.value = surah;
       app.activeAudioAyah.value = ayah;
       app.activeAudioWordIndex.value = null;
       app.isContinuousPlayback.value = continuous;
       app.isAudioBuffering.value = false;
       app.isAudioPlaying.value = true;
+
+      unawaited(player.play().catchError((e) {
+        if (session == _playSessionId) {
+          debugPrint('[QuranAudioService] Error playing ayah: $e');
+        }
+      }));
 
       if (!kIsWeb) {
         try { WakelockPlus.enable(); } catch (_) {}
@@ -440,8 +448,11 @@ class QuranAudioService {
         }
       }
 
-      await _audioPlayer.play();
+      AppState.instance.isAudioBuffering.value = false;
       AppState.instance.isAudioPlaying.value = true;
+      unawaited(_audioPlayer.play().catchError((e) {
+        debugPrint('[QuranAudioService] Error resuming: $e');
+      }));
       if (!kIsWeb) {
         try { WakelockPlus.enable(); } catch (_) {}
       }
