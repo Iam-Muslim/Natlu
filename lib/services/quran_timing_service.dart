@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../state/app_state.dart';
 
 /// Single word timing interval matching MP3Quran v4 audio timestamps.
@@ -178,11 +180,27 @@ class QuranTimingService {
     return _inMemorySurahs[surah]?.getAyah(ayah);
   }
 
-  /// Ensures timing data for [surah] is streamed and loaded in memory.
+  /// Local disk cache directory for offline fast load.
+  Future<File?> _getDiskCacheFile(int surah) async {
+    if (kIsWeb) return null;
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final timingsDir = Directory('${dir.path}/quran_timings');
+      if (!await timingsDir.exists()) {
+        await timingsDir.create(recursive: true);
+      }
+      return File('${timingsDir.path}/surah_$surah.json');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Ensures timing data for [surah] is loaded in memory.
   ///
-  /// - Returns cached instance immediately if already in memory ($O(1)$).
-  /// - Coalesces concurrent calls so only a single HTTP request is in-flight.
-  /// - Gracefully returns `null` on network errors or offline without blocking.
+  /// - Returns cached instance immediately if already in memory (0ms).
+  /// - Loads from persistent disk cache if available (instant & offline-capable).
+  /// - Streams from MP3Quran v4 API only when needed and caches to disk.
+  /// - Coalesces concurrent calls so only a single request is in-flight.
   Future<SurahTiming?> ensureSurahLoaded(int surah) async {
     // 1. In-memory cache hit
     if (_inMemorySurahs.containsKey(surah)) {
@@ -199,6 +217,24 @@ class QuranTimingService {
 
     () async {
       try {
+        // Check disk cache first
+        final cacheFile = await _getDiskCacheFile(surah);
+        if (cacheFile != null && await cacheFile.exists()) {
+          try {
+            final content = await cacheFile.readAsString();
+            if (content.length > 50) {
+              final parsed = _parseSurahJson(surah, content);
+              if (parsed != null) {
+                _inMemorySurahs[surah] = parsed;
+                completer.complete(parsed);
+                return;
+              }
+            }
+          } catch (e) {
+            debugPrint('[QuranTimingService] Error reading disk cache for Surah $surah: $e');
+          }
+        }
+
         final timing = await _streamSurahTiming(surah);
         if (timing != null) {
           _inMemorySurahs[surah] = timing;
@@ -236,7 +272,7 @@ class QuranTimingService {
         headers['If-None-Match'] = savedEtag;
       }
 
-      final response = await _client.get(uri, headers: headers).timeout(const Duration(milliseconds: 4500));
+      final response = await _client.get(uri, headers: headers).timeout(const Duration(seconds: 15));
 
       // ── 304 Not Modified ──
       if (response.statusCode == 304) {
@@ -251,6 +287,11 @@ class QuranTimingService {
         }
 
         final body = utf8.decode(response.bodyBytes);
+        // Cache to disk asynchronously
+        _getDiskCacheFile(surah).then((file) {
+          if (file != null) file.writeAsString(body).catchError((_) => file);
+        }).catchError((_) {});
+
         return _parseSurahJson(surah, body);
       }
 
@@ -279,12 +320,16 @@ class QuranTimingService {
           : AudioFailureReason.unknown;
       _handleApiError(response.statusCode, response.body);
       return null;
+    } on SocketException {
+      lastFailureReason = AudioFailureReason.networkOffline;
+      debugPrint('[QuranTimingService] Network offline for Surah $surah');
+      return null;
     } on TimeoutException {
       lastFailureReason = AudioFailureReason.networkOffline;
       debugPrint('[QuranTimingService] Stream request timed out for Surah $surah');
       return null;
     } catch (e) {
-      lastFailureReason = AudioFailureReason.networkOffline;
+      lastFailureReason = AudioFailureReason.unknown;
       debugPrint('[QuranTimingService] Stream fetch error for Surah $surah: $e');
       return null;
     }
@@ -375,6 +420,12 @@ class QuranTimingService {
         allWords.add(wt);
         wordsByAyah.putIfAbsent(entryAyah, () => []).add(wt);
       }
+
+      // Ensure strictly chronological ordering for guaranteed binary search correctness
+      allWords.sort((a, b) => a.startMs.compareTo(b.startMs));
+      wordsByAyah.forEach((_, list) {
+        list.sort((a, b) => a.startMs.compareTo(b.startMs));
+      });
 
       // Build AyahTiming for each ayah present in words
       final Map<int, AyahTiming> ayahTimings = {};
