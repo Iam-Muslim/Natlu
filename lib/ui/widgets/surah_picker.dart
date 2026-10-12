@@ -35,14 +35,15 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   late final List<QuranVerse> _surahs;
   late final List<String> _normalizedNames;
   final TextEditingController _searchCtrl = TextEditingController();
-  final ScrollController _scrollCtrl = ScrollController();
-  bool _scrolled = false;
+  late final ScrollController _scrollCtrl;
 
   @override
   void initState() {
     super.initState();
     _surahs = widget.controller.repository.surahMetadata;
     _normalizedNames = _surahs.map((s) => s.surahName).toList();
+    final double initialOffset = ((widget.current - 1) * 78.0).clamp(0.0, 114 * 78.0);
+    _scrollCtrl = ScrollController(initialScrollOffset: initialOffset);
   }
 
   @override
@@ -82,39 +83,29 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
       }
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrolled && _scrollCtrl.hasClients && _query.isEmpty) {
-        _scrolled = true;
-        double offset = (widget.current - 1) * 78.0;
-        if (offset > _scrollCtrl.position.maxScrollExtent) {
-          offset = _scrollCtrl.position.maxScrollExtent;
-        }
-        _scrollCtrl.jumpTo(offset);
-      }
-    });
-
-    return Directionality(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.82,
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          border: Border(
-            top: BorderSide(
-              color: Colors.white.withValues(alpha: isDark ? 0.15 : 0.45),
-              width: 0.8,
+    return RepaintBoundary(
+      child: Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.82,
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: isDark ? 0.15 : 0.45),
+                width: 0.8,
+              ),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.10),
-              blurRadius: 36,
-              offset: const Offset(0, -6),
-            ),
-          ],
-        ),
-        child: Column(
+          child: Column(
           children: [
             const SizedBox(height: 12),
 
@@ -305,8 +296,9 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// 2026 Spring-scale tactile feedback button wrapper.

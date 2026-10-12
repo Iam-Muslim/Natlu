@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:recite_quran/recite_quran.dart';
@@ -17,50 +16,45 @@ class SettingsDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = AppState.instance;
 
-    return ListenableBuilder(
-      listenable: app,
-      builder: (context, _) {
-        final c = app.colors;
-        final isAr = app.isArabic;
+    return RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: app,
+        builder: (context, _) {
+          final c = app.colors;
+          final isAr = app.isArabic;
 
-        return Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.75,
-            ),
-            decoration: BoxDecoration(
-              color: c.glassSurface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
+          return Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.75,
               ),
-              border: Border.all(
-                color: c.border.withValues(alpha: app.isDarkMode ? 0.35 : 0.6),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: app.isDarkMode ? 0.40 : 0.08),
-                  blurRadius: 40,
-                  offset: const Offset(0, -8),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
+                border: Border.all(
+                  color: c.border.withValues(alpha: app.isDarkMode ? 0.35 : 0.6),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: app.isDarkMode ? 0.35 : 0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
               ),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Material(
-                  color: Colors.transparent,
-                  child: SafeArea(
-                    top: false,
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
+              child: Material(
+                color: Colors.transparent,
+                child: SafeArea(
+                  top: false,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         const SizedBox(height: 12),
 
                         // ── Handle ──
@@ -254,10 +248,9 @@ class SettingsDialog extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ),
-      );
-    },
-  );
-}
+          );
+        },
+      ),
+    );
+  }
 }

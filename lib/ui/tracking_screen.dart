@@ -474,7 +474,11 @@ class _TrackingScreenState extends State<TrackingScreen>
               if (Navigator.of(ctx).canPop()) {
                 Navigator.of(ctx).pop();
               }
-              _startAutoScrolling();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && !_isAutoScrolling) {
+                  _startAutoScrolling();
+                }
+              });
             },
           ),
         );

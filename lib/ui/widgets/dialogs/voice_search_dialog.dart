@@ -220,43 +220,40 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     final isAr = app.isArabic;
     final media = MediaQuery.of(context);
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: 480,
-          maxHeight: media.size.height * 0.82,
-        ),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: c.border.withValues(alpha: 0.25), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 36,
-              spreadRadius: 2,
-              offset: const Offset(0, 10),
+    return RepaintBoundary(
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: 480,
+            maxHeight: media.size.height * 0.82,
+          ),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: c.border.withValues(alpha: 0.25), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+              child: widget.isLoading != null
+                  ? ValueListenableBuilder<bool>(
+                      valueListenable: widget.isLoading!,
+                      builder: (_, loading, __) =>
+                          loading ? _buildLoadingState(c, isAr) : _buildContent(c, isAr),
+                    )
+                  : _buildContent(c, isAr),
             ),
-            BoxShadow(
-              color: c.primary.withValues(alpha: 0.08),
-              blurRadius: 30,
-            ),
-          ],
-        ),
-        child: Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-            child: widget.isLoading != null
-                ? ValueListenableBuilder<bool>(
-                    valueListenable: widget.isLoading!,
-                    builder: (_, loading, __) =>
-                        loading ? _buildLoadingState(c, isAr) : _buildContent(c, isAr),
-                  )
-                : _buildContent(c, isAr),
           ),
         ),
       ),
@@ -334,57 +331,65 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Pulsing Microphone with rigid 104x104 bounding box (prevents dialog jumping)
-        SizedBox(
-          width: 104,
-          height: 104,
-          child: Center(
-            child: AnimatedBuilder(
-              animation: _pulseCtrl,
-              builder: (_, __) {
-                final val = _pulseCtrl.value;
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      width: 88 + (val * 12),
-                      height: 88 + (val * 12),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: c.primary.withValues(alpha: 0.06 * (1.0 - val)),
-                      ),
-                    ),
-                    Container(
-                      width: 76 + (val * 6),
-                      height: 76 + (val * 6),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: c.primary.withValues(alpha: 0.12),
-                      ),
-                    ),
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            c.primary.withValues(alpha: 0.28),
-                            c.primary.withValues(alpha: 0.12),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        border: Border.all(
-                          color: c.primary.withValues(alpha: 0.45),
-                          width: 1.5,
+        // Pulsing Microphone with rigid 104x104 bounding box (Transform.scale avoids markNeedsLayout)
+        RepaintBoundary(
+          child: SizedBox(
+            width: 104,
+            height: 104,
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _pulseCtrl,
+                builder: (_, __) {
+                  final val = _pulseCtrl.value;
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Transform.scale(
+                        scale: 1.0 + (val * 0.14),
+                        child: Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: c.primary.withValues(alpha: 0.06 * (1.0 - val)),
+                          ),
                         ),
                       ),
-                      child: Icon(Icons.mic_rounded, color: c.primary, size: 28),
-                    ),
-                  ],
-                );
-              },
+                      Transform.scale(
+                        scale: 1.0 + (val * 0.08),
+                        child: Container(
+                          width: 76,
+                          height: 76,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: c.primary.withValues(alpha: 0.12),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              c.primary.withValues(alpha: 0.28),
+                              c.primary.withValues(alpha: 0.12),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          border: Border.all(
+                            color: c.primary.withValues(alpha: 0.45),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Icon(Icons.mic_rounded, color: c.primary, size: 28),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -459,39 +464,41 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     );
   }
 
-  /// Reusable soundwave equalizer visualizer in a fixed rigid box.
+  /// Reusable soundwave equalizer visualizer in a fixed rigid box with RepaintBoundary.
   Widget _buildWaveBars({
     required int count,
     required double baseHeight,
     required double maxHeight,
     required ThemeColors c,
   }) {
-    return SizedBox(
-      height: maxHeight,
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (_, __) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: List.generate(count, (i) {
-                final h = baseHeight +
-                    (maxHeight - baseHeight) *
-                        math.sin((_pulseCtrl.value * math.pi) + (i * 0.7)).abs();
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  width: 3,
-                  height: h.clamp(baseHeight, maxHeight),
-                  decoration: BoxDecoration(
-                    color: c.primary.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                );
-              }),
-            );
-          },
+    return RepaintBoundary(
+      child: SizedBox(
+        height: maxHeight,
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (_, __) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: List.generate(count, (i) {
+                  final h = baseHeight +
+                      (maxHeight - baseHeight) *
+                          math.sin((_pulseCtrl.value * math.pi) + (i * 0.7)).abs();
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    width: 3,
+                    height: h.clamp(baseHeight, maxHeight),
+                    decoration: BoxDecoration(
+                      color: c.primary.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  );
+                }),
+              );
+            },
+          ),
         ),
       ),
     );

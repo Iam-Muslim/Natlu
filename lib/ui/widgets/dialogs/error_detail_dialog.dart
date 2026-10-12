@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
@@ -8,7 +7,7 @@ import '../../../state/app_state.dart';
 /// 2026 Tajweed & Pronunciation Breakdown Modal Bottom Sheet.
 ///
 /// Features:
-/// - Frosted glassmorphism background adhering strictly to Natlu's theme tokens.
+/// - Lightweight modern background adhering strictly to Natlu's theme tokens.
 /// - Top row strictly displays target word on the right and audio player on the left.
 /// - Multi-card layout: 2 cards side-by-side per row, and if 3 cards, 2 beside each other and 1 down.
 /// - Single card displays at full comfortable width.
@@ -62,57 +61,50 @@ class ErrorDetailDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
-    return ListenableBuilder(
-      listenable: app,
-      builder: (context, _) {
-        final c = app.colors;
-        final isAr = app.isArabic;
-        final isDark = app.isDarkMode;
+    return RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: app,
+        builder: (context, _) {
+          final c = app.colors;
+          final isAr = app.isArabic;
+          final isDark = app.isDarkMode;
 
-        return Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.82,
-            ),
-            decoration: BoxDecoration(
-              color: c.glassSurface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              border: Border.all(
-                color: isDark
-                    ? c.border.withValues(alpha: 0.35)
-                    : c.border.withValues(alpha: 0.70),
-                width: 1,
+          return Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.82,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.08),
-                  blurRadius: 40,
-                  offset: const Offset(0, -8),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border.all(
+                  color: isDark
+                      ? c.border.withValues(alpha: 0.35)
+                      : c.border.withValues(alpha: 0.70),
+                  width: 1,
                 ),
-                BoxShadow(
-                  color: c.primary.withValues(alpha: 0.05),
-                  blurRadius: 30,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Material(
-                  color: Colors.transparent,
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ── Handle Bar ──
-                        Padding(
-                          padding: const EdgeInsets.only(top: 14, bottom: 12),
-                          child: Container(
-                            width: 44,
-                            height: 4,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── Handle Bar ──
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14, bottom: 12),
+                        child: Container(
+                          width: 44,
+                          height: 4,
                             decoration: BoxDecoration(
                               color: isDark
                                   ? c.border.withValues(alpha: 0.8)
@@ -170,12 +162,11 @@ class ErrorDetailDialog extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          ),
-        );
-      },
-    );
-  }
+            );
+          },
+        ),
+      );
+    }
 
   // ──────────────────────────────────────────────────────────────────────────
   // Word Audio Player Button (Theme Emerald Styling)
@@ -288,31 +279,29 @@ class ErrorDetailDialog extends StatelessWidget {
         rows.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _buildErrorCard(
-                      errors[i],
-                      c,
-                      isAr,
-                      isDark,
-                      isCompact: true,
-                    ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildErrorCard(
+                    errors[i],
+                    c,
+                    isAr,
+                    isDark,
+                    isCompact: true,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildErrorCard(
-                      errors[i + 1],
-                      c,
-                      isAr,
-                      isDark,
-                      isCompact: true,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildErrorCard(
+                    errors[i + 1],
+                    c,
+                    isAr,
+                    isDark,
+                    isCompact: true,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );

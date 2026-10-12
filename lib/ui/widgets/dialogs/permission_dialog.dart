@@ -16,37 +16,26 @@ class PermissionDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
-    return ListenableBuilder(
-      listenable: app,
-      builder: (context, _) {
-        final c = app.colors;
-        final isAr = app.isArabic;
+    return RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: app,
+        builder: (context, _) {
+          final c = app.colors;
+          final isAr = app.isArabic;
+          final isDark = app.isDarkMode;
 
-        final title = isAr ? 'إذن مطلوب' : 'Permission Required';
-        final message = isAr
-            ? (reason == PermissionReason.tracking
-                ? 'نحتاج إلى صلاحية الميكروفون لتتبع التلاوة. يرجى تفعيلها من الإعدادات.'
-                : 'نحتاج إلى صلاحية الميكروفون للبحث الصوتي. يرجى تفعيلها من الإعدادات.')
-            : (reason == PermissionReason.tracking
-                ? 'Microphone access is needed for recitation tracking. Please enable it in Settings.'
-                : 'Microphone access is needed for Voice Search. Please enable it in Settings.');
+          final title = isAr ? 'إذن مطلوب' : 'Permission Required';
+          final message = isAr
+              ? (reason == PermissionReason.tracking
+                  ? 'نحتاج إلى صلاحية الميكروفون لتتبع التلاوة. يرجى تفعيلها من الإعدادات.'
+                  : 'نحتاج إلى صلاحية الميكروفون للبحث الصوتي. يرجى تفعيلها من الإعدادات.')
+              : (reason == PermissionReason.tracking
+                  ? 'Microphone access is needed for recitation tracking. Please enable it in Settings.'
+                  : 'Microphone access is needed for Voice Search. Please enable it in Settings.');
 
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOutBack,
-            builder: (context, value, child) {
-              return Transform.scale(
-                scale: value,
-                child: Opacity(
-                  opacity: value.clamp(0.0, 1.0),
-                  child: child,
-                ),
-              );
-            },
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
             child: Container(
               decoration: BoxDecoration(
                 color: c.surface,
@@ -57,15 +46,9 @@ class PermissionDialog extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: c.primary.withValues(alpha: 0.08),
-                    blurRadius: 40,
-                    spreadRadius: -10,
-                    offset: const Offset(0, 15),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 15,
-                    offset: const Offset(0, 10),
+                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.10),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -160,9 +143,9 @@ class PermissionDialog extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

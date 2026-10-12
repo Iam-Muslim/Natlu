@@ -25,43 +25,40 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
-    return ListenableBuilder(
-      listenable: app,
-      builder: (context, _) {
-        final c = app.colors;
-        final isAr = app.isArabic;
-        final isDark = app.isDarkMode;
+    return RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: app,
+        builder: (context, _) {
+          final c = app.colors;
+          final isAr = app.isArabic;
+          final isDark = app.isDarkMode;
 
-        return Directionality(
-          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 340),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : c.border.withValues(alpha: 0.50),
-                  width: 1,
+          return Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 340),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: BorderRadius.circular(26),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : c.border.withValues(alpha: 0.50),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
-                    blurRadius: 32,
-                    offset: const Offset(0, 10),
-                  ),
-                  BoxShadow(
-                    color: c.primary.withValues(alpha: 0.08),
-                    blurRadius: 24,
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
+                padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -170,10 +167,11 @@ class _SpeedSelectionDialogState extends State<SpeedSelectionDialog> {
                   ),
                 ],
               ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
