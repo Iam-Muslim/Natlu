@@ -6,19 +6,18 @@ import 'quran_timing_service.dart';
 
 /// High-performance Quran audio service powered by MP3Quran v4.
 ///
-/// Features:
+/// Architecture & Resilience:
 /// - **Zero-Waste Range Streaming**: Streams audio on-demand via HTTP Range headers
-///   without downloading the full Surah file. Playing an Ayah streams ONLY
-///   the few kilobytes needed for that Ayah's recitation.
-/// - **100% Sample-Accurate Word Sync**: Word timestamps directly align with
-///   MP3Quran's official 64kbps audio stream down to the exact millisecond.
-/// - **Single Word Playback**: Supports playing any individual word alone with
-///   exact start/end trimming and automatic stop.
-/// - **Seamless Pause & Resume from Stopped Word**: When paused, keeps the
-///   current word highlighted and resumes playback exactly where paused.
-/// - **Context-Aware Modes**:
-///   - In Record Mode: stops cleanly as soon as the target Ayah ends.
-///   - Continuous Mode: advances smoothly from Ayah to Ayah while highlighting.
+///   without saving audio files to disk. Playing an Ayah streams ONLY the chunks needed.
+/// - **Pure Streaming Timings**: Aligns with MP3Quran v4 word timings streamed into memory.
+/// - **Full Offline / Online Resilience**:
+///   - Handles no internet on initial play without freezing or fake-playing.
+///   - Handles sudden internet drop mid-stream by cleanly detecting player interruptions.
+///   - Handles internet restoration cleanly without stuck states or zombie audio sessions.
+/// - **Author-Calibrated Word Sync**: Binary search lookup on audio ticks down to the millisecond.
+/// - **Pauses & Breaths Handled Properly**: "A pause between words has no entry" -> clears highlight.
+/// - **Single Word Playback**: Plays any individual word with exact start/end trimming.
+/// - **Seamless Pause & Resume**: Keeps stopped word visible; resumes from the word start.
 class QuranAudioService {
   QuranAudioService._();
   static final QuranAudioService instance = QuranAudioService._();
@@ -49,7 +48,7 @@ class QuranAudioService {
   int? _loadedSurah;
   bool _isContinuous = true;
 
-  // Pause state retention
+  // Pause retention state
   bool _isPaused = false;
   int? _pausedSurah;
   int? _pausedAyah;
@@ -60,17 +59,22 @@ class QuranAudioService {
   int? _singleWordEndMs;
   int? _singleWordIndex;
 
+  // Track user-initiated stops to differentiate from network drops
+  bool _isExplicitlyStopping = false;
+  // Track intentional track preparation stops to prevent false severed-stream detection
+  bool _isPreparingTrack = false;
+
   int _playSessionId = 0;
 
   /// Whether playback is currently paused on a specific Ayah/word.
   bool get isPaused => _isPaused;
 
-  /// Guaranteed non-null AudioPlayer instance, resilient across Flutter hot reloads.
+  /// Guaranteed non-null AudioPlayer instance with robust event listeners.
   AudioPlayer get _audioPlayer {
     if (_player == null) {
       final p = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
 
-      // 35ms update timer for 30fps buttery-smooth highlight animation
+      // 35ms update timer for 30fps smooth word highlight synchronization
       p.positionUpdater = TimerPositionUpdater(
         interval: const Duration(milliseconds: 35),
         getPosition: p.getCurrentPosition,
@@ -78,6 +82,30 @@ class QuranAudioService {
 
       p.onPositionChanged.listen(_handlePosition);
       p.onPlayerComplete.listen((_) => _handleTrackComplete());
+
+      // Monitor player state transitions for network loss / platform errors
+      p.onPlayerStateChanged.listen((state) {
+        if (state == PlayerState.completed) {
+          _handleTrackComplete();
+        } else if (state == PlayerState.stopped) {
+          // If stopped unexpectedly while state says playing or buffering, network stream dropped or couldn't connect
+          if ((AppState.instance.isAudioPlaying.value || AppState.instance.isAudioBuffering.value) &&
+              !_isExplicitlyStopping &&
+              !_isPreparingTrack &&
+              !_isPaused) {
+            debugPrint('[QuranAudioService] Player stopped unexpectedly (stream severed or offline). Resetting.');
+            _isExplicitlyStopping = true;
+            try {
+              _player?.stop();
+            } catch (_) {}
+            _isExplicitlyStopping = false;
+            _resetStateToStopped(
+              triggerErrorBanner: true,
+              errorReason: AudioFailureReason.networkOffline,
+            );
+          }
+        }
+      });
 
       _player = p;
     }
@@ -105,7 +133,6 @@ class QuranAudioService {
       if (AppState.instance.activeAudioWordIndex.value != _singleWordIndex) {
         AppState.instance.activeAudioWordIndex.value = _singleWordIndex;
       }
-      // Stop once playback has progressed past the word's start and reached the end
       if (posMs >= _singleWordStartMs! && posMs >= _singleWordEndMs!) {
         stop();
       }
@@ -113,43 +140,43 @@ class QuranAudioService {
     }
 
     // ── Regular Ayah Playback Mode ──
-    // 1. Synchronous word highlight lookup (zero lag)
-    final int? wordIdx = QuranTimingService.instance.getActiveWordIndexAtMs(
-      surah: surah,
-      ayah: ayah,
-      positionMs: posMs,
-    );
+    final surahTiming = QuranTimingService.instance.getSurahTiming(surah);
+    if (surahTiming == null) return;
 
-    if (AppState.instance.activeAudioWordIndex.value != wordIdx) {
-      AppState.instance.activeAudioWordIndex.value = wordIdx;
+    // 1. Binary search lookup for the active word (Author's specification)
+    final WordTiming? activeWord = surahTiming.findActiveWordAtMs(posMs);
+
+    if (activeWord != null) {
+      // Sync Ayah if playback advanced naturally
+      if (_currentAyah != activeWord.ayah) {
+        _currentAyah = activeWord.ayah;
+        AppState.instance.activeAudioAyah.value = activeWord.ayah;
+      }
+      if (AppState.instance.activeAudioWordIndex.value != activeWord.wordIndex) {
+        AppState.instance.activeAudioWordIndex.value = activeWord.wordIndex;
+      }
+    } else {
+      // "A pause between words has no entry... Clear the highlight when no entry matches."
+      if (AppState.instance.activeAudioWordIndex.value != null) {
+        AppState.instance.activeAudioWordIndex.value = null;
+      }
     }
 
     // 2. Ayah boundary completion detection
-    final timing = QuranTimingService.instance.getCachedAyahTiming(surah, ayah);
-    if (timing == null) {
-      // Auto-recover timing if still in-flight
-      unawaited(QuranTimingService.instance.ensureAyahLoaded(surah, ayah));
-    } else if (posMs >= timing.ayahEndMs) {
+    final currentAyahTiming = surahTiming.getAyah(_currentAyah!);
+    if (currentAyahTiming != null && posMs >= currentAyahTiming.ayahEndMs) {
       if (!_isContinuous) {
         // Single-Ayah mode (e.g. Record Mode): stop immediately
         stop();
       } else {
-        // Continuous mode: advance to next Ayah seamlessly
+        // Continuous mode: advance to next Ayah seamlessly (timings already in memory!)
         final maxAyah = surahAyahCounts[surah - 1];
-        final nextAyah = ayah + 1;
+        final nextAyah = _currentAyah! + 1;
 
         if (nextAyah <= maxAyah) {
           _currentAyah = nextAyah;
           AppState.instance.activeAudioAyah.value = nextAyah;
           AppState.instance.activeAudioWordIndex.value = null;
-
-          // Ensure timing for the next Ayah is loaded
-          unawaited(QuranTimingService.instance.ensureAyahLoaded(surah, nextAyah));
-
-          // Prefetch timing for the one after next
-          if (nextAyah + 1 <= maxAyah) {
-            unawaited(QuranTimingService.instance.ensureAyahLoaded(surah, nextAyah + 1));
-          }
         } else {
           // Reached end of Surah
           stop();
@@ -170,33 +197,40 @@ class QuranAudioService {
       _currentSurah = surah;
       _currentAyah = ayah;
       _isContinuous = false;
-      final app = AppState.instance;
 
-      // 1. Fetch word timing on-demand (~300 bytes)
-      final timing = await QuranTimingService.instance.ensureAyahLoaded(surah, ayah);
+      // Provide immediate buffering feedback
+      final app = AppState.instance;
+      app.activeAudioSurah.value = surah;
+      app.activeAudioAyah.value = ayah;
+      app.activeAudioWordIndex.value = wordIndex;
+      app.isAudioBuffering.value = true;
+
+      // 1. Stream timing data for the Surah
+      final surahTiming = await QuranTimingService.instance.ensureSurahLoaded(surah);
+
+      if (surahTiming == null) {
+        debugPrint('[QuranAudioService] Word timing unavailable (offline or API error). Aborting cleanly.');
+        _resetStateToStopped(triggerErrorBanner: true);
+        return;
+      }
+
       if (session != _playSessionId) return;
-      if (timing == null || timing.words.isEmpty) {
-        debugPrint('[QuranAudioService] Word timing unavailable for $surah:$ayah:$wordIndex. Aborting.');
-        app.isAudioPlaying.value = false;
+
+      final ayahTiming = surahTiming.getAyah(ayah);
+      if (ayahTiming == null || ayahTiming.words.isEmpty) {
+        _resetStateToStopped(triggerErrorBanner: true);
         return;
       }
 
       // 2. Locate target WordTiming
-      final targetWord = timing.words.firstWhere(
+      final targetWord = ayahTiming.words.firstWhere(
         (w) => w.wordIndex == wordIndex,
-        orElse: () => timing.words.first,
+        orElse: () => ayahTiming.words.first,
       );
 
-      _singleWordStartMs = null;
-      _singleWordEndMs = null;
-      _singleWordIndex = wordIndex;
-
-      // Sync AppState
-      app.activeAudioSurah.value = surah;
-      app.activeAudioAyah.value = ayah;
-      app.activeAudioWordIndex.value = wordIndex;
-      app.isContinuousPlayback.value = false;
-      app.isAudioPlaying.value = true;
+      _singleWordStartMs = targetWord.startMs;
+      _singleWordEndMs = targetWord.endMs;
+      _singleWordIndex = targetWord.wordIndex;
 
       final startDuration = Duration(milliseconds: targetWord.startMs);
       final player = _audioPlayer;
@@ -204,23 +238,32 @@ class QuranAudioService {
       if (_loadedSurah == surah && player.state != PlayerState.stopped) {
         await player.seek(startDuration);
         if (session != _playSessionId) return;
-        _singleWordStartMs = targetWord.startMs;
-        _singleWordEndMs = targetWord.endMs;
         await player.resume();
       } else {
         _loadedSurah = surah;
         final url = getSurahAudioUrl(surah);
+        _isPreparingTrack = true;
         await player.stop();
+        _isPreparingTrack = false;
         if (session != _playSessionId) return;
-        _singleWordStartMs = targetWord.startMs;
-        _singleWordEndMs = targetWord.endMs;
         await player.play(
           UrlSource(url),
           position: startDuration,
         );
       }
+
+      if (session != _playSessionId) return;
+
+      // Sync AppState now that stream has successfully started
+      app.activeAudioSurah.value = surah;
+      app.activeAudioAyah.value = ayah;
+      app.activeAudioWordIndex.value = targetWord.wordIndex;
+      app.isContinuousPlayback.value = false;
+      app.isAudioBuffering.value = false;
+      app.isAudioPlaying.value = true;
     } catch (e, stack) {
       debugPrint('[QuranAudioService] Error playing word ($surah:$ayah:$wordIndex): $e\n$stack');
+      _resetStateToStopped(triggerErrorBanner: true);
     }
   }
 
@@ -229,6 +272,7 @@ class QuranAudioService {
   /// - Minimal Bandwidth: Uses HTTP Range streaming — only downloading chunks
   ///   for the played Ayah without loading the full Surah file.
   /// - Resumes cleanly from paused position if already paused on this Ayah.
+  /// - Resilient to network outages: never gets stuck in playing state when offline.
   /// - [continuous]: If true, plays sequentially across Ayahs.
   ///                 If false, plays only this single Ayah and stops.
   Future<void> play({
@@ -255,35 +299,34 @@ class QuranAudioService {
       _currentAyah = ayah;
       _isContinuous = continuous;
 
-      // Sync app state immediately for UI responsiveness
+      // Provide immediate buffering feedback on Click 1
       final app = AppState.instance;
       app.activeAudioSurah.value = surah;
       app.activeAudioAyah.value = ayah;
-      app.activeAudioWordIndex.value = null;
-      app.isContinuousPlayback.value = continuous;
-      app.isAudioPlaying.value = true;
+      app.isAudioBuffering.value = true;
 
-      // 1. Fetch word timing on-demand for this single Ayah (~300 bytes)
-      final timing = await QuranTimingService.instance.ensureAyahLoaded(surah, ayah);
+      // 1. Fetch Surah timing stream from MP3Quran v4 API
+      final surahTiming = await QuranTimingService.instance.ensureSurahLoaded(surah);
 
-      // Discard if superseded by a newer tap while awaiting
-      if (session != _playSessionId) return;
-
-      if (timing == null) {
-        debugPrint('[QuranAudioService] Unable to load timing for $surah:$ayah. Aborting to prevent 0-fallback.');
-        app.isAudioPlaying.value = false;
+      // CRITICAL FIX: If timing stream failed (e.g. offline/network down), fail FAST and show banner immediately!
+      // Do NOT check `session != _playSessionId` before `surahTiming == null`, otherwise rapid clicks swallow errors!
+      if (surahTiming == null) {
+        debugPrint('[QuranAudioService] Unable to stream timings for Surah $surah (offline or API error). Aborting.');
+        _resetStateToStopped(triggerErrorBanner: true);
         return;
       }
 
-      // 2. Prefetch next Ayah timing in advance if continuous
-      if (continuous) {
-        final maxAyah = surahAyahCounts[surah - 1];
-        if (ayah + 1 <= maxAyah) {
-          unawaited(QuranTimingService.instance.ensureAyahLoaded(surah, ayah + 1));
-        }
+      // If user selected a DIFFERENT verse while downloading, cleanly discard this obsolete attempt
+      if (session != _playSessionId) return;
+
+      final ayahTiming = surahTiming.getAyah(ayah);
+      if (ayahTiming == null) {
+        debugPrint('[QuranAudioService] Ayah $surah:$ayah not found in timing dataset. Aborting.');
+        _resetStateToStopped(triggerErrorBanner: true);
+        return;
       }
 
-      final int startMs = timing.ayahStartMs;
+      final int startMs = ayahTiming.ayahStartMs;
       final startDuration = Duration(milliseconds: startMs);
 
       final player = _audioPlayer;
@@ -299,15 +342,28 @@ class QuranAudioService {
         // Start streaming the Surah URL at the target Ayah timestamp
         _loadedSurah = surah;
         final url = getSurahAudioUrl(surah);
+        _isPreparingTrack = true;
         await player.stop();
+        _isPreparingTrack = false;
         if (session != _playSessionId) return;
         await player.play(
           UrlSource(url),
           position: startDuration,
         );
       }
+
+      if (session != _playSessionId) return;
+
+      // Timing & stream are ready and playing: update AppState to show playing state
+      app.activeAudioSurah.value = surah;
+      app.activeAudioAyah.value = ayah;
+      app.activeAudioWordIndex.value = null;
+      app.isContinuousPlayback.value = continuous;
+      app.isAudioBuffering.value = false;
+      app.isAudioPlaying.value = true;
     } catch (e, stack) {
-      debugPrint('[QuranAudioService] Error playing $surah:$ayah: $e\n$stack');
+      debugPrint('[QuranAudioService] Error playing $surah:$ayah (network or player): $e\n$stack');
+      _resetStateToStopped(triggerErrorBanner: true);
     }
   }
 
@@ -329,7 +385,6 @@ class QuranAudioService {
     }
     final app = AppState.instance;
     app.isAudioPlaying.value = false;
-    // Keep activeAudioWordIndex intact so user sees where recitation paused
   }
 
   /// Resumes playback from the exact paused word and millisecond.
@@ -356,12 +411,29 @@ class QuranAudioService {
       AppState.instance.isAudioPlaying.value = true;
     } catch (e) {
       debugPrint('[QuranAudioService] Error resuming: $e');
+      _resetStateToStopped(triggerErrorBanner: true);
     }
   }
 
   /// Completely stops playback, resets streaming, and clears state.
   Future<void> stop() async {
     _playSessionId++;
+    _isExplicitlyStopping = true;
+    try {
+      await _player?.stop();
+    } catch (e) {
+      debugPrint('[QuranAudioService] Error stopping: $e');
+    } finally {
+      _isExplicitlyStopping = false;
+    }
+    _resetStateToStopped();
+  }
+
+  /// Internal cleanup routine guaranteeing consistent state.
+  void _resetStateToStopped({
+    bool triggerErrorBanner = false,
+    AudioFailureReason? errorReason,
+  }) {
     _isPaused = false;
     _pausedSurah = null;
     _pausedAyah = null;
@@ -369,20 +441,22 @@ class QuranAudioService {
     _singleWordStartMs = null;
     _singleWordEndMs = null;
     _singleWordIndex = null;
-
-    try {
-      await _player?.stop();
-    } catch (e) {
-      debugPrint('[QuranAudioService] Error stopping: $e');
-    }
     _loadedSurah = null;
     _currentSurah = null;
     _currentAyah = null;
 
     final app = AppState.instance;
     app.activeAudioWordIndex.value = null;
+    app.activeAudioAyah.value = null;
+    app.isAudioBuffering.value = false;
     if (app.isAudioPlaying.value) {
       app.isAudioPlaying.value = false;
+    }
+
+    if (triggerErrorBanner) {
+      app.triggerAudioError(
+        errorReason ?? QuranTimingService.instance.lastFailureReason,
+      );
     }
   }
 }

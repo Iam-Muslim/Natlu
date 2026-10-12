@@ -8,6 +8,7 @@ import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:recite_quran/recite_quran.dart';
+import '../services/quran_timing_service.dart';
 import '../state/app_state.dart';
 import 'widgets/dialogs/voice_search_dialog.dart';
 import 'widgets/mic_bar.dart';
@@ -83,6 +84,9 @@ class _TrackingScreenState extends State<TrackingScreen>
     AppState.instance.addListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
+
+    // Warm up Surah timings in memory in the background for zero-latency instant play
+    unawaited(QuranTimingService.instance.ensureSurahLoaded(widget.controller.targetSurah));
   }
 
   void _onActiveAudioAyahChanged() {
@@ -94,7 +98,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         if (mounted) {
           widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
           _lastAyah = ayah;
-          _scrollToAyahEyeView(ayah);
+          _ensureAyahVisibleSmart(ayah);
         }
       });
     }
@@ -147,7 +151,7 @@ class _TrackingScreenState extends State<TrackingScreen>
           widget.controller.activeAyah.value ??
           1;
       _lastAyah = targetAyah;
-      _scrollToAyahEyeView(targetAyah);
+      _ensureAyahVisibleSmart(targetAyah);
     }
 
     if (widget.isVoiceSearching && !oldWidget.isVoiceSearching) {
@@ -201,91 +205,148 @@ class _TrackingScreenState extends State<TrackingScreen>
     final active = widget.controller.activeAyah.value;
     if (active != null && active != _lastAyah) {
       _lastAyah = active;
-
-      // ── IF RECITING: ZERO SCROLLING IF THE NEXT AYAH IS ALREADY CLEARLY VISIBLE ON SCREEN! ──
-      if (widget.isRecording) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final renderBox =
-              _keys[active]?.currentContext?.findRenderObject() as RenderBox?;
-          if (renderBox != null && renderBox.hasSize && renderBox.attached) {
-            final mediaQuery = MediaQuery.of(context);
-            final double screenHeight = mediaQuery.size.height;
-            final double topPadding = mediaQuery.padding.top;
-            final double bottomPadding = mediaQuery.padding.bottom;
-            final bool isFullscreenMode =
-                widget.isRecording || _isAutoScrolling;
-
-            final double topObstruction =
-                isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
-            final double bottomObstruction =
-                bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
-
-            final double upperClearBoundary = topObstruction + 8.0;
-            final double bottomClearBoundary =
-                screenHeight - bottomObstruction - 12.0;
-
-            final Offset globalPos = renderBox.localToGlobal(Offset.zero);
-            final double ayahTop = globalPos.dy;
-
-            // If the start of this Ayah is already clearly visible between the bars:
-            // ZERO SCROLLING! Keep the reciter's eyes completely undisturbed!
-            if (ayahTop >= upperClearBoundary &&
-                ayahTop <= bottomClearBoundary) {
-              return;
-            }
-          }
-
-          // Ayah is off-screen or under a bar: smoothly scroll it to the 30% eye view!
-          _scrollToAyahEyeView(active);
-        });
-        return;
-      }
-
-      // If not recording (manual tap, voice search candidate, etc.): scroll to 30% eye view
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _scrollToAyahEyeView(active);
+          _ensureAyahVisibleSmart(active);
         }
       });
     }
   }
 
-  void _scrollToAyahEyeView(int ayah) {
-    if (!_scroll.hasClients) return;
-
+  /// Calculates the safe, unobstructed reading boundaries between top and bottom chrome.
+  ({double upperSafeY, double lowerSafeY, double screenHeight}) _getSafeViewportBounds() {
     final mediaQuery = MediaQuery.of(context);
     final double screenHeight = mediaQuery.size.height;
     final double topPadding = mediaQuery.padding.top;
     final double bottomPadding = mediaQuery.padding.bottom;
     final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
 
+    // 1. Top Obstruction:
+    // In recording/autoscroll, the top bar is hidden, only status bar + margin (topPadding + 10).
+    // In normal mode, top floating header takes topPadding + 74.
     final double topObstruction =
         isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
-    final double bottomObstruction =
-        bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
 
-    // 70% from down = 30% from up (0.30)
-    // Strictly clamped so it is NEVER behind the top bar, NEVER behind the bottom bar, NEVER out of screen
+    // 2. Bottom Obstruction:
+    // Floating bottom bar takes ~64 in recording/autoscroll, ~96 in normal mode.
+    double bottomBarHeight = isFullscreenMode ? 64.0 : 96.0;
+
+    // Account for any active bottom banners (Tajweed banner or Audio error banner):
+    if (_showTajweedBanner || AppState.instance.isAudioErrorBannerVisible) {
+      bottomBarHeight += 64.0;
+    }
+    final double bottomObstruction = bottomPadding + bottomBarHeight;
+
+    // Safe boundaries with ergonomic breathing margin
+    final double upperSafeY = topObstruction + 12.0;
+    final double lowerSafeY = (screenHeight - bottomObstruction - 14.0).clamp(
+      upperSafeY + 100.0,
+      screenHeight,
+    );
+
+    return (
+      upperSafeY: upperSafeY,
+      lowerSafeY: lowerSafeY,
+      screenHeight: screenHeight,
+    );
+  }
+
+  /// Unified "Eye-Comfort" verse viewport manager:
+  /// - ZERO-MOTION RULE: If the Ayah (or its beginning for big Ayahs) is already comfortably visible,
+  ///   the viewport DOES NOT MOVE AT ALL! The reader's eye is completely undisturbed.
+  /// - MINIMAL REVEAL: If slightly clipped by the bottom/top bar, scrolls ONLY by the minimal delta needed.
+  /// - DISTANT NAVIGATION: If completely off-screen (picker, voice search), animates to natural 25% gaze.
+  void _ensureAyahVisibleSmart(int ayah, {bool isManualTap = false}) {
+    if (!_scroll.hasClients) return;
+
+    final bounds = _getSafeViewportBounds();
+    final upperSafeY = bounds.upperSafeY;
+    final lowerSafeY = bounds.lowerSafeY;
+    final screenHeight = bounds.screenHeight;
+
+    final renderBox =
+        _keys[ayah]?.currentContext?.findRenderObject() as RenderBox?;
+
+    // ── CASE 1: AYAH IS ATTACHED & RENDERED IN VIEWPORT ──
+    if (renderBox != null && renderBox.hasSize && renderBox.attached) {
+      final Offset globalPos = renderBox.localToGlobal(Offset.zero);
+      final double ayahTop = globalPos.dy;
+      final double ayahHeight = renderBox.size.height;
+      final double ayahBottom = ayahTop + ayahHeight;
+
+      // 1. Entire Ayah is fully within the clear window: ZERO SCROLLING!
+      if (ayahTop >= upperSafeY && ayahBottom <= lowerSafeY) {
+        return;
+      }
+
+      // 2. Large / Multi-Line Ayah:
+      // If the top/start of the Ayah is comfortably readable:
+      // (at least 48px of content is clear above the bottom obstruction):
+      // - If manual tap: User eye is ALREADY looking right here! ZERO SCROLLING!
+      // - If recording/audio: Reciter starts at word 0 (top line). ZERO SCROLLING!
+      //   Word-level tracking will smoothly scroll when lower lines are reached.
+      if (ayahTop >= upperSafeY && ayahTop <= (lowerSafeY - 48.0)) {
+        return;
+      }
+
+      // 3. Obscured under top bar (scrolled too far up):
+      // Scroll DOWN just enough so its top clears the top bar with a comfortable margin.
+      if (ayahTop < upperSafeY) {
+        final double delta = ayahTop - (upperSafeY + 12.0);
+        _smoothScrollByDelta(delta);
+        return;
+      }
+
+      // 4. Clipped by bottom bar (scrolled too far down):
+      // If the entire Ayah fits within the viewport height, reveal it with minimal upward scroll:
+      if (ayahTop > (lowerSafeY - 48.0)) {
+        if (ayahHeight <= (lowerSafeY - upperSafeY)) {
+          final double delta = (ayahBottom - lowerSafeY) + 16.0;
+          _smoothScrollByDelta(delta);
+        } else {
+          // Very tall Ayah: gently position its top into the comfortable upper reading area
+          final double targetY =
+              (upperSafeY + 24.0).clamp(upperSafeY, lowerSafeY);
+          final double delta = ayahTop - targetY;
+          _smoothScrollByDelta(delta);
+        }
+        return;
+      }
+    }
+
+    // ── CASE 2: AYAH IS COMPLETELY OFF-SCREEN / UNRENDERED (Far off navigation / search) ──
     final double targetGazeY = screenHeight > 0
-        ? (screenHeight * 0.30).clamp(
-            topObstruction + 16.0,
-            screenHeight - bottomObstruction - 40.0,
-          )
-        : 180.0;
-
+        ? (screenHeight * 0.25).clamp(upperSafeY + 16.0, lowerSafeY - 60.0)
+        : upperSafeY + 20.0;
     final double targetAlignment =
-        screenHeight > 0 ? (targetGazeY / screenHeight).clamp(0.0, 1.0) : 0.30;
+        screenHeight > 0 ? (targetGazeY / screenHeight).clamp(0.0, 1.0) : 0.25;
 
     _lastScrollTime = DateTime.now();
-
     _listController.animateToItem(
       index: ayah,
       scrollController: _scroll,
       alignment: targetAlignment,
       rect: const Rect.fromLTWH(0, 0, 10, 10),
-      duration: (_) => const Duration(milliseconds: 320),
+      duration: (_) => const Duration(milliseconds: 340),
       curve: (_) => Curves.easeOutCubic,
+    );
+  }
+
+  void _smoothScrollByDelta(double delta) {
+    if (!_scroll.hasClients || delta.abs() < 4.0) return;
+
+    final double targetPixels = (_scroll.position.pixels + delta).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
+
+    if ((targetPixels - _scroll.position.pixels).abs() < 4.0) return;
+
+    _lastScrollTime = DateTime.now();
+    _scroll.animateTo(
+      targetPixels,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -299,58 +360,57 @@ class _TrackingScreenState extends State<TrackingScreen>
       return;
     }
 
-    final int? activeAyah = widget.controller.activeAyah.value;
+    final bool isAudio = AppState.instance.isAudioPlaying.value;
+    final int? activeAyah = isAudio
+        ? (AppState.instance.activeAudioAyah.value ?? widget.controller.activeAyah.value)
+        : widget.controller.activeAyah.value;
     if (activeAyah == null || ayah != activeAyah) {
       return;
     }
 
-    final mediaQuery = MediaQuery.of(context);
-    final double screenHeight = mediaQuery.size.height;
-    final double topPadding = mediaQuery.padding.top;
-    final double bottomPadding = mediaQuery.padding.bottom;
-    final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
+    final bounds = _getSafeViewportBounds();
+    final upperSafeY = bounds.upperSafeY;
+    final lowerSafeY = bounds.lowerSafeY;
+    final screenHeight = bounds.screenHeight;
 
-    final double topObstruction =
-        isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
-    final double bottomObstruction =
-        bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
+    if (lowerSafeY <= upperSafeY) return;
 
-    // ── CLEAR VISIBLE WINDOW (BETWEEN UPPER BAR AND BOTTOM BAR) ──
-    final double upperClearBoundary = topObstruction + 8.0;
-    final double bottomClearBoundary = screenHeight - bottomObstruction - 12.0;
-
-    if (bottomClearBoundary <= upperClearBoundary) return;
+    // Reading Trigger Thresholds:
+    // Bottom trigger: when the word gets within 36px of the bottom bar (about 1 line),
+    // it's time to gently provide a reading runway ahead.
+    final double bottomTriggerY = lowerSafeY - 36.0;
+    final double topTriggerY = upperSafeY;
 
     final double wordTop = globalWordRect.top;
     final double wordBottom = globalWordRect.bottom;
 
-    // ── CORE USER RULE: IF WORDS ARE ON SCREEN & NOT UNDER ANY BARS, ZERO SCROLLING! ──
-    if (wordTop >= upperClearBoundary && wordBottom <= bottomClearBoundary) {
-      return; // ZERO SCROLLING while words are clearly visible on screen!
+    // ── CORE EYE COMFORT: ZERO SCROLLING AS LONG AS WORDS ARE IN VIEWPORT ──
+    if (wordTop >= topTriggerY && wordBottom <= bottomTriggerY) {
+      return;
     }
 
-    // ── ONLY MOVE WHEN THE WORD IS ACTUALLY OUT OF SCREEN OR UNDER A BAR ──
-    // Realign reading line to 30% from top (70% from bottom), clear of all bars
-    final double eyeLevelGazeY = (screenHeight * 0.30).clamp(
-      upperClearBoundary + 16.0,
-      bottomClearBoundary - 32.0,
-    );
-    final double delta = globalWordRect.center.dy - eyeLevelGazeY;
+    // ── WORD REACHING BOTTOM: GENTLE READING RUNWAY ADVANCE ──
+    if (wordBottom > bottomTriggerY) {
+      // Instead of an aggressive jump to 30% from top (which disorients the eye),
+      // smoothly bring the active reading line to the comfortable middle-reading band (~52%),
+      // leaving a generous 4-5 line runway of unread text ahead!
+      final double comfortableMidY = (screenHeight * 0.52).clamp(
+        upperSafeY + 40.0,
+        lowerSafeY - 140.0,
+      );
+      final double delta = globalWordRect.center.dy - comfortableMidY;
 
-    final double targetPixels = (_scroll.position.pixels + delta).clamp(
-      0.0,
-      _scroll.position.maxScrollExtent,
-    );
+      _smoothScrollByDelta(delta);
+      return;
+    }
 
-    if ((targetPixels - _scroll.position.pixels).abs() < 8.0) return;
-
-    _lastScrollTime = DateTime.now();
-
-    _scroll.animateTo(
-      targetPixels,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
+    // ── WORD IS ABOVE TOP SAFE ZONE ──
+    if (wordTop < topTriggerY) {
+      final double comfortableTopY = upperSafeY + 36.0;
+      final double delta = globalWordRect.center.dy - comfortableTopY;
+      _smoothScrollByDelta(delta);
+      return;
+    }
   }
 
   int _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
@@ -476,6 +536,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         onToggleRecord: widget.onToggleRecord,
         onVoiceSearchToggle: widget.onVoiceSearchToggle,
         onPick: (n, {ayah}) async {
+          AppState.instance.stopVerseAudio();
           if (widget.isRecording) {
             widget.onToggleRecord();
           }
@@ -487,6 +548,7 @@ class _TrackingScreenState extends State<TrackingScreen>
           }
 
           await widget.controller.setTargetSurah(n);
+          unawaited(QuranTimingService.instance.ensureSurahLoaded(n));
           if (ayah != null) {
             widget.controller.setManualAyah(n, ayah);
           }
@@ -555,9 +617,6 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ),
                 ),
 
-                // Tajweed Mode Banner (Slides UP from bottom toolbar)
-                _buildTajweedBottomBanner(c, app, bottom),
-
                 // Bottom Action Bar
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 250),
@@ -592,6 +651,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         if (_showTajweedBanner) {
                           setState(() => _showTajweedBanner = false);
                         }
+                        app.dismissAudioError();
                         if (widget.isVoiceSearching) {
                           widget.onVoiceSearchToggle();
                         } else {
@@ -603,6 +663,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         if (_showTajweedBanner) {
                           setState(() => _showTajweedBanner = false);
                         }
+                        app.dismissAudioError();
                         _toggleAutoScroll();
                       },
                       onSettingsTap: _showSettingsDialog,
@@ -615,6 +676,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                           widget.controller.setTajweedMode(true);
                           ScaffoldMessenger.of(context).clearSnackBars();
                           _tajweedBannerTimer?.cancel();
+                          app.dismissAudioError();
                           setState(() => _showTajweedBanner = true);
                           _tajweedBannerTimer = Timer(const Duration(milliseconds: 4500), () {
                             if (mounted) {
@@ -637,6 +699,12 @@ class _TrackingScreenState extends State<TrackingScreen>
                     ),
                   ),
                 ),
+
+                // Tajweed Mode Banner (Slides UP above bottom toolbar)
+                _buildTajweedBottomBanner(c, app, bottom),
+
+                // Audio Playback Error Banner (Slides UP above bottom toolbar, fully visible & interactive)
+                _buildAudioErrorBottomBanner(c, app, bottom),
               ],
             ),
           ),
@@ -922,6 +990,130 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Audio Playback Error Slide-Up Banner (Slides UP from bottom toolbar)
+  // ──────────────────────────────────────────────────────────────────────────
+  Widget _buildAudioErrorBottomBanner(ThemeColors c, AppState app, double bottom) {
+    final bool isDark = app.isDarkMode;
+    final bool isAr = app.isArabic;
+
+    final String message;
+    final IconData iconData;
+    switch (app.lastAudioFailureReason) {
+      case AudioFailureReason.serverUnavailable:
+        iconData = Icons.cloud_off_rounded;
+        message = isAr
+            ? 'تعذر الوصول إلى خادم التلاوة • يرجى المحاولة لاحقاً'
+            : 'Audio server temporarily unavailable • Please try again later';
+        break;
+      case AudioFailureReason.rateLimited:
+        iconData = Icons.hourglass_top_rounded;
+        message = isAr
+            ? 'تم تجاوز حد الطلبات المؤقت • يرجى الانتظار قليلاً'
+            : 'Rate limit reached • Please wait a moment and try again';
+        break;
+      case AudioFailureReason.networkOffline:
+      case AudioFailureReason.unknown:
+        iconData = Icons.wifi_off_rounded;
+        message = isAr
+            ? 'يتطلب تشغيل التلاوة اتصالاً بالإنترنت • تحقق من الشبكة وحاول ثانية'
+            : 'Audio playback requires internet • Check connection and try again';
+        break;
+    }
+
+    final bool isVisible = app.isAudioErrorBannerVisible;
+    final accentColor = isDark ? const Color(0xFFF59E0B) : const Color(0xFFD97706);
+
+    return AnimatedPositioned(
+      duration: Duration(milliseconds: isVisible ? 600 : 300),
+      curve: isVisible ? Curves.elasticOut : Curves.easeOutCubic,
+      bottom: isVisible ? (bottom + 84) : (bottom + 16),
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        ignoring: !isVisible,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 260),
+          opacity: isVisible ? 1.0 : 0.0,
+          child: Center(
+            child: GestureDetector(
+              onTap: () {
+                app.dismissAudioError();
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: c.glassSurface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: accentColor.withValues(alpha: isDark ? 0.38 : 0.30),
+                        width: 1.1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.08),
+                          blurRadius: 24,
+                          offset: const Offset(0, -4),
+                        ),
+                        BoxShadow(
+                          color: accentColor.withValues(alpha: isDark ? 0.16 : 0.08),
+                          blurRadius: 18,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: isDark ? 0.20 : 0.12),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(
+                              color: accentColor.withValues(alpha: isDark ? 0.42 : 0.32),
+                              width: 0.8,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            iconData,
+                            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            message,
+                            style: TextStyle(
+                              color: c.text,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                            ),
+                            textAlign: isAr ? TextAlign.right : TextAlign.left,
+                            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildIconActionButton({
     required IconData icon,
     required bool isActive,
@@ -1037,7 +1229,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         onTap: () {
                           widget.controller.setManualAyah(v.surah, v.ayah);
                           _lastAyah = v.ayah;
-                          _scrollToAyahEyeView(v.ayah);
+                          _ensureAyahVisibleSmart(v.ayah, isManualTap: true);
                         },
                         onWordErrorTap: null,
                         onActiveWordPositioned: _maintainWordInEyeView,
@@ -1070,6 +1262,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
 
     await widget.controller.setTargetSurah(newSurah);
+    unawaited(QuranTimingService.instance.ensureSurahLoaded(newSurah));
 
     if (mounted) {
       setState(() {

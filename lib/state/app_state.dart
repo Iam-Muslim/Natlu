@@ -7,6 +7,7 @@
 // Design: Zero-persistence — settings reset on app restart.
 // This keeps the codebase dependency-free and startup instant.
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,14 @@ enum AppMode { wordChecker, tajweed }
 
 // Available color themes: White and Black.
 enum AppTheme { white, black }
+
+// Failure reasons for audio streaming & API fetch.
+enum AudioFailureReason {
+  networkOffline,
+  serverUnavailable,
+  rateLimited,
+  unknown,
+}
 
 class AppState extends ChangeNotifier {
   AppState._() {
@@ -152,12 +161,42 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<int?> activeAudioSurah = ValueNotifier<int?>(null);
   final ValueNotifier<bool> isAudioPlaying = ValueNotifier<bool>(false);
 
+  /// Whether audio is actively connecting or buffering, providing instant feedback on tap.
+  final ValueNotifier<bool> isAudioBuffering = ValueNotifier<bool>(false);
+
   /// Active word index (0-based) inside the active audio Ayah, synchronized to audio playback.
   final ValueNotifier<int?> activeAudioWordIndex = ValueNotifier<int?>(null);
 
   /// Determines whether playback automatically advances to next Ayah (continuous mode)
   /// or stops after playing a single Ayah (record mode).
   final ValueNotifier<bool> isContinuousPlayback = ValueNotifier<bool>(true);
+
+  /// Whether the non-distracting audio playback failure banner is currently visible.
+  bool isAudioErrorBannerVisible = false;
+  AudioFailureReason lastAudioFailureReason = AudioFailureReason.networkOffline;
+  Timer? _audioErrorTimer;
+
+  /// Dispatches an audio failure event to display the serene banner.
+  void triggerAudioError([AudioFailureReason reason = AudioFailureReason.networkOffline]) {
+    lastAudioFailureReason = reason;
+    isAudioErrorBannerVisible = true;
+    _audioErrorTimer?.cancel();
+    notifyListeners();
+
+    _audioErrorTimer = Timer(const Duration(milliseconds: 4500), () {
+      isAudioErrorBannerVisible = false;
+      notifyListeners();
+    });
+  }
+
+  /// Immediately dismisses the audio error banner.
+  void dismissAudioError() {
+    _audioErrorTimer?.cancel();
+    if (isAudioErrorBannerVisible) {
+      isAudioErrorBannerVisible = false;
+      notifyListeners();
+    }
+  }
 
   /// Toggles play/pause state for a specific verse.
   /// When [continuous] is true (outside record mode), playback advances to the next Ayah on finish.
@@ -217,6 +256,7 @@ class AppState extends ChangeNotifier {
 
   /// Pauses or stops active verse audio playback.
   void stopVerseAudio() {
+    isAudioBuffering.value = false;
     QuranAudioService.instance.stop();
   }
 

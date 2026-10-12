@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import '../state/app_state.dart';
 
 /// Single word timing interval matching MP3Quran v4 audio timestamps.
 class WordTiming {
+  /// Ayah number (1-based, e.g. 1 to 286).
+  final int ayah;
+
   /// 0-based word index inside the Ayah text.
   final int wordIndex;
 
@@ -22,6 +26,7 @@ class WordTiming {
   final int occurrence;
 
   const WordTiming({
+    required this.ayah,
     required this.wordIndex,
     required this.startMs,
     required this.endMs,
@@ -54,35 +59,28 @@ class AyahTiming {
     required this.words,
   });
 
-  /// Finds the active 0-based word index at [positionMs] in milliseconds.
+  /// Binary search to find the active 0-based word index at [positionMs] in milliseconds.
   ///
-  /// Keeps each word highlighted until the next word begins, delivering a calm,
-  /// stable, flicker-free visual experience across pauses and breaths.
+  /// Conforms strictly to MP3Quran v4 documentation:
+  /// - Finds the entry with start_ms <= t < end_ms by binary search.
+  /// - Returns null during pauses between words ("A pause between words has no entry").
+  /// - Handles repeated words by occurrence order.
   int? getWordIndexAtMs(int positionMs) {
     if (words.isEmpty) return null;
-
-    // 1. Before recitation starts: no word should be highlighted
-    if (positionMs < words.first.startMs) {
-      return null;
-    }
-
-    // 2. After the final word of this Ayah ends: no word should be highlighted
-    if (positionMs > words.last.endMs + 100) {
-      return null;
-    }
-
-    // 3. Highlight each word from its start until the next word starts
-    for (int i = 0; i < words.length; i++) {
-      final w = words[i];
-      final int nextStart = (i + 1 < words.length)
-          ? words[i + 1].startMs
-          : (w.endMs + 100);
-
-      if (positionMs >= w.startMs && positionMs < nextStart) {
-        return w.wordIndex;
+    int low = 0;
+    int high = words.length - 1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final w = words[mid];
+      if (w.startMs <= positionMs) {
+        if (positionMs < w.endMs) {
+          return w.wordIndex;
+        }
+        low = mid + 1;
+      } else {
+        high = mid - 1;
       }
     }
-
     return null;
   }
 
@@ -92,232 +90,250 @@ class AyahTiming {
   }
 }
 
-/// Backward compatibility model for Surah timing queries.
+/// Complete timing model for a Surah loaded once via MP3Quran v4.
 class SurahTiming {
   final int surah;
+  final List<WordTiming> words;
   final Map<int, AyahTiming> ayahs;
 
   const SurahTiming({
     required this.surah,
+    required this.words,
     required this.ayahs,
   });
 
   AyahTiming? getAyah(int ayah) => ayahs[ayah];
+
+  /// Author-documented binary search across all surah words for time [t]:
+  /// "On each timeupdate, find the entry with start_ms <= t < end_ms by binary search
+  /// and highlight the word at its word_position. Clear the highlight when no entry matches."
+  WordTiming? findActiveWordAtMs(int t) {
+    if (words.isEmpty) return null;
+    int low = 0;
+    int high = words.length - 1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final w = words[mid];
+      if (w.startMs <= t) {
+        if (t < w.endMs) {
+          return w;
+        }
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return null;
+  }
 }
 
 /// High-performance Quran timing service integrating the MP3Quran v4 API.
 ///
-/// Features:
-/// - **Ayah-by-Ayah On-Demand Fetching**: Instead of downloading hundreds of kilobytes
-///   for an entire Surah upfront, requests ONLY the single Ayah needed (~300 bytes),
-///   saving >99% bandwidth.
-/// - **100% Calibrated with MP3Quran Audio**: Word timestamps directly align with
-///   MP3Quran's official audio files (`{surah}-64k.mp3`), delivering millisecond-accurate sync.
-/// - **Permanent Disk Cache**: Caches each Ayah timing locally to
-///   `{appDocDir}/quran_audio/timing/mp3quran_v4/{code}_{surah}_{ayah}.json` for instant offline replay.
-/// - **Zero-Latency In-Memory Lookup**: Fast O(1) synchronous word index queries on every audio tick.
-/// - **ETag Support**: Honors HTTP 304 Not Modified headers for bandwidth economy.
+/// Features & Architecture:
+/// - **Pure On-Demand Streaming (Zero Disk Waste)**: Timings are streamed directly via HTTP
+///   and kept in memory for the active session. Does NOT cache JSON files to disk, since
+///   audio itself is streamed and JSON files without audio are useless offline.
+/// - **Surah-Level Bulk Fetching**: Loads timing for a Surah ONCE as documented by the author:
+///   `Load GET /v4/recitations/{code}/surahs/{n}/word-timings?include=text once for each surah.`
+///   Zero additional network requests during Ayah transitions.
+/// - **Sample-Accurate Binary Search**: $O(\log N)$ microsecond word resolution on audio ticks.
+/// - **Resilient Offline / Recovery Handling**: Fast connection timeouts, graceful failure
+///   when offline without freezing the UI, and instant self-healing when internet returns.
+/// - **Full MP3Quran v4 Convention Compliance**:
+///   - Reciter codes used exclusively (never numeric IDs).
+///   - ETag caching (`If-None-Match` -> `304 Not Modified`).
+///   - Real HTTP status & error envelope `{ error: { code, message, field } }` handling.
+///   - Automatic rate limit backing off for 429 (`rate_limited`) and 503 (`queue_full`) via `Retry-After`.
 ///
 /// Notice: Word timings are produced automatically via the MP3Quran v4 API.
 class QuranTimingService {
-  QuranTimingService._();
+  QuranTimingService._() {
+    unawaited(cleanLegacyDiskCache());
+  }
   static final QuranTimingService instance = QuranTimingService._();
 
-  /// MP3Quran v4 API base URL.
+  /// MP3Quran v4 API base URL as documented.
   static const String apiBaseUrl = 'https://api-staging.mp3quran.net/v4';
-
-  /// Persistent Keep-Alive client avoiding socket exhaustion and handshake timeouts on Windows.
-  static final HttpClient _client = HttpClient()
-    ..idleTimeout = const Duration(minutes: 5)
-    ..connectionTimeout = const Duration(seconds: 10);
 
   /// Default reciter code (stored as permanent code string, never numeric ID).
   String recitationCode = 'mahmoud-husary/r1';
 
-  Directory? _timingDir;
-  final Map<String, AyahTiming> _inMemoryAyahs = {};
-  final Map<String, Future<AyahTiming?>> _activeFetches = {};
-  final Map<String, String> _etagCache = {};
+  /// Persistent Keep-Alive client avoiding socket exhaustion with fast offline failure.
+  static final HttpClient _client = HttpClient()
+    ..idleTimeout = const Duration(minutes: 5)
+    ..connectionTimeout = const Duration(milliseconds: 1500);
 
-  /// Cache key for an Ayah.
-  static String _ayahKey(int surah, int ayah) => '$surah:$ayah';
+  /// In-memory cache of loaded Surahs during this session (no disk file persistence).
+  final Map<int, SurahTiming> _inMemorySurahs = {};
 
-  /// Safe file naming for disk cache.
-  String _getCacheFileName(int surah, int ayah) {
-    final safeCode = recitationCode.replaceAll('/', '_').replaceAll(':', '_');
-    return '${safeCode}_${surah.toString().padLeft(3, '0')}_${ayah.toString().padLeft(3, '0')}.json';
+  /// In-flight coalescing to prevent duplicate concurrent network requests.
+  final Map<int, Future<SurahTiming?>> _activeFetches = {};
+
+  /// In-memory ETag cache for HTTP 304 Not Modified optimization.
+  final Map<int, String> _etagMap = {};
+
+  /// Tracks the last encountered failure reason for UI banner dispatch.
+  AudioFailureReason lastFailureReason = AudioFailureReason.networkOffline;
+
+  /// One-time cleanup utility to remove old disk cache files from previous versions.
+  static Future<void> cleanLegacyDiskCache() async {
+    try {
+      final baseDir = await getApplicationDocumentsDirectory();
+      final legacyDir = Directory('${baseDir.path}/quran_audio/timing');
+      if (await legacyDir.exists()) {
+        await legacyDir.delete(recursive: true);
+        debugPrint('[QuranTimingService] Cleaned legacy disk cache directory.');
+      }
+    } catch (_) {}
   }
 
-  /// Directory for caching MP3Quran v4 timing data.
-  Future<Directory> getTimingDirectory() async {
-    if (_timingDir != null) return _timingDir!;
-    final baseDir = await getApplicationDocumentsDirectory();
-    final dir = Directory('${baseDir.path}/quran_audio/timing/mp3quran_v4');
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    _timingDir = dir;
-    return dir;
-  }
-
-  /// Local file for a cached Ayah timing.
-  Future<File> getCachedFile(int surah, int ayah) async {
-    final dir = await getTimingDirectory();
-    return File('${dir.path}/${_getCacheFileName(surah, ayah)}');
-  }
+  /// Synchronously gets an already loaded [SurahTiming] from in-memory cache.
+  SurahTiming? getSurahTiming(int surah) => _inMemorySurahs[surah];
 
   /// Synchronously gets an already loaded [AyahTiming] from in-memory cache.
   AyahTiming? getCachedAyahTiming(int surah, int ayah) {
-    return _inMemoryAyahs[_ayahKey(surah, ayah)];
+    return _inMemorySurahs[surah]?.getAyah(ayah);
   }
 
-  /// Loads and caches word timing data for a single [surah] and [ayah] from MP3Quran v4.
+  /// Ensures timing data for [surah] is streamed and loaded in memory.
   ///
   /// - Returns cached instance immediately if already in memory ($O(1)$).
-  /// - Reads from local disk if cached previously.
-  /// - Downloads on-demand from MP3Quran v4 API if not yet cached (~300 bytes payload).
-  Future<AyahTiming?> ensureAyahLoaded(int surah, int ayah) async {
-    final key = _ayahKey(surah, ayah);
-
+  /// - Coalesces concurrent calls so only a single HTTP request is in-flight.
+  /// - Gracefully returns `null` on network errors or offline without blocking.
+  Future<SurahTiming?> ensureSurahLoaded(int surah) async {
     // 1. In-memory cache hit
-    if (_inMemoryAyahs.containsKey(key)) {
-      return _inMemoryAyahs[key];
+    if (_inMemorySurahs.containsKey(surah)) {
+      return _inMemorySurahs[surah];
     }
 
-    // 2. Coalesce active in-flight network requests
-    if (_activeFetches.containsKey(key)) {
-      return await _activeFetches[key];
+    // 2. Coalesce active in-flight request
+    if (_activeFetches.containsKey(surah)) {
+      return await _activeFetches[surah];
     }
 
-    final completer = Completer<AyahTiming?>();
-    _activeFetches[key] = completer.future;
+    final completer = Completer<SurahTiming?>();
+    _activeFetches[surah] = completer.future;
 
     () async {
       try {
-        final file = await getCachedFile(surah, ayah);
-
-        // 3. Try local disk cache
-        if (await file.exists() && (await file.length()) > 30) {
-          try {
-            final content = await file.readAsString();
-            final parsed = _parseAyahJson(surah, ayah, content);
-            if (parsed != null) {
-              _inMemoryAyahs[key] = parsed;
-              completer.complete(parsed);
-              return;
-            }
-          } catch (e) {
-            debugPrint('Disk cache read error for $key: $e');
-          }
+        final timing = await _streamSurahTiming(surah);
+        if (timing != null) {
+          _inMemorySurahs[surah] = timing;
         }
-
-        // 4. Fetch on-demand from MP3Quran v4 API with persistent client & retry
-        final endpoint =
-            '$apiBaseUrl/recitations/$recitationCode/surahs/$surah/word-timings?ayah=$ayah&include=text';
-        final result = await _fetchWithRetry(endpoint, key);
-
-        if (result == '304_NOT_MODIFIED' && await file.exists()) {
-          final content = await file.readAsString();
-          final parsed = _parseAyahJson(surah, ayah, content);
-          if (parsed != null) {
-            _inMemoryAyahs[key] = parsed;
-            completer.complete(parsed);
-            return;
-          }
-        }
-
-        if (result != null && result != '304_NOT_MODIFIED') {
-          final parsed = _parseAyahJson(surah, ayah, result);
-          if (parsed != null) {
-            _inMemoryAyahs[key] = parsed;
-
-            // Persist to disk for offline replay
-            try {
-              final tempFile = File(
-                '${file.path}.tmp_${DateTime.now().millisecondsSinceEpoch}',
-              );
-              await tempFile.writeAsString(result);
-              if (await tempFile.exists()) {
-                await tempFile.rename(file.path);
-              }
-            } catch (e) {
-              debugPrint('Failed to save timing cache for $key: $e');
-            }
-
-            completer.complete(parsed);
-            return;
-          }
-        }
-
-        completer.complete(null);
+        completer.complete(timing);
       } catch (e) {
-        debugPrint('Error loading timing for $surah:$ayah: $e');
+        debugPrint('[QuranTimingService] Error streaming Surah $surah timings: $e');
         completer.complete(null);
       } finally {
-        _activeFetches.remove(key);
+        _activeFetches.remove(surah);
       }
     }();
 
     return await completer.future;
   }
 
-  /// Fetches JSON payload from the API with automatic retries and exponential backoff.
-  Future<String?> _fetchWithRetry(String endpoint, String key) async {
-    const int maxRetries = 3;
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        final request = await _client.getUrl(Uri.parse(endpoint));
-        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+  /// Backward-compatible helper ensuring an Ayah's timing is loaded.
+  Future<AyahTiming?> ensureAyahLoaded(int surah, int ayah) async {
+    final surahTiming = await ensureSurahLoaded(surah);
+    return surahTiming?.getAyah(ayah);
+  }
 
-        final cachedEtag = _etagCache[key];
-        if (cachedEtag != null && cachedEtag.isNotEmpty) {
-          request.headers.set(HttpHeaders.ifNoneMatchHeader, cachedEtag);
-        }
+  /// Fetches JSON payload directly from the MP3Quran v4 API stream.
+  Future<SurahTiming?> _streamSurahTiming(int surah, {int retryCount = 0}) async {
+    final endpoint =
+        '$apiBaseUrl/recitations/$recitationCode/surahs/$surah/word-timings?include=text';
+    final uri = Uri.parse(endpoint);
 
-        final response = await request.close();
+    try {
+      final request = await _client.getUrl(uri).timeout(const Duration(milliseconds: 1800));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
 
-        if (response.statusCode == HttpStatus.notModified) {
-          await response.drain();
-          return '304_NOT_MODIFIED';
-        }
-
-        if (response.statusCode == HttpStatus.ok) {
-          final etag = response.headers.value(HttpHeaders.etagHeader);
-          if (etag != null) {
-            _etagCache[key] = etag;
-          }
-          final body = await response.transform(utf8.decoder).join();
-          return body;
-        }
-
-        await response.drain();
-        debugPrint('[QuranTimingService] HTTP ${response.statusCode} for $endpoint');
-      } catch (e) {
-        debugPrint('[QuranTimingService] Network attempt $attempt/$maxRetries failed for $key: $e');
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(milliseconds: 350 * attempt));
-        }
+      final savedEtag = _etagMap[surah];
+      if (savedEtag != null && savedEtag.isNotEmpty) {
+        request.headers.set(HttpHeaders.ifNoneMatchHeader, savedEtag);
       }
+
+      final response = await request.close().timeout(const Duration(milliseconds: 1800));
+
+      // ── 304 Not Modified ──
+      if (response.statusCode == HttpStatus.notModified) {
+        await response.drain();
+        return _inMemorySurahs[surah];
+      }
+
+      // ── 200 OK ──
+      if (response.statusCode == HttpStatus.ok) {
+        final etag = response.headers.value(HttpHeaders.etagHeader);
+        if (etag != null) {
+          _etagMap[surah] = etag;
+        }
+
+        final body = await response.transform(utf8.decoder).join();
+        return _parseSurahJson(surah, body);
+      }
+
+      // ── 429 Rate Limited or 503 Service Unavailable (Wait Retry-After) ──
+      if (response.statusCode == 429 || response.statusCode == HttpStatus.serviceUnavailable) {
+        lastFailureReason = response.statusCode == 429
+            ? AudioFailureReason.rateLimited
+            : AudioFailureReason.serverUnavailable;
+        final retryAfterHeader = response.headers.value(HttpHeaders.retryAfterHeader);
+        final int retryAfterSeconds = int.tryParse(retryAfterHeader ?? '2') ?? 2;
+        await response.drain();
+
+        debugPrint(
+          '[QuranTimingService] HTTP ${response.statusCode} (Rate Limit / Queue Full). Retry-After: $retryAfterSeconds s',
+        );
+
+        if (retryCount == 0 && retryAfterSeconds <= 3) {
+          await Future.delayed(Duration(seconds: retryAfterSeconds));
+          return await _streamSurahTiming(surah, retryCount: retryCount + 1);
+        }
+        return null;
+      }
+
+      // ── Error Envelope { error: { code, message, field } } ──
+      lastFailureReason = response.statusCode >= 500
+          ? AudioFailureReason.serverUnavailable
+          : AudioFailureReason.unknown;
+      final errorBody = await response.transform(utf8.decoder).join();
+      _handleApiError(response.statusCode, errorBody);
+      return null;
+    } on SocketException catch (e) {
+      lastFailureReason = AudioFailureReason.networkOffline;
+      debugPrint('[QuranTimingService] Network unreachable / No internet ($e)');
+      return null;
+    } on TimeoutException {
+      lastFailureReason = AudioFailureReason.networkOffline;
+      debugPrint('[QuranTimingService] Stream request timed out for Surah $surah');
+      return null;
+    } catch (e) {
+      lastFailureReason = AudioFailureReason.networkOffline;
+      debugPrint('[QuranTimingService] Stream fetch error for Surah $surah: $e');
+      return null;
     }
-    return null;
   }
 
-  /// Backward-compatible helper to ensure a surah's initial ayah is loaded.
-  Future<SurahTiming?> ensureSurahLoaded(int surah) async {
-    final timing = await ensureAyahLoaded(surah, 1);
-    if (timing == null) return null;
-    return SurahTiming(
-      surah: surah,
-      ayahs: {1: timing},
-    );
+  /// Handles and logs structured MP3Quran v4 API errors.
+  void _handleApiError(int statusCode, String body) {
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final error = json['error'] as Map<String, dynamic>?;
+      if (error != null) {
+        final code = error['code']?.toString() ?? 'unknown';
+        final message = error['message']?.toString() ?? '';
+        final field = error['field']?.toString();
+        debugPrint(
+          '[QuranTimingService] API Error ($statusCode) [$code]: $message${field != null ? ' (field: $field)' : ''}',
+        );
+        return;
+      }
+    } catch (_) {}
+    debugPrint('[QuranTimingService] HTTP Error $statusCode: $body');
   }
 
-  /// Parses the MP3Quran v4 word-timings JSON response into an [AyahTiming] model.
-  ///
-  /// Response format:
-  /// `words`: `[[ayah, word_position, start_ms, end_ms, occurrence], ...]`
-  /// `text`: `{"edition": "hafs", "ayahs": [[ayah, [[pos, rasm_uthmani, rasm_imlai], ...]]]}`
-  AyahTiming? _parseAyahJson(int surah, int ayah, String jsonString) {
+  /// Parses the MP3Quran v4 word-timings JSON response into a [SurahTiming] model.
+  SurahTiming? _parseSurahJson(int surah, String jsonString) {
     try {
       final Map<String, dynamic> root = jsonDecode(jsonString) as Map<String, dynamic>;
       final Map<String, dynamic>? data = root['data'] as Map<String, dynamic>?;
@@ -326,20 +342,27 @@ class QuranTimingService {
       final List<dynamic>? rawWords = data['words'] as List<dynamic>?;
       if (rawWords == null || rawWords.isEmpty) return null;
 
-      // Extract text map if available: {word_position: text}
-      final Map<int, String> textMap = {};
+      // Extract text map: {ayah: {word_position: rasm}}
+      final Map<int, Map<int, String>> textByAyah = {};
       try {
         final Map<String, dynamic>? textObj = data['text'] as Map<String, dynamic>?;
         if (textObj != null) {
           final List<dynamic>? textAyahs = textObj['ayahs'] as List<dynamic>?;
-          if (textAyahs != null && textAyahs.isNotEmpty) {
-            final List<dynamic>? wordList = textAyahs[0][1] as List<dynamic>?;
-            if (wordList != null) {
-              for (final dynamic item in wordList) {
-                if (item is List && item.length >= 2) {
-                  final int pos = (item[0] as num).toInt();
-                  final String rasm = item[1]?.toString() ?? '';
-                  textMap[pos] = rasm;
+          if (textAyahs != null) {
+            for (final dynamic aEntry in textAyahs) {
+              if (aEntry is List && aEntry.length >= 2) {
+                final int aNum = (aEntry[0] as num).toInt();
+                final List<dynamic>? wordsList = aEntry[1] as List<dynamic>?;
+                if (wordsList != null) {
+                  final Map<int, String> wMap = {};
+                  for (final dynamic wItem in wordsList) {
+                    if (wItem is List && wItem.length >= 2) {
+                      final int pos = (wItem[0] as num).toInt();
+                      final String rasm = wItem[1]?.toString() ?? '';
+                      wMap[pos] = rasm;
+                    }
+                  }
+                  textByAyah[aNum] = wMap;
                 }
               }
             }
@@ -347,24 +370,13 @@ class QuranTimingService {
         }
       } catch (_) {}
 
-      // Find the Ayah start in milliseconds from the first word
-      final dynamic firstEntry = rawWords.first;
-      if (firstEntry is! List || firstEntry.length < 4) return null;
-
-      final int ayahStartMs = (firstEntry[2] as num).toInt();
-      final dynamic lastEntry = rawWords.last;
-      final int ayahEndMs = (lastEntry is List && lastEntry.length >= 4)
-          ? (lastEntry[3] as num).toInt()
-          : ayahStartMs;
-
-      final List<WordTiming> words = [];
+      final List<WordTiming> allWords = [];
+      final Map<int, List<WordTiming>> wordsByAyah = {};
 
       for (final dynamic item in rawWords) {
         if (item is! List || item.length < 4) continue;
 
         final int entryAyah = (item[0] as num).toInt();
-        if (entryAyah != ayah && entryAyah != 0) continue;
-
         final int wordPos1Based = (item[1] as num).toInt();
         final int wordPos0Based = (wordPos1Based - 1).clamp(0, 999);
         final int startMs = (item[2] as num).toInt();
@@ -373,44 +385,61 @@ class QuranTimingService {
             ? (item[4] as num).toInt()
             : 1;
 
-        final String wordText = textMap[wordPos1Based] ?? '';
+        final String wordText = textByAyah[entryAyah]?[wordPos1Based] ?? '';
 
-        words.add(WordTiming(
+        final wt = WordTiming(
+          ayah: entryAyah,
           wordIndex: wordPos0Based,
           startMs: startMs,
           endMs: endMs,
           text: wordText,
           occurrence: occurrence,
-        ));
+        );
+
+        allWords.add(wt);
+        wordsByAyah.putIfAbsent(entryAyah, () => []).add(wt);
       }
 
-      return AyahTiming(
+      // Build AyahTiming for each ayah present in words
+      final Map<int, AyahTiming> ayahTimings = {};
+      wordsByAyah.forEach((aNum, aWords) {
+        if (aWords.isNotEmpty) {
+          final aStart = aWords.first.startMs;
+          final aEnd = aWords.last.endMs;
+          ayahTimings[aNum] = AyahTiming(
+            surah: surah,
+            ayah: aNum,
+            ayahStartMs: aStart,
+            ayahEndMs: aEnd,
+            words: aWords,
+          );
+        }
+      });
+
+      return SurahTiming(
         surah: surah,
-        ayah: ayah,
-        ayahStartMs: ayahStartMs,
-        ayahEndMs: ayahEndMs,
-        words: words,
+        words: allWords,
+        ayahs: ayahTimings,
       );
     } catch (e) {
-      debugPrint('JSON parse error for MP3Quran v4 $surah:$ayah: $e');
+      debugPrint('[QuranTimingService] JSON parse error for Surah $surah: $e');
       return null;
     }
   }
 
   /// High-performance synchronous word index lookup by exact millisecond.
-  ///
-  /// Returns the 0-based word index matching [positionMs] within the Surah audio,
-  /// or `null` if before start, after finish, or data not yet loaded.
   int? getActiveWordIndexAtMs({
     required int surah,
     required int ayah,
     required int positionMs,
   }) {
-    final key = _ayahKey(surah, ayah);
-    final ayahData = _inMemoryAyahs[key];
-    if (ayahData == null) return null;
-
-    return ayahData.getWordIndexAtMs(positionMs);
+    final surahTiming = _inMemorySurahs[surah];
+    if (surahTiming == null) return null;
+    final w = surahTiming.findActiveWordAtMs(positionMs);
+    if (w != null && w.ayah == ayah) {
+      return w.wordIndex;
+    }
+    return null;
   }
 
   /// Backward-compatible lookup by seconds.

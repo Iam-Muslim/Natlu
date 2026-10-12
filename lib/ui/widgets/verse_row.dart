@@ -596,23 +596,25 @@ class _VerseAudioButton extends StatelessWidget {
         app.activeAudioAyah,
         app.activeAudioSurah,
         app.isAudioPlaying,
+        app.isAudioBuffering,
       ]),
       builder: (context, _) {
-        final bool isPlaying = app.activeAudioSurah.value == surah &&
-            app.activeAudioAyah.value == ayah &&
-            app.isAudioPlaying.value;
-        return _buildButton(context, isPlaying);
+        final bool isThisAyah = app.activeAudioSurah.value == surah &&
+            app.activeAudioAyah.value == ayah;
+        final bool isPlaying = isThisAyah && app.isAudioPlaying.value;
+        final bool isBuffering = isThisAyah && app.isAudioBuffering.value;
+        return _buildButton(context, isPlaying, isBuffering: isBuffering);
       },
     );
   }
 
-  Widget _buildButton(BuildContext context, bool isPlaying) {
+  Widget _buildButton(BuildContext context, bool isPlaying, {bool isBuffering = false}) {
     final Color iconColor;
     final Color bgColor;
     final Color borderColor;
 
-    if (isPlaying) {
-      // Playing state: Serene, dignified emerald accent across both themes
+    if (isPlaying || isBuffering) {
+      // Active / Connecting state: Serene, dignified emerald accent across both themes
       if (isDark) {
         bgColor = colors.primary.withValues(alpha: 0.22);
         borderColor = colors.primary.withValues(alpha: 0.60);
@@ -642,6 +644,12 @@ class _VerseAudioButton extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
+          // If already attempting to connect/buffer this Ayah, ignore duplicate rapid tap
+          if (AppState.instance.isAudioBuffering.value &&
+              AppState.instance.activeAudioSurah.value == surah &&
+              AppState.instance.activeAudioAyah.value == ayah) {
+            return;
+          }
           HapticFeedback.selectionClick();
           controller.setManualAyah(surah, ayah);
           onTapVerse?.call();
@@ -679,15 +687,25 @@ class _VerseAudioButton extends StatelessWidget {
                     opacity: anim,
                     child: ScaleTransition(scale: anim, child: child),
                   ),
-                  child: Padding(
-                    key: ValueKey(isPlaying),
-                    padding: EdgeInsets.only(left: isPlaying ? 0 : 0.8),
-                    child: Icon(
-                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      size: 11.5,
-                      color: iconColor,
-                    ),
-                  ),
+                  child: isBuffering
+                      ? SizedBox(
+                          key: const ValueKey('buffering'),
+                          width: 9.5,
+                          height: 9.5,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.4,
+                            valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+                          ),
+                        )
+                      : Padding(
+                          key: ValueKey(isPlaying),
+                          padding: EdgeInsets.only(left: isPlaying ? 0 : 0.8),
+                          child: Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            size: 11.5,
+                            color: iconColor,
+                          ),
+                        ),
                 ),
               ),
             ),
