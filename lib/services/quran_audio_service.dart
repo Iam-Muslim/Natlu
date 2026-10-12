@@ -135,9 +135,15 @@ class QuranAudioService {
     // 1. Binary search lookup for the active word
     final WordTiming? activeWord = surahTiming.findActiveWordAtMs(posMs);
 
-    if (activeWord != null && activeWord.ayah == _currentAyah) {
-      if (AppState.instance.activeAudioWordIndex.value != activeWord.wordIndex) {
-        AppState.instance.activeAudioWordIndex.value = activeWord.wordIndex;
+    if (activeWord != null) {
+      if (_isContinuous && activeWord.ayah != _currentAyah) {
+        _currentAyah = activeWord.ayah;
+        AppState.instance.activeAudioAyah.value = activeWord.ayah;
+      }
+      if (activeWord.ayah == _currentAyah) {
+        if (AppState.instance.activeAudioWordIndex.value != activeWord.wordIndex) {
+          AppState.instance.activeAudioWordIndex.value = activeWord.wordIndex;
+        }
       }
     } else {
       // Clear highlight during pauses between words or when outside word range

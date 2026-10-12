@@ -139,10 +139,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
+    if (state == AppLifecycleState.detached ||
+        widget.isRecording ||
+        QuranAudioService.instance.isSingleWordMode) {
       AppState.instance.stopVerseAudio();
     }
     if (kIsWeb) return;
