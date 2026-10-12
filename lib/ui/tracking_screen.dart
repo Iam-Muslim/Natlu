@@ -115,6 +115,12 @@ class _TrackingScreenState extends State<TrackingScreen>
     final isPlaying = AppState.instance.isAudioPlaying.value;
     final ayah = AppState.instance.activeAudioAyah.value;
 
+    // Never auto-scroll when a single word is tapped by the user
+    if (QuranAudioService.instance.isSingleWordMode) {
+      _lastAyah = ayah;
+      return;
+    }
+
     if (isPlaying && ayah != null && !_isAutoScrolling) {
       _wasAudioPlaying = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -126,14 +132,6 @@ class _TrackingScreenState extends State<TrackingScreen>
       });
     } else if (!isPlaying && _wasAudioPlaying && !QuranAudioService.instance.isPaused) {
       _wasAudioPlaying = false;
-      final targetAyah = _lastAyah ?? widget.controller.activeAyah.value;
-      if (targetAyah != null && !_isAutoScrolling) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _ensureAyahVisibleSmart(targetAyah);
-          }
-        });
-      }
     }
   }
 
@@ -247,6 +245,8 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _onActiveAyahChanged() {
+    if (QuranAudioService.instance.isSingleWordMode) return;
+
     final active = widget.controller.activeAyah.value;
     if (active != null && active != _lastAyah) {
       _lastAyah = active;
@@ -324,6 +324,15 @@ class _TrackingScreenState extends State<TrackingScreen>
       final double ayahTop = globalPos.dy;
       final double ayahHeight = renderBox.size.height;
       final double ayahBottom = ayahTop + ayahHeight;
+
+      // 0. MANUAL TAP / WORD AUDITION RULE:
+      // If user manually tapped a word or verse and any part of it is currently visible:
+      // ZERO SCROLLING! Never yank the viewport away from user's manual focus point.
+      if ((isManualTap || QuranAudioService.instance.isSingleWordMode) &&
+          ayahBottom >= upperSafeY &&
+          ayahTop <= lowerSafeY) {
+        return;
+      }
 
       // 1. Obscured under top bar (scrolled too far up):
       // Gently glide down to the comfortable eye view.

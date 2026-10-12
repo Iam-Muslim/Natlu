@@ -3,7 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  media_kit_libs_windows_audio
+  media_kit_libs_windows_video
   permission_handler_windows
   record_windows
   share_plus

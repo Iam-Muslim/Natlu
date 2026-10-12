@@ -31,7 +31,7 @@ dependencies:
   wakelock_plus: ^1.6.1
   just_audio: ^0.10.6
   just_audio_media_kit: ^2.1.0
-  media_kit_libs_windows_audio: ^1.0.9
+  media_kit_libs_windows_video: ^1.0.11
 
 # sherpa_onnx 1.13.5 still allows sherpa_onnx_ios ^1.13.5, so the broken 1.13.6
 # iOS package gets pulled in transitively unless it is pinned here as well.
