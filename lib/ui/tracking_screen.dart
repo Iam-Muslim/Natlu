@@ -850,8 +850,6 @@ class _TrackingScreenState extends State<TrackingScreen>
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontFamily:
-                                            app.isArabic ? 'HafsSmart' : null,
                                         color: c.text,
                                         fontSize: app.isArabic ? 16 : 14.5,
                                         fontWeight: FontWeight.bold,

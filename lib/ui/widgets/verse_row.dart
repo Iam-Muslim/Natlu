@@ -505,11 +505,11 @@ class _VerseRowState extends State<VerseRow> {
                   ),
                 ),
 
-                // Injected Ayah number & audio play button pushed tightly to the outer edge
+                // Injected Ayah number & audio play button with expanded comfortable touch area
                 Positioned(
-                  left: 3,
-                  bottom: 6,
-                  width: 22,
+                  left: 0,
+                  bottom: 2,
+                  width: 32,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -527,18 +527,48 @@ class _VerseRowState extends State<VerseRow> {
                           explicitIsPlaying: widget.isAudioPlaying,
                           onExplicitToggle: widget.onAudioPlayToggle,
                         ),
-                        const SizedBox(height: 1),
                       ],
-                      Text(
-                        _toArabicDigits(widget.verse.ayah),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'HafsSmart',
-                          fontSize: 16.5,
-                          fontWeight: FontWeight.bold,
-                          color: isActive
-                              ? c.gold
-                              : c.textSecondary.withValues(alpha: 0.65),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (AppState.instance.isAudioBuffering.value &&
+                              AppState.instance.activeAudioSurah.value == widget.verse.surah &&
+                              AppState.instance.activeAudioAyah.value == widget.verse.ayah) {
+                            return;
+                          }
+                          HapticFeedback.selectionClick();
+                          widget.controller.setManualAyah(widget.verse.surah, widget.verse.ayah);
+                          widget.onTap?.call();
+                          if (widget.onAudioPlayToggle != null) {
+                            widget.onAudioPlayToggle!();
+                          } else {
+                            AppState.instance.toggleVerseAudio(
+                              surah: widget.verse.surah,
+                              ayah: widget.verse.ayah,
+                              continuous: !widget.isRecording,
+                            );
+                          }
+                        },
+                        child: Container(
+                          width: 32,
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          color: Colors.transparent,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _toArabicDigits(widget.verse.ayah),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'HafsSmart',
+                                fontSize: 21.5,
+                                fontWeight: FontWeight.bold,
+                                height: 1.0,
+                                color: isActive
+                                    ? c.gold
+                                    : c.textSecondary.withValues(alpha: 0.75),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -663,21 +693,22 @@ class _VerseAudioButton extends StatelessWidget {
             );
           }
         },
-        child: SizedBox(
-          width: 22,
-          height: 22,
+        child: Container(
+          width: 32,
+          height: 30,
+          color: Colors.transparent,
           child: Center(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
-              width: 19.5,
-              height: 19.5,
+              width: 21.5,
+              height: 21.5,
               decoration: BoxDecoration(
                 color: bgColor,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: borderColor,
-                  width: 0.75,
+                  width: 0.85,
                 ),
               ),
               child: Center(
@@ -690,10 +721,10 @@ class _VerseAudioButton extends StatelessWidget {
                   child: isBuffering
                       ? SizedBox(
                           key: const ValueKey('buffering'),
-                          width: 9.5,
-                          height: 9.5,
+                          width: 10.5,
+                          height: 10.5,
                           child: CircularProgressIndicator(
-                            strokeWidth: 1.4,
+                            strokeWidth: 1.5,
                             valueColor: AlwaysStoppedAnimation<Color>(iconColor),
                           ),
                         )
@@ -702,7 +733,7 @@ class _VerseAudioButton extends StatelessWidget {
                           padding: EdgeInsets.only(left: isPlaying ? 0 : 0.8),
                           child: Icon(
                             isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            size: 11.5,
+                            size: 13.0,
                             color: iconColor,
                           ),
                         ),

@@ -481,10 +481,10 @@ class _BottomActionBarState extends State<BottomActionBar>
                 color: isScroll
                     ? (isDark ? Colors.white.withValues(alpha: 0.90) : c.text)
                     : Colors.white,
-                fontSize: isAr ? 11.5 : 10.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: isAr ? 0.2 : 0.5,
-                height: 1.0,
+                fontSize: isAr ? 12.0 : 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: isAr ? 0.0 : 0.3,
+                height: isAr ? 1.2 : 1.1,
               ),
             ),
           ],

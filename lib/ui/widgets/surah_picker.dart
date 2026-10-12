@@ -231,7 +231,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                             Text(
                               isAr ? 'بحث صوتي' : 'Voice Search',
                               style: TextStyle(
-                                fontFamily: isAr ? 'HafsSmart' : null,
                                 color: Colors.white,
                                 fontSize: isAr ? 13 : 11,
                                 fontWeight: FontWeight.bold,

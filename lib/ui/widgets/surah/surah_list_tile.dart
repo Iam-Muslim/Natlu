@@ -99,10 +99,9 @@ class _SurahListTileState extends State<SurahListTile> {
                               ? _toArabicDigits(widget.surahNumber)
                               : '${widget.surahNumber}',
                           style: TextStyle(
-                            fontFamily: app.isArabic ? 'HafsSmart' : null,
                             color: c.primary,
-                            fontSize: app.isArabic ? 22 : 17,
-                            fontWeight: FontWeight.w800,
+                            fontSize: app.isArabic ? 18 : 16,
+                            fontWeight: FontWeight.w700,
                             height: 1.0,
                           ),
                         ),
@@ -118,12 +117,10 @@ class _SurahListTileState extends State<SurahListTile> {
                         widget.surahMeta.surahName,
                         textDirection: TextDirection.rtl,
                         style: TextStyle(
-                          fontFamily: 'HafsSmart',
                           color: isSel ? c.primary : c.text,
-                          fontSize: 18,
-                          fontWeight: isSel
-                              ? FontWeight.bold
-                              : FontWeight.w600,
+                          fontSize: 16.5,
+                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
+                          height: 1.3,
                         ),
                       ),
                       const SizedBox(height: 2),

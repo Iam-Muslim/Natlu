@@ -68,68 +68,22 @@ class SettingsDialog extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
 
-                        // ── Title ──
+                        // ── Top Dua Banner (Single Line) ──
                         Padding(
-                          padding: const EdgeInsetsDirectional.symmetric(horizontal: 24),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: c.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: c.primary.withValues(alpha: 0.20),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Icon(
-                                  Icons.settings_rounded,
-                                  color: c.primary,
-                                  size: 20,
-                                ),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'بفضل الله وبرحمته ربنا تقبل منا إنك أنت السميع العليم',
+                              textAlign: TextAlign.center,
+                              textDirection: TextDirection.rtl,
+                              style: TextStyle(
+                                color: c.primary.withValues(alpha: 0.75),
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                height: 1.3,
                               ),
-                              const SizedBox(width: 14),
-                              Text(
-                                isAr ? 'الإعدادات' : 'Settings',
-                                style: TextStyle(
-                                  color: c.text,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Spacer(),
-                              // Reset Button
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () async {
-                                    final prefs = await SharedPreferences.getInstance();
-                                    await prefs.clear();
-                                    if (context.mounted) {
-                                      await app.load();
-                                      if (context.mounted) {
-                                        Navigator.of(context).pop();
-                                        app.showSettingsResetBanner();
-                                      }
-                                    }
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    child: Text(
-                                      isAr ? 'إعادة تعيين' : 'Reset',
-                                      style: TextStyle(
-                                        color: c.textSecondary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -224,24 +178,50 @@ class SettingsDialog extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 10),
 
-                        // ── Footer Dua ──
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Text(
-                            'ربنا تقبل منا انك انت السميع العليم\nهذا من فضل ربي',
-                            textAlign: TextAlign.center,
-                            textDirection: TextDirection.rtl,
-                            style: TextStyle(
-                              color: c.primary.withValues(alpha: 0.35),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              height: 1.6,
+                        // ── Bottom Reset Button (Compact Height) ──
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.clear();
+                              if (context.mounted) {
+                                await app.load();
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                  app.showSettingsResetBanner();
+                                }
+                              }
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.refresh_rounded,
+                                    size: 13,
+                                    color: c.textSecondary.withValues(alpha: 0.65),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    isAr ? 'إعادة ضبط الإعدادات الافتراضية' : 'Reset to Default Settings',
+                                    style: TextStyle(
+                                      color: c.textSecondary.withValues(alpha: 0.70),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),

@@ -162,7 +162,7 @@ class QuranApp extends StatelessWidget {
                 side: BorderSide(color: c.border, width: 1),
               ),
             ),
-            fontFamily: AppState.instance.isArabic ? 'HafsSmart' : null,
+            fontFamily: 'cairo',
           ),
           builder: (context, child) {
             if (!kIsWeb) return child!;

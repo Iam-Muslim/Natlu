@@ -331,6 +331,20 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Primary prompt at top
+        Text(
+          isAr
+              ? 'اتلُ أي آية من القرآن العظيم'
+              : 'Recite any verse from The Great Quran',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: c.text,
+            fontSize: isAr ? 19 : 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 22),
+
         // Pulsing Microphone with rigid 104x104 bounding box (Transform.scale avoids markNeedsLayout)
         RepaintBoundary(
           child: SizedBox(
@@ -397,22 +411,7 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
 
         // Animated soundwave bars with rigid fixed height (prevents dialog waving)
         _buildWaveBars(count: 7, baseHeight: 8, maxHeight: 26, c: c),
-        const SizedBox(height: 20),
-
-        // Primary prompt
-        Text(
-          isAr
-              ? 'اتلُ أي آية من القرآن العظيم'
-              : 'Recite any verse from The Great Quran',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: isAr ? 'HafsSmart' : null,
-            color: c.text,
-            fontSize: isAr ? 21 : 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
         // Status badge
         Container(
@@ -713,7 +712,6 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
                       surahTitle,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: isAr ? 'HafsSmart' : null,
                         fontWeight: FontWeight.bold,
                         fontSize: isAr ? 16 : 14,
                         color: c.primary,
