@@ -246,18 +246,18 @@ class _TrackingScreenState extends State<TrackingScreen>
         isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
 
     // 2. Bottom Obstruction:
-    // Floating bottom bar takes ~64 in recording/autoscroll, ~96 in normal mode.
-    double bottomBarHeight = isFullscreenMode ? 64.0 : 96.0;
+    // Floating island dock is 56px (normal) or 46px (recording/autoscroll) + 16px bottom padding = 72px / 62px.
+    double bottomBarHeight = isFullscreenMode ? 62.0 : 74.0;
 
     // Account for any active bottom banners:
     if (AppState.instance.isBannerVisible) {
-      bottomBarHeight += 64.0;
+      bottomBarHeight += 58.0;
     }
     final double bottomObstruction = bottomPadding + bottomBarHeight;
 
-    // Safe boundaries with ergonomic breathing margin
-    final double upperSafeY = topObstruction + 12.0;
-    final double lowerSafeY = (screenHeight - bottomObstruction - 14.0).clamp(
+    // Safe boundaries: lowerSafeY marks the precise top edge of the bottom dock
+    final double upperSafeY = topObstruction + 10.0;
+    final double lowerSafeY = (screenHeight - bottomObstruction - 6.0).clamp(
       upperSafeY + 100.0,
       screenHeight,
     );
@@ -270,10 +270,8 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   /// Unified "Eye-Comfort" verse viewport manager:
-  /// - ZERO-MOTION RULE: If the Ayah is already comfortably seated in the upper/mid reading zone (>50% visible),
-  ///   the viewport DOES NOT MOVE AT ALL! The reader's eye is completely undisturbed.
-  /// - NEW PAGE ADVANCE: If the coming Ayah is in the lower danger zone (>50% screen) or mostly out of bounds
-  ///   (>45% cut off by the bottom bar), it smoothly advances to the natural reciter eye view (~25% horizon).
+  /// - ZERO-MOTION RULE: If the Ayah is visible on screen or manually tapped, the viewport DOES NOT MOVE AT ALL!
+  /// - NEW PAGE ADVANCE: Only when the coming Ayah is genuinely cut off / out of bounds (>40% below the dock).
   /// - TOP RECOVERY: If scrolled too far up under the top bar, glides down to the natural eye view.
   /// - DISTANT NAVIGATION: If completely off-screen (picker, voice search), animates to natural 25% gaze.
   void _ensureAyahVisibleSmart(int ayah, {bool isManualTap = false}) {
@@ -308,27 +306,34 @@ class _TrackingScreenState extends State<TrackingScreen>
         return;
       }
 
-      // 2. High/Mid Comfort Zone Check:
-      // How much of this Ayah is visible before the bottom bar obstruction?
-      final double visibleHeight = (lowerSafeY - ayahTop).clamp(0.0, ayahHeight);
-      final double visibleRatio =
-          ayahHeight > 0 ? (visibleHeight / ayahHeight) : 1.0;
-      final double midScreenY = screenHeight * 0.50;
-
-      // If Ayah starts in the comfortable upper half (<50% of screen)
-      // AND at least 55% of it is visible above the bottom bar:
-      final bool isComfortablyInEyeView = ayahTop < midScreenY &&
-          (ayahBottom <= lowerSafeY || visibleRatio >= 0.55);
-
-      if (isComfortablyInEyeView) {
-        // ZERO SCROLLING! Reader's eye is undisturbed in the upper/mid screen.
+      // 2. ENTIRE AYAH IS FULLY VISIBLE ON SCREEN:
+      // If the Ayah fits between the top header and bottom dock: ZERO SCROLLING!
+      // Even if it sits right above the bottom dock!
+      if (ayahTop >= upperSafeY && ayahBottom <= lowerSafeY) {
         return;
       }
 
-      // 3. NEW PAGE ADVANCE:
-      // Ayah is starting down in the lower screen (>= 50%) OR is more than 45% cut off by bottom bar.
-      // Instead of trapping the reader at the bottom edge with micro-reveals,
-      // smoothly glide the start of this Ayah to the natural reciter eye view (~25% horizon).
+      // 3. MANUAL TAP RULE:
+      // If the user tapped this Ayah with their finger and its start is already visible:
+      // ZERO SCROLLING! Never yank the screen away from the user's touch.
+      if (isManualTap && ayahTop >= upperSafeY && ayahTop <= (lowerSafeY - 24.0)) {
+        return;
+      }
+
+      // 4. CHECK IF AYAH IS MOSTLY VISIBLE:
+      // How much of this Ayah is visible before the bottom dock?
+      final double visibleHeight = (lowerSafeY - ayahTop).clamp(0.0, ayahHeight);
+      final double visibleRatio =
+          ayahHeight > 0 ? (visibleHeight / ayahHeight) : 1.0;
+
+      // If at least 60% of the Ayah is clear above the dock: ZERO SCROLLING!
+      if (ayahTop >= upperSafeY && visibleRatio >= 0.60) {
+        return;
+      }
+
+      // 5. NEW PAGE ADVANCE:
+      // The coming Ayah is genuinely out of bounds (clipped by bottom dock or mostly hidden).
+      // Smoothly advance it to the natural reciter eye view (~25% horizon).
       final double delta = ayahTop - targetGazeY;
       _smoothScrollByDelta(delta);
       return;
