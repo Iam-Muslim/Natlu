@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:recite_quran/recite_quran.dart';
 import '../services/quran_timing_service.dart';
+import '../services/quran_audio_service.dart';
 import '../state/app_state.dart';
 import 'widgets/dialogs/voice_search_dialog.dart';
 import 'widgets/mic_bar.dart';
@@ -65,9 +67,13 @@ class _TrackingScreenState extends State<TrackingScreen>
   bool _isAutoScrolling = false;
   bool _isUserDragging = false;
   DateTime? _lastScrollTime;
+  Ticker? _autoScrollTicker;
+  Duration? _lastAutoScrollElapsed;
+  double _currentAutoScrollVelocity = 0.0;
 
   bool _showTajweedBanner = false;
   Timer? _tajweedBannerTimer;
+  bool _wasAudioPlaying = false;
 
   @override
   void initState() {
@@ -90,10 +96,11 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _onActiveAudioAyahChanged() {
+    final isPlaying = AppState.instance.isAudioPlaying.value;
     final ayah = AppState.instance.activeAudioAyah.value;
-    if (ayah != null &&
-        AppState.instance.isAudioPlaying.value &&
-        !_isAutoScrolling) {
+
+    if (isPlaying && ayah != null && !_isAutoScrolling) {
+      _wasAudioPlaying = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
@@ -101,6 +108,16 @@ class _TrackingScreenState extends State<TrackingScreen>
           _ensureAyahVisibleSmart(ayah);
         }
       });
+    } else if (!isPlaying && _wasAudioPlaying && !QuranAudioService.instance.isPaused) {
+      _wasAudioPlaying = false;
+      final targetAyah = _lastAyah ?? widget.controller.activeAyah.value;
+      if (targetAyah != null && !_isAutoScrolling) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _ensureAyahVisibleSmart(targetAyah);
+          }
+        });
+      }
     }
   }
 
@@ -138,6 +155,8 @@ class _TrackingScreenState extends State<TrackingScreen>
     AppState.instance.removeListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.removeListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.removeListener(_onActiveAudioAyahChanged);
+    _autoScrollTicker?.dispose();
+    _autoScrollTicker = null;
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
     super.dispose();
@@ -418,24 +437,14 @@ class _TrackingScreenState extends State<TrackingScreen>
   void _onAppStateSpeedChanged() {
     if (AppState.instance.autoScrollSpeed != _lastAutoScrollSpeed) {
       _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
-      if (_isAutoScrolling && mounted && _scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.pixels);
-        _startAutoScrollLoop();
-      }
+      // No animation cancellation or restart needed:
+      // The hardware VSYNC ticker reads the new velocity on the very next frame!
     }
   }
 
   void _toggleAutoScroll() {
     if (_isAutoScrolling) {
-      setState(() => _isAutoScrolling = false);
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.pixels);
-      }
-      if (!kIsWeb) {
-        try {
-          WakelockPlus.disable();
-        } catch (_) {}
-      }
+      _stopAutoScrolling();
     } else {
       if (!AppState.instance.hasChosenAutoScrollSpeed && mounted) {
         showDialog(
@@ -463,7 +472,14 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.clearHighlights();
     widget.controller.finalize();
     setState(() => _isAutoScrolling = true);
-    _startAutoScrollLoop();
+
+    _lastAutoScrollElapsed = null;
+    _currentAutoScrollVelocity = 0.0;
+    _autoScrollTicker ??= createTicker(_onAutoScrollTick);
+    if (!_autoScrollTicker!.isTicking) {
+      _autoScrollTicker!.start();
+    }
+
     if (!kIsWeb) {
       try {
         WakelockPlus.enable();
@@ -471,56 +487,74 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
   }
 
-  void _startAutoScrollLoop() {
-    if (!_isAutoScrolling || !mounted || !_scroll.hasClients) return;
-
-    double baseSpeed =
-        ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
-    final speedMultipliers = AppState.autoScrollMultipliers;
-    int speedIndex = AppState.instance.autoScrollSpeed.clamp(
-      0,
-      speedMultipliers.length - 1,
-    );
-    double speedPerFrame = baseSpeed * speedMultipliers[speedIndex];
-    final double pixelsPerSec = speedPerFrame * 60;
-
-    final position = _scroll.position;
-    final distance = position.maxScrollExtent - position.pixels;
-
-    if (distance <= 0.5) {
+  void _stopAutoScrolling() {
+    _autoScrollTicker?.stop();
+    _lastAutoScrollElapsed = null;
+    _currentAutoScrollVelocity = 0.0;
+    if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
-      if (!kIsWeb) {
-        try {
-          WakelockPlus.disable();
-        } catch (_) {}
-      }
+    }
+    if (!kIsWeb) {
+      try {
+        WakelockPlus.disable();
+      } catch (_) {}
+    }
+  }
+
+  /// Hardware VSYNC frame-rate independent teleprompter engine:
+  /// - Runs at native display refresh rate (60 FPS / 120 FPS / 144 FPS).
+  /// - Uses delta-time (dt) integration: perfectly constant velocity regardless of frame drops.
+  /// - Organic exponential velocity ramping (smooth ease-in over ~300ms; zero shock on speed switch).
+  /// - Completely immune to SuperSliverList dynamic maxScrollExtent expansions.
+  void _onAutoScrollTick(Duration elapsed) {
+    if (!_isAutoScrolling || !mounted || !_scroll.hasClients) {
+      _stopAutoScrolling();
       return;
     }
 
-    final durationSeconds = distance / pixelsPerSec;
+    if (_lastAutoScrollElapsed == null) {
+      _lastAutoScrollElapsed = elapsed;
+      return;
+    }
 
-    _scroll
-        .animateTo(
-      position.maxScrollExtent,
-      duration: Duration(milliseconds: (durationSeconds * 1000).toInt()),
-      curve: Curves.linear,
-    )
-        .then((_) {
-      if (mounted && _isAutoScrolling) {
-        if (_scroll.hasClients &&
-            (_scroll.position.maxScrollExtent - _scroll.position.pixels) >
-                2.0) {
-          _startAutoScrollLoop();
-        } else {
-          setState(() => _isAutoScrolling = false);
-          if (!kIsWeb) {
-            try {
-              WakelockPlus.disable();
-            } catch (_) {}
-          }
-        }
-      }
-    });
+    final double dt =
+        (elapsed - _lastAutoScrollElapsed!).inMicroseconds / 1000000.0;
+    _lastAutoScrollElapsed = elapsed;
+
+    // Safety guard against massive dt spikes (e.g. app backgrounded or debugger paused)
+    if (dt <= 0.0 || dt > 0.1) return;
+
+    final position = _scroll.position;
+    final double max = position.maxScrollExtent;
+    final double current = position.pixels;
+
+    // Stop cleanly when the genuine end of the content is reached
+    if (current >= max - 0.5) {
+      _stopAutoScrolling();
+      return;
+    }
+
+    final double baseSpeed =
+        ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
+    final speedMultipliers = AppState.autoScrollMultipliers;
+    final int speedIndex = AppState.instance.autoScrollSpeed.clamp(
+      0,
+      speedMultipliers.length - 1,
+    );
+    final double targetPixelsPerSec =
+        baseSpeed * speedMultipliers[speedIndex] * 60.0;
+
+    // Smooth exponential velocity ramping (velvety ease-in and speed changes over ~300ms):
+    final double blend = (1.0 - math.exp(-7.5 * dt)).clamp(0.0, 1.0);
+    _currentAutoScrollVelocity +=
+        (targetPixelsPerSec - _currentAutoScrollVelocity) * blend;
+
+    final double delta = _currentAutoScrollVelocity * dt;
+    final double nextOffset = (current + delta).clamp(0.0, max);
+
+    if (nextOffset != current) {
+      _scroll.jumpTo(nextOffset);
+    }
   }
 
   void _showSurahPicker() {
@@ -539,6 +573,9 @@ class _TrackingScreenState extends State<TrackingScreen>
           AppState.instance.stopVerseAudio();
           if (widget.isRecording) {
             widget.onToggleRecord();
+          }
+          if (_isAutoScrolling) {
+            _stopAutoScrolling();
           }
           if (Navigator.of(context).canPop()) {
             Navigator.pop(context);
@@ -591,6 +628,8 @@ class _TrackingScreenState extends State<TrackingScreen>
               children: [
                 // Main Verse Content
                 Positioned.fill(child: _buildVerseContent(c, app, top)),
+
+
 
                 // Top Floating Header
                 Positioned(
@@ -896,6 +935,10 @@ class _TrackingScreenState extends State<TrackingScreen>
         );
       }
 
+
+
+
+
   // ──────────────────────────────────────────────────────────────────────────
   // Tajweed Mode Slide-Up Banner (Slides UP from bottom toolbar)
   // ──────────────────────────────────────────────────────────────────────────
@@ -1170,11 +1213,14 @@ class _TrackingScreenState extends State<TrackingScreen>
           widget.controller.targetSurah,
         );
 
-        final double screenHeight = MediaQuery.of(context).size.height;
         final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
         final topPadding = isFullscreenMode ? top + 10.0 : top + 74.0;
-        // Generous bottom runway allows even the last Ayahs of a Surah to rise to the 30% eye view comfortably
-        final bottomPadding = (screenHeight * 0.70).clamp(320.0, 850.0);
+        // Ergonomic bottom clearance: provides exact breathing room so the End-of-Surah
+        // navigation capsule floats gracefully above the bottom action bar dock.
+        // Completely removes the redundant ~850px empty space void.
+        final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
+        final double bottomClearance =
+            bottomSafeArea + (isFullscreenMode ? 72.0 : 96.0);
 
         return NotificationListener<ScrollNotification>(
           onNotification: (notification) {
@@ -1206,9 +1252,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                     if (i == displayVerses.length + 2) {
                       return AnimatedContainer(
-                        duration: const Duration(milliseconds: 400),
+                        duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOutCubic,
-                        height: bottomPadding,
+                        height: bottomClearance,
                       );
                     }
 
@@ -1255,7 +1301,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       widget.onToggleRecord();
     }
     if (_isAutoScrolling) {
-      _toggleAutoScroll();
+      _stopAutoScrolling();
     }
     if (_scroll.hasClients) {
       _scroll.jumpTo(0);
@@ -1274,6 +1320,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _scrollToTop() {
     HapticFeedback.lightImpact();
+    if (_isAutoScrolling) {
+      _stopAutoScrolling();
+    }
     if (_scroll.hasClients) {
       _scroll.animateTo(
         0,

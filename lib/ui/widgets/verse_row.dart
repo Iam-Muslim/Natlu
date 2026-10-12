@@ -215,7 +215,7 @@ class _VerseRowState extends State<VerseRow> {
         app.activeAudioAyah.value == ayah;
 
     if (isAudioActive) {
-      return app.activeAudioWordIndex.value ?? 0;
+      return app.activeAudioWordIndex.value ?? -1;
     }
 
     final activeMatch = widget.controller.currentMatchedVerse;
