@@ -46,20 +46,36 @@ class BottomActionBar extends StatefulWidget {
 }
 
 class _BottomActionBarState extends State<BottomActionBar>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _collapseController;
-  Animation<double>? _expandAnimation;
+    with TickerProviderStateMixin {
+  AnimationController? _tajweedController;
+  Animation<double>? _tajweedAnim;
+  AnimationController? _hideController;
+  Animation<double>? _hideAnim;
   bool _isHovered = false;
 
   void _ensureAnimation() {
-    final bool isCollapsed = widget.isAutoScrolling || widget.isRecording;
-    _collapseController ??= AnimationController(
+    final bool tajweedVisible =
+        !(widget.isAutoScrolling || widget.isRecording);
+    final bool hideVisible = !widget.isAutoScrolling;
+
+    _tajweedController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
-      value: isCollapsed ? 0.0 : 1.0,
+      value: tajweedVisible ? 1.0 : 0.0,
     );
-    _expandAnimation ??= CurvedAnimation(
-      parent: _collapseController!,
+    _tajweedAnim ??= CurvedAnimation(
+      parent: _tajweedController!,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+
+    _hideController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: hideVisible ? 1.0 : 0.0,
+    );
+    _hideAnim ??= CurvedAnimation(
+      parent: _hideController!,
       curve: Curves.easeInOutCubic,
       reverseCurve: Curves.easeInOutCubic,
     );
@@ -81,29 +97,42 @@ class _BottomActionBarState extends State<BottomActionBar>
   void didUpdateWidget(covariant BottomActionBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     _ensureAnimation();
-    final bool oldCollapsed =
-        oldWidget.isAutoScrolling || oldWidget.isRecording;
-    final bool newCollapsed =
-        widget.isAutoScrolling || widget.isRecording;
-    if (oldCollapsed != newCollapsed) {
-      if (newCollapsed) {
-        _collapseController?.reverse();
+
+    final bool oldTajweedVisible =
+        !(oldWidget.isAutoScrolling || oldWidget.isRecording);
+    final bool newTajweedVisible =
+        !(widget.isAutoScrolling || widget.isRecording);
+    if (oldTajweedVisible != newTajweedVisible) {
+      if (newTajweedVisible) {
+        _tajweedController?.forward();
       } else {
-        _collapseController?.forward();
+        _tajweedController?.reverse();
+      }
+    }
+
+    final bool oldHideVisible = !oldWidget.isAutoScrolling;
+    final bool newHideVisible = !widget.isAutoScrolling;
+    if (oldHideVisible != newHideVisible) {
+      if (newHideVisible) {
+        _hideController?.forward();
+      } else {
+        _hideController?.reverse();
       }
     }
   }
 
   @override
   void dispose() {
-    _collapseController?.dispose();
+    _tajweedController?.dispose();
+    _hideController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     _ensureAnimation();
-    final anim = _expandAnimation!;
+    final tajweedAnim = _tajweedAnim!;
+    final hideAnim = _hideAnim!;
     final c = widget.c;
     final app = AppState.instance;
     final isAr = app.isArabic;
@@ -111,7 +140,7 @@ class _BottomActionBarState extends State<BottomActionBar>
 
     final double dockOpacity = widget.isAutoScrolling
         ? (_isHovered ? 1.0 : 0.55)
-        : (widget.isRecording ? 0.85 : 1.0);
+        : 1.0;
 
     // ── Unified Floating Island Dock ──
     return SafeArea(
@@ -127,9 +156,9 @@ class _BottomActionBarState extends State<BottomActionBar>
               curve: Curves.easeOutCubic,
               opacity: dockOpacity,
               child: AnimatedBuilder(
-                animation: anim,
+                animation: Listenable.merge([_tajweedAnim, _hideAnim]),
                 builder: (context, child) {
-                  final double t = anim.value;
+                  final double t = hideAnim.value;
                   final double dockHeight = lerpDouble(46.0, 56.0, t)!;
                   final EdgeInsets dockPadding = EdgeInsets.symmetric(
                     horizontal: 8.0 * t,
@@ -180,17 +209,17 @@ class _BottomActionBarState extends State<BottomActionBar>
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // ── Subordinate Satellite 1: Tajweed Toggle (Collapsible) ──
+                  // ── Subordinate Satellite 1: Tajweed Toggle (Collapsible on recording & autoscroll) ──
                   SizeTransition(
                     axis: Axis.horizontal,
                     alignment: Alignment.center,
-                    sizeFactor: anim,
+                    sizeFactor: tajweedAnim,
                     child: FadeTransition(
-                      opacity: anim,
+                      opacity: tajweedAnim,
                       child: ScaleTransition(
-                        scale: anim,
+                        scale: tajweedAnim,
                         child: IgnorePointer(
-                          ignoring: widget.isAutoScrolling,
+                          ignoring: widget.isAutoScrolling || widget.isRecording,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -204,6 +233,7 @@ class _BottomActionBarState extends State<BottomActionBar>
                                 isActive: widget.isTajweed,
                                 c: c,
                                 isDark: isDark,
+                                isRecording: widget.isRecording,
                                 onTap: () {
                                   HapticFeedback.lightImpact();
                                   widget.onToggleTajweed();
@@ -220,15 +250,15 @@ class _BottomActionBarState extends State<BottomActionBar>
                   // ── Dominant Hero Centerpiece: Recite / Stop / Pause ──
                   _buildHeroReciteButton(c, app, isDark, isAr),
 
-                  // ── Subordinate Satellite 2: Hide Verses Toggle (Collapsible) ──
+                  // ── Subordinate Satellite 2: Hide Verses Toggle (Accessible during recording in 28dp micro-mode) ──
                   SizeTransition(
                     axis: Axis.horizontal,
                     alignment: Alignment.center,
-                    sizeFactor: anim,
+                    sizeFactor: hideAnim,
                     child: FadeTransition(
-                      opacity: anim,
+                      opacity: hideAnim,
                       child: ScaleTransition(
-                        scale: anim,
+                        scale: hideAnim,
                         child: IgnorePointer(
                           ignoring: widget.isAutoScrolling,
                           child: Row(
@@ -245,6 +275,7 @@ class _BottomActionBarState extends State<BottomActionBar>
                                 isActive: widget.isBlur,
                                 c: c,
                                 isDark: isDark,
+                                isRecording: widget.isRecording,
                                 onTap: () {
                                   HapticFeedback.lightImpact();
                                   widget.onToggleBlur();
@@ -277,8 +308,12 @@ class _BottomActionBarState extends State<BottomActionBar>
     required bool isActive,
     required ThemeColors c,
     required bool isDark,
+    required bool isRecording,
     required VoidCallback onTap,
   }) {
+    final double size = isRecording ? 28.0 : 34.0;
+    final double iconSize = isRecording ? 15.0 : 18.0;
+    final double opacity = isRecording ? (isActive ? 0.80 : 0.40) : 1.0;
     final Color activeColor = c.primary;
     final Color contentColor = isActive
         ? activeColor
@@ -289,28 +324,33 @@ class _BottomActionBarState extends State<BottomActionBar>
       waitDuration: const Duration(milliseconds: 500),
       child: _TactileScaleButton(
         onTap: onTap,
-        child: AnimatedContainer(
+        child: AnimatedOpacity(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: isActive
-                ? activeColor.withValues(alpha: isDark ? 0.22 : 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-            border: Border.all(
+          opacity: opacity,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
               color: isActive
-                  ? activeColor.withValues(alpha: isDark ? 0.45 : 0.35)
+                  ? activeColor.withValues(alpha: isDark ? 0.22 : 0.12)
                   : Colors.transparent,
-              width: 0.75,
+              borderRadius: BorderRadius.circular(isRecording ? 9 : 11),
+              border: Border.all(
+                color: isActive
+                    ? activeColor.withValues(alpha: isDark ? 0.45 : 0.35)
+                    : Colors.transparent,
+                width: 0.75,
+              ),
             ),
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            icon,
-            color: contentColor,
-            size: 18,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              color: contentColor,
+              size: iconSize,
+            ),
           ),
         ),
       ),

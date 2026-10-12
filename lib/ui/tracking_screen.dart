@@ -62,6 +62,8 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _lastAyah;
   int? _lastSurah;
   bool _isAutoScrolling = false;
+  bool _isUserDragging = false;
+  DateTime? _lastScrollTime;
 
   bool _showTajweedBanner = false;
   Timer? _tajweedBannerTimer;
@@ -91,7 +93,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
-          _forceScrollToAyah(ayah);
+          _lastAyah = ayah;
+          _scrollToAyahEyeView(ayah);
         }
       });
     }
@@ -140,11 +143,11 @@ class _TrackingScreenState extends State<TrackingScreen>
   void didUpdateWidget(TrackingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isRecording && !oldWidget.isRecording) {
-      _lastAyah = null;
-      final match = widget.controller.currentMatchedVerse;
-      if (match != null && match.verse.surah == widget.controller.targetSurah) {
-        _forceScrollToAyah(match.verse.ayah);
-      }
+      final int targetAyah = widget.controller.currentMatchedVerse?.verse.ayah ??
+          widget.controller.activeAyah.value ??
+          1;
+      _lastAyah = targetAyah;
+      _scrollToAyahEyeView(targetAyah);
     }
 
     if (widget.isVoiceSearching && !oldWidget.isVoiceSearching) {
@@ -196,36 +199,157 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _onActiveAyahChanged() {
     final active = widget.controller.activeAyah.value;
-    final match = widget.controller.currentMatchedVerse;
-    if (active != null &&
-        active != _lastAyah &&
-        match != null &&
-        match.verse.surah == widget.controller.targetSurah) {
+    if (active != null && active != _lastAyah) {
       _lastAyah = active;
+
+      // ── IF RECITING: ZERO SCROLLING IF THE NEXT AYAH IS ALREADY CLEARLY VISIBLE ON SCREEN! ──
+      if (widget.isRecording) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final renderBox =
+              _keys[active]?.currentContext?.findRenderObject() as RenderBox?;
+          if (renderBox != null && renderBox.hasSize && renderBox.attached) {
+            final mediaQuery = MediaQuery.of(context);
+            final double screenHeight = mediaQuery.size.height;
+            final double topPadding = mediaQuery.padding.top;
+            final double bottomPadding = mediaQuery.padding.bottom;
+            final bool isFullscreenMode =
+                widget.isRecording || _isAutoScrolling;
+
+            final double topObstruction =
+                isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
+            final double bottomObstruction =
+                bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
+
+            final double upperClearBoundary = topObstruction + 8.0;
+            final double bottomClearBoundary =
+                screenHeight - bottomObstruction - 12.0;
+
+            final Offset globalPos = renderBox.localToGlobal(Offset.zero);
+            final double ayahTop = globalPos.dy;
+
+            // If the start of this Ayah is already clearly visible between the bars:
+            // ZERO SCROLLING! Keep the reciter's eyes completely undisturbed!
+            if (ayahTop >= upperClearBoundary &&
+                ayahTop <= bottomClearBoundary) {
+              return;
+            }
+          }
+
+          // Ayah is off-screen or under a bar: smoothly scroll it to the 30% eye view!
+          _scrollToAyahEyeView(active);
+        });
+        return;
+      }
+
+      // If not recording (manual tap, voice search candidate, etc.): scroll to 30% eye view
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _forceScrollToAyah(active);
+          _scrollToAyahEyeView(active);
         }
       });
     }
   }
 
-  void _forceScrollToAyah(int ayah) {
+  void _scrollToAyahEyeView(int ayah) {
     if (!_scroll.hasClients) return;
 
-    if (ayah == 1) {
-      _scroll.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-      );
+    final mediaQuery = MediaQuery.of(context);
+    final double screenHeight = mediaQuery.size.height;
+    final double topPadding = mediaQuery.padding.top;
+    final double bottomPadding = mediaQuery.padding.bottom;
+    final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
+
+    final double topObstruction =
+        isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
+    final double bottomObstruction =
+        bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
+
+    // 70% from down = 30% from up (0.30)
+    // Strictly clamped so it is NEVER behind the top bar, NEVER behind the bottom bar, NEVER out of screen
+    final double targetGazeY = screenHeight > 0
+        ? (screenHeight * 0.30).clamp(
+            topObstruction + 16.0,
+            screenHeight - bottomObstruction - 40.0,
+          )
+        : 180.0;
+
+    final double targetAlignment =
+        screenHeight > 0 ? (targetGazeY / screenHeight).clamp(0.0, 1.0) : 0.30;
+
+    _lastScrollTime = DateTime.now();
+
+    _listController.animateToItem(
+      index: ayah,
+      scrollController: _scroll,
+      alignment: targetAlignment,
+      rect: const Rect.fromLTWH(0, 0, 10, 10),
+      duration: (_) => const Duration(milliseconds: 320),
+      curve: (_) => Curves.easeOutCubic,
+    );
+  }
+
+  void _maintainWordInEyeView(int ayah, int wordIndex, Rect globalWordRect) {
+    if (_isAutoScrolling || _isUserDragging || !_scroll.hasClients) {
       return;
     }
 
-    _listController.jumpToItem(
-      index: ayah,
-      scrollController: _scroll,
-      alignment: 0.5,
+    if (_lastScrollTime != null &&
+        DateTime.now().difference(_lastScrollTime!).inMilliseconds < 350) {
+      return;
+    }
+
+    final int? activeAyah = widget.controller.activeAyah.value;
+    if (activeAyah == null || ayah != activeAyah) {
+      return;
+    }
+
+    final mediaQuery = MediaQuery.of(context);
+    final double screenHeight = mediaQuery.size.height;
+    final double topPadding = mediaQuery.padding.top;
+    final double bottomPadding = mediaQuery.padding.bottom;
+    final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
+
+    final double topObstruction =
+        isFullscreenMode ? (topPadding + 10.0) : (topPadding + 74.0);
+    final double bottomObstruction =
+        bottomPadding + (isFullscreenMode ? 64.0 : 96.0);
+
+    // ── CLEAR VISIBLE WINDOW (BETWEEN UPPER BAR AND BOTTOM BAR) ──
+    final double upperClearBoundary = topObstruction + 8.0;
+    final double bottomClearBoundary = screenHeight - bottomObstruction - 12.0;
+
+    if (bottomClearBoundary <= upperClearBoundary) return;
+
+    final double wordTop = globalWordRect.top;
+    final double wordBottom = globalWordRect.bottom;
+
+    // ── CORE USER RULE: IF WORDS ARE ON SCREEN & NOT UNDER ANY BARS, ZERO SCROLLING! ──
+    if (wordTop >= upperClearBoundary && wordBottom <= bottomClearBoundary) {
+      return; // ZERO SCROLLING while words are clearly visible on screen!
+    }
+
+    // ── ONLY MOVE WHEN THE WORD IS ACTUALLY OUT OF SCREEN OR UNDER A BAR ──
+    // Realign reading line to 30% from top (70% from bottom), clear of all bars
+    final double eyeLevelGazeY = (screenHeight * 0.30).clamp(
+      upperClearBoundary + 16.0,
+      bottomClearBoundary - 32.0,
+    );
+    final double delta = globalWordRect.center.dy - eyeLevelGazeY;
+
+    final double targetPixels = (_scroll.position.pixels + delta).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
+
+    if ((targetPixels - _scroll.position.pixels).abs() < 8.0) return;
+
+    _lastScrollTime = DateTime.now();
+
+    _scroll.animateTo(
+      targetPixels,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -854,61 +978,77 @@ class _TrackingScreenState extends State<TrackingScreen>
           widget.controller.targetSurah,
         );
 
+        final double screenHeight = MediaQuery.of(context).size.height;
         final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
         final topPadding = isFullscreenMode ? top + 10.0 : top + 74.0;
-        final bottomPadding = isFullscreenMode ? 48.0 : 100.0;
+        // Generous bottom runway allows even the last Ayahs of a Surah to rise to the 30% eye view comfortably
+        final bottomPadding = (screenHeight * 0.70).clamp(320.0, 850.0);
 
-        return CustomScrollView(
-          controller: _scroll,
-          physics: _isAutoScrolling
-              ? const NeverScrollableScrollPhysics()
-              : const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SuperSliverList(
-              listController: _listController,
-              delegate: SliverChildBuilderDelegate(
-                (_, i) {
-                  if (i == 0) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      height: topPadding,
+        return NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is ScrollStartNotification &&
+                notification.dragDetails != null) {
+              _isUserDragging = true;
+            } else if (notification is ScrollEndNotification) {
+              _isUserDragging = false;
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            controller: _scroll,
+            physics: _isAutoScrolling
+                ? const NeverScrollableScrollPhysics()
+                : const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SuperSliverList(
+                listController: _listController,
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) {
+                    if (i == 0) {
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        height: topPadding,
+                      );
+                    }
+
+                    if (i == displayVerses.length + 2) {
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeOutCubic,
+                        height: bottomPadding,
+                      );
+                    }
+
+                    if (i == displayVerses.length + 1) {
+                      return _buildEndOfSurahSection(c, app);
+                    }
+
+                    final v = displayVerses[i - 1];
+
+                    return RepaintBoundary(
+                      key: _keys.putIfAbsent(v.ayah, () => GlobalKey()),
+                      child: VerseRow(
+                        key: ValueKey('verse_${v.surah}_${v.ayah}'),
+                        verse: v,
+                        controller: widget.controller,
+                        isRecording: widget.isRecording,
+                        isAutoScrolling: _isAutoScrolling,
+                        onTap: () {
+                          widget.controller.setManualAyah(v.surah, v.ayah);
+                          _lastAyah = v.ayah;
+                          _scrollToAyahEyeView(v.ayah);
+                        },
+                        onWordErrorTap: null,
+                        onActiveWordPositioned: _maintainWordInEyeView,
+                      ),
                     );
-                  }
-
-                  if (i == displayVerses.length + 2) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeOutCubic,
-                      height: bottomPadding,
-                    );
-                  }
-
-                  if (i == displayVerses.length + 1) {
-                    return _buildEndOfSurahSection(c, app);
-                  }
-
-                  final v = displayVerses[i - 1];
-
-                  return RepaintBoundary(
-                    child: VerseRow(
-                      key: ValueKey('verse_${v.surah}_${v.ayah}'),
-                      verse: v,
-                      controller: widget.controller,
-                      isRecording: widget.isRecording,
-                      isAutoScrolling: _isAutoScrolling,
-                      onTap: () {
-                        widget.controller.setManualAyah(v.surah, v.ayah);
-                        _forceScrollToAyah(v.ayah);
-                      },
-                      onWordErrorTap: null,
-                    ),
-                  );
-                },
-                childCount: displayVerses.length + 3,
+                  },
+                  childCount: displayVerses.length + 3,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );

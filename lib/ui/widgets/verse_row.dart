@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -25,6 +26,8 @@ class VerseRow extends StatefulWidget {
   final VoidCallback? onWordErrorTap;
   final bool? isAudioPlaying;
   final VoidCallback? onAudioPlayToggle;
+  final void Function(int ayah, int wordIndex, Rect globalWordRect)?
+      onActiveWordPositioned;
 
   const VerseRow({
     super.key,
@@ -36,6 +39,7 @@ class VerseRow extends StatefulWidget {
     this.onWordErrorTap,
     this.isAudioPlaying,
     this.onAudioPlayToggle,
+    this.onActiveWordPositioned,
   });
 
   @override
@@ -52,6 +56,9 @@ class _VerseRowState extends State<VerseRow> {
   bool _wasAudioActive = false;
 
   final List<TapGestureRecognizer> _recognizers = [];
+  final GlobalKey _textKey = GlobalKey();
+  bool _positionCheckScheduled = false;
+  Timer? _delayedWordPositionTimer;
 
   @override
   void initState() {
@@ -62,7 +69,10 @@ class _VerseRowState extends State<VerseRow> {
     AppState.instance.isAudioPlaying.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioSurah.addListener(_onAudioStateChanged);
+    AppState.instance.activeAudioWordIndex.addListener(_onAudioWordChanged);
     _updateSubscription();
+    _scheduleWordPositionCheck();
+    _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
   }
 
   @override
@@ -87,8 +97,10 @@ class _VerseRowState extends State<VerseRow> {
     if (oldWidget.isRecording != widget.isRecording) {
       _invalidate();
       _onStateChanged();
+      _scheduleWordPositionCheck();
     }
     if (oldWidget.isAudioPlaying != widget.isAudioPlaying) {
+      _scheduleWordPositionCheck();
       setState(() {});
     }
   }
@@ -111,6 +123,8 @@ class _VerseRowState extends State<VerseRow> {
     AppState.instance.isAudioPlaying.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioSurah.removeListener(_onAudioStateChanged);
+    AppState.instance.activeAudioWordIndex.removeListener(_onAudioWordChanged);
+    _delayedWordPositionTimer?.cancel();
     _disposeRecognizers();
     super.dispose();
   }
@@ -125,11 +139,24 @@ class _VerseRowState extends State<VerseRow> {
       _invalidate();
       if (mounted) setState(() {});
     }
+    _scheduleWordPositionCheck();
+  }
+
+  void _onAudioWordChanged() {
+    final app = AppState.instance;
+    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
+        app.activeAudioSurah.value == widget.verse.surah &&
+        app.activeAudioAyah.value == widget.verse.ayah;
+    if (isAudioActive) {
+      _scheduleWordPositionCheck();
+    }
   }
 
   void _onActiveAyahChanged() {
     _updateSubscription();
     _onStateChanged();
+    _scheduleWordPositionCheck();
+    _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
   }
 
   void _updateSubscription() {
@@ -165,13 +192,151 @@ class _VerseRowState extends State<VerseRow> {
       if (mounted) {
         if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
           SchedulerBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
+            if (mounted) {
+              setState(() {});
+              _scheduleWordPositionCheck();
+            }
           });
         } else {
           setState(() {});
+          _scheduleWordPositionCheck();
         }
       }
     }
+  }
+
+  int _getActiveTargetIndex() {
+    final app = AppState.instance;
+    final surah = widget.verse.surah;
+    final ayah = widget.verse.ayah;
+
+    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
+        app.activeAudioSurah.value == surah &&
+        app.activeAudioAyah.value == ayah;
+
+    if (isAudioActive) {
+      return app.activeAudioWordIndex.value ?? 0;
+    }
+
+    final activeMatch = widget.controller.currentMatchedVerse;
+    final bool isRecitingActive = activeMatch != null &&
+        activeMatch.verse.surah == surah &&
+        activeMatch.verse.ayah == ayah;
+    final bool isSelected = widget.controller.activeAyah.value == ayah;
+    final bool isReciting = widget.isRecording && (isRecitingActive || isSelected);
+
+    if (!isReciting) {
+      return -1;
+    }
+
+    final words = widget.verse.uthmaniWords;
+    int lastMatched = -1;
+    for (int i = 0; i < words.length; i++) {
+      if (widget.controller.isWordGreen(ayah, i) ||
+          widget.controller.isWordRed(ayah, i) ||
+          widget.controller.isWordYellow(ayah, i) ||
+          widget.controller.isWordNeutral(ayah, i)) {
+        lastMatched = i;
+      }
+    }
+
+    // If words have been recited, track the current/most recent recited word.
+    // If no word is recited yet in this active Ayah, focus is on index 0 (first word).
+    return lastMatched >= 0 ? lastMatched : 0;
+  }
+
+  void _scheduleWordPositionCheck({Duration? delay}) {
+    if (!mounted || widget.isAutoScrolling || widget.onActiveWordPositioned == null) {
+      return;
+    }
+
+    if (delay != null) {
+      _delayedWordPositionTimer?.cancel();
+      _delayedWordPositionTimer = Timer(delay, () {
+        if (!mounted) return;
+        _checkActiveWordPosition();
+      });
+      return;
+    }
+
+    if (_positionCheckScheduled) return;
+    _positionCheckScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _positionCheckScheduled = false;
+      if (!mounted) return;
+      _checkActiveWordPosition();
+    });
+  }
+
+  void _checkActiveWordPosition() {
+    if (!mounted || widget.isAutoScrolling || widget.onActiveWordPositioned == null) {
+      return;
+    }
+
+    final targetIndex = _getActiveTargetIndex();
+    if (targetIndex < 0) return;
+
+    final textBox = _textKey.currentContext?.findRenderObject() as RenderBox?;
+    if (textBox == null || !textBox.hasSize || !textBox.attached) return;
+
+    final localRect = _calculateWordRect(targetIndex, textBox.size.width);
+    if (localRect == null) return;
+
+    final globalTopLeft = textBox.localToGlobal(localRect.topLeft);
+    final globalBottomRight = textBox.localToGlobal(localRect.bottomRight);
+    final globalRect = Rect.fromPoints(globalTopLeft, globalBottomRight);
+
+    widget.onActiveWordPositioned?.call(
+      widget.verse.ayah,
+      targetIndex,
+      globalRect,
+    );
+  }
+
+  Rect? _calculateWordRect(int targetIndex, double maxWidth) {
+    if (_cachedSpans == null ||
+        targetIndex < 0 ||
+        targetIndex >= widget.verse.uthmaniWords.length ||
+        maxWidth <= 0) {
+      return null;
+    }
+
+    final painter = TextPainter(
+      text: TextSpan(children: _cachedSpans),
+      textAlign: TextAlign.justify,
+      textDirection: TextDirection.rtl,
+    )..layout(minWidth: maxWidth, maxWidth: maxWidth);
+
+    int charOffset = 0;
+    final words = widget.verse.uthmaniWords;
+    for (int i = 0; i < targetIndex; i++) {
+      charOffset += words[i].length + 1;
+    }
+
+    final rects = painter.getBoxesForSelection(
+      TextSelection(
+        baseOffset: charOffset,
+        extentOffset: charOffset + words[targetIndex].length,
+      ),
+    );
+    painter.dispose();
+
+    if (rects.isEmpty) return null;
+    double left = rects.first.left;
+    double right = rects.first.right;
+    double top = rects.first.top;
+    double bottom = rects.first.bottom;
+
+    for (int k = 1; k < rects.length; k++) {
+      final r = rects[k];
+      if (r.left < left) left = r.left;
+      if (r.right > right) right = r.right;
+      if (r.top < top) top = r.top;
+      if (r.bottom > bottom) bottom = r.bottom;
+    }
+
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   /// Compact hash representing active state, word colors, blur, theme, and font size.
@@ -332,6 +497,7 @@ class _VerseRowState extends State<VerseRow> {
                           )
                         : null,
                     child: RichText(
+                      key: _textKey,
                       textAlign: TextAlign.justify,
                       textDirection: TextDirection.rtl,
                       text: TextSpan(children: _cachedSpans),
