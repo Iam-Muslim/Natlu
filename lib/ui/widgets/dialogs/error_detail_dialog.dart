@@ -54,7 +54,9 @@ class ErrorDetailDialog extends StatelessWidget {
         ayah: ayah,
         wordIndex: wordIndex,
       ),
-    );
+    ).then((_) {
+      QuranAudioService.instance.stop();
+    });
   }
 
   @override

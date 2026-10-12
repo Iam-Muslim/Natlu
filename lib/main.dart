@@ -211,6 +211,7 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
   bool _isVoiceSearching = false;
   final ValueNotifier<String> _voiceSearchAsrNotifier = ValueNotifier('');
   String get _voiceSearchAsrText => _voiceSearchAsrNotifier.value;
+  StreamSubscription? _transcriptionSub;
 
   // Timer logic removed, we now rely on Sherpa's VAD endpoint with 4s silence
 
@@ -224,7 +225,7 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
     AppState.instance.isAudioPlaying.addListener(_onVerseAudioPlayingChanged);
 
     // Global subscription for Voice Search text and Endpoint auto-stopping
-    _engine.transcriptionStream.listen((res) {
+    _transcriptionSub = _engine.transcriptionStream.listen((res) {
       if (_isVoiceSearching && mounted) {
         _voiceSearchAsrNotifier.value = res.text;
 
@@ -305,6 +306,8 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
     if (!kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
     }
+    AppState.instance.isAudioPlaying.removeListener(_onVerseAudioPlayingChanged);
+    _transcriptionSub?.cancel();
     AppState.instance.stopVerseAudio();
     _ctrl?.dispose();
     _voiceSearchAsrNotifier.dispose();
