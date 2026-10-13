@@ -20,6 +20,32 @@ class VerseSpanBuilder {
     return colors.text;
   }
 
+  /// Resolves the word display color, handling zero-GPU blur hiding for unrecited words.
+  static Color resolveWordDisplayColor({
+    required int ayah,
+    required int wordIndex,
+    required HighlightingController controller,
+    required AppState app,
+    required ThemeColors colors,
+    required bool isAutoScrolling,
+  }) {
+    if (wordIndex < 0) return colors.text;
+    final isRead = controller.isWordGreen(ayah, wordIndex) ||
+        controller.isWordRed(ayah, wordIndex) ||
+        controller.isWordYellow(ayah, wordIndex) ||
+        controller.isWordNeutral(ayah, wordIndex);
+
+    final isHidden = app.isBlurMode && !isRead && !isAutoScrolling;
+    return isHidden
+        ? Colors.transparent
+        : resolveWordColor(
+            ayah: ayah,
+            wordIndex: wordIndex,
+            controller: controller,
+            colors: colors,
+          );
+  }
+
   /// Builds the complete list of [InlineSpan]s representing an Ayah's text.
   static List<InlineSpan> buildSpans({
     required List<String> words,
@@ -37,22 +63,14 @@ class VerseSpanBuilder {
     final List<InlineSpan> spans = [];
 
     for (int i = 0; i < words.length; i++) {
-      final isRead =
-          controller.isWordGreen(ayah, i) ||
-          controller.isWordRed(ayah, i) ||
-          controller.isWordYellow(ayah, i) ||
-          controller.isWordNeutral(ayah, i);
-
-      // Zero-GPU blur: unrecited words match background (transparent)
-      final isHidden = app.isBlurMode && !isRead && !isAutoScrolling;
-      final Color color = isHidden
-          ? Colors.transparent
-          : resolveWordColor(
-              ayah: ayah,
-              wordIndex: i,
-              controller: controller,
-              colors: colors,
-            );
+      final Color color = resolveWordDisplayColor(
+        ayah: ayah,
+        wordIndex: i,
+        controller: controller,
+        app: app,
+        colors: colors,
+        isAutoScrolling: isAutoScrolling,
+      );
 
       final word = words[i];
       final wordIdx = i;

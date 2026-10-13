@@ -42,6 +42,216 @@ class VerseRow extends StatefulWidget {
     this.onActiveWordPositioned,
   });
 
+  /// Converts an integer to Eastern Arabic numeral glyphs (e.g. 1 -> '١').
+  static String toArabicDigits(int number) {
+    const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    return number.toString().split('').map((e) => digits[int.parse(e)]).join('');
+  }
+
+  /// Checks if audio is currently actively playing or buffering on this Ayah.
+  static bool isAyahAudioActive({
+    required int surah,
+    required int ayah,
+    required AppState app,
+  }) {
+    return (app.isAudioPlaying.value || app.isAudioBuffering.value) &&
+        app.activeAudioSurah.value == surah &&
+        app.activeAudioAyah.value == ayah;
+  }
+
+  /// Checks if the audio player is currently actively playing this Ayah.
+  static bool isAyahAudioPlaying(int surah, int ayah) {
+    final app = AppState.instance;
+    return app.activeAudioSurah.value == surah &&
+        app.activeAudioAyah.value == ayah &&
+        app.isAudioPlaying.value;
+  }
+
+  /// Checks if the audio player is currently buffering this Ayah.
+  static bool isAyahAudioBuffering(int surah, int ayah) {
+    final app = AppState.instance;
+    return app.activeAudioSurah.value == surah &&
+        app.activeAudioAyah.value == ayah &&
+        app.isAudioBuffering.value;
+  }
+
+  /// Handles selecting/tapping an Ayah: haptic feedback, manual selection, and persisting last position.
+  static Future<void> selectAyah({
+    required int surah,
+    required int ayah,
+    required HighlightingController controller,
+    VoidCallback? onTap,
+  }) async {
+    HapticFeedback.lightImpact();
+    if (controller.targetSurah != surah) {
+      await controller.setTargetSurah(surah, preserveOtherSurahStates: true);
+    }
+    controller.setManualAyah(surah, ayah);
+    AppState.instance.saveLastPosition(surah, ayah);
+    onTap?.call();
+  }
+
+  /// Determines if an Ayah is active (reciting active, selected, or audio active).
+  static bool isAyahActive({
+    required int surah,
+    required int ayah,
+    required HighlightingController controller,
+    required AppState app,
+  }) {
+    final activeMatch = controller.currentMatchedVerse;
+    final bool isRecitingActive = activeMatch != null &&
+        activeMatch.verse.surah == surah &&
+        activeMatch.verse.ayah == ayah;
+    final bool isSelected = controller.activeAyah.value == ayah;
+    final bool isAudioActive = isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+    return isRecitingActive || isSelected || isAudioActive;
+  }
+
+  /// Determines the active target word index (for audio word playback or recording focus).
+  static int getTargetWordIndex({
+    required int surah,
+    required int ayah,
+    required List<String> words,
+    required HighlightingController controller,
+    required AppState app,
+    required bool isRecording,
+    required bool isActive,
+  }) {
+    final bool isAudioActive = isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+
+    if (isAudioActive) {
+      return app.activeAudioWordIndex.value ?? -1;
+    }
+
+    if (isActive && isRecording) {
+      for (int i = 0; i < words.length; i++) {
+        if (!controller.isWordGreen(ayah, i) &&
+            !controller.isWordRed(ayah, i) &&
+            !controller.isWordYellow(ayah, i) &&
+            !controller.isWordNeutral(ayah, i)) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  }
+
+  /// Handles tapping a Quranic word:
+  /// - If the Ayah is not selected yet -> selects the Ayah first.
+  /// - If already selected:
+  ///     - Yellow word -> opens Tajweed error dialog
+  ///     - Non-yellow word -> plays word audio
+  static void handleWordTap({
+    required BuildContext context,
+    required int surah,
+    required int ayah,
+    required int wordIndex,
+    required String wordText,
+    required HighlightingController controller,
+    required bool isAutoScrolling,
+    VoidCallback? onWordErrorTap,
+    VoidCallback? onAyahTap,
+  }) {
+    if (isAutoScrolling) return;
+
+    final bool isAlreadySelected =
+        controller.targetSurah == surah && controller.activeAyah.value == ayah;
+
+    selectAyah(
+      surah: surah,
+      ayah: ayah,
+      controller: controller,
+      onTap: onAyahTap,
+    );
+
+    if (controller.isWordYellow(ayah, wordIndex)) {
+      AppState.instance.markTajweedWordClicked();
+      final errors = controller.getWordErrors(ayah, wordIndex);
+      if (errors != null && errors.isNotEmpty) {
+        ErrorDetailDialog.show(
+          context,
+          word: wordText,
+          errors: errors,
+          surah: surah,
+          ayah: ayah,
+          wordIndex: wordIndex,
+        );
+        onWordErrorTap?.call();
+      }
+    } else if (isAlreadySelected) {
+      QuranAudioService.instance.playWord(
+        surah: surah,
+        ayah: ayah,
+        wordIndex: wordIndex,
+      );
+    }
+  }
+
+  /// Toggles Ayah audio playback with buffering debounce and haptic feedback.
+  static void toggleAyahAudio({
+    required int surah,
+    required int ayah,
+    required HighlightingController controller,
+    required bool isRecording,
+    VoidCallback? onTap,
+    VoidCallback? onExplicitToggle,
+  }) {
+    if (AppState.instance.isAudioBuffering.value &&
+        AppState.instance.activeAudioSurah.value == surah &&
+        AppState.instance.activeAudioAyah.value == ayah) {
+      return;
+    }
+    HapticFeedback.selectionClick();
+    controller.setManualAyah(surah, ayah);
+    AppState.instance.saveLastPosition(surah, ayah);
+    onTap?.call();
+    if (onExplicitToggle != null) {
+      onExplicitToggle();
+    } else {
+      AppState.instance.toggleVerseAudio(
+        surah: surah,
+        ayah: ayah,
+        continuous: !isRecording,
+      );
+    }
+  }
+
+  /// Generates the active focus background pill decoration.
+  static BoxDecoration? activeHighlightDecoration({
+    required bool isWordActive,
+    required AppState app,
+  }) {
+    if (!isWordActive) return null;
+    final bool isBlack = app.isDarkMode;
+    return BoxDecoration(
+      color: app.colors.wordHighlight.withValues(
+        alpha: isBlack ? 0.12 : 0.085,
+      ),
+      borderRadius: BorderRadius.circular(8),
+    );
+  }
+
+  /// Generates the active Ayah gold border decoration.
+  static BoxDecoration activeAyahBorderDecoration({
+    required bool isActive,
+    required AppState app,
+    double borderRadius = 10,
+  }) {
+    final c = app.colors;
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: isActive
+            ? c.gold.withValues(alpha: app.isDarkMode ? 0.70 : 0.60)
+            : Colors.transparent,
+        width: 1.0,
+      ),
+      color: isActive
+          ? c.gold.withValues(alpha: app.isDarkMode ? 0.05 : 0.035)
+          : Colors.transparent,
+    );
+  }
+
   @override
   State<VerseRow> createState() => _VerseRowState();
 }
@@ -59,6 +269,9 @@ class _VerseRowState extends State<VerseRow> {
   final GlobalKey _textKey = GlobalKey();
   bool _positionCheckScheduled = false;
   Timer? _delayedWordPositionTimer;
+  int? _cachedRectTargetIndex;
+  double? _cachedRectMaxWidth;
+  Rect? _cachedWordRect;
 
   @override
   void initState() {
@@ -67,6 +280,7 @@ class _VerseRowState extends State<VerseRow> {
     widget.controller.globalRevision.addListener(_onStateChanged);
     AppState.instance.addListener(_onStateChanged);
     AppState.instance.isAudioPlaying.addListener(_onAudioStateChanged);
+    AppState.instance.isAudioBuffering.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioSurah.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioWordIndex.addListener(_onAudioWordChanged);
@@ -121,6 +335,7 @@ class _VerseRowState extends State<VerseRow> {
     }
     AppState.instance.removeListener(_onStateChanged);
     AppState.instance.isAudioPlaying.removeListener(_onAudioStateChanged);
+    AppState.instance.isAudioBuffering.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioSurah.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioWordIndex.removeListener(_onAudioWordChanged);
@@ -131,9 +346,11 @@ class _VerseRowState extends State<VerseRow> {
 
   void _onAudioStateChanged() {
     final app = AppState.instance;
-    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
-        app.activeAudioSurah.value == widget.verse.surah &&
-        app.activeAudioAyah.value == widget.verse.ayah;
+    final bool isAudioActive = VerseRow.isAyahAudioActive(
+      surah: widget.verse.surah,
+      ayah: widget.verse.ayah,
+      app: app,
+    );
     if (isAudioActive != _wasAudioActive) {
       _wasAudioActive = isAudioActive;
       _invalidate();
@@ -144,10 +361,14 @@ class _VerseRowState extends State<VerseRow> {
 
   void _onAudioWordChanged() {
     final app = AppState.instance;
-    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
-        app.activeAudioSurah.value == widget.verse.surah &&
-        app.activeAudioAyah.value == widget.verse.ayah;
+    final bool isAudioActive = VerseRow.isAyahAudioActive(
+      surah: widget.verse.surah,
+      ayah: widget.verse.ayah,
+      app: app,
+    );
     if (isAudioActive) {
+      _invalidate();
+      _onStateChanged();
       _scheduleWordPositionCheck();
     }
   }
@@ -182,6 +403,9 @@ class _VerseRowState extends State<VerseRow> {
   void _invalidate() {
     _lastFingerprint = -1;
     _cachedSpans = null;
+    _cachedRectTargetIndex = null;
+    _cachedRectMaxWidth = null;
+    _cachedWordRect = null;
   }
 
   void _onStateChanged() {
@@ -210,9 +434,11 @@ class _VerseRowState extends State<VerseRow> {
     final surah = widget.verse.surah;
     final ayah = widget.verse.ayah;
 
-    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
-        app.activeAudioSurah.value == surah &&
-        app.activeAudioAyah.value == ayah;
+    final bool isAudioActive = VerseRow.isAyahAudioActive(
+      surah: surah,
+      ayah: ayah,
+      app: app,
+    );
 
     if (isAudioActive) {
       return app.activeAudioWordIndex.value ?? -1;
@@ -247,6 +473,12 @@ class _VerseRowState extends State<VerseRow> {
 
   void _scheduleWordPositionCheck({Duration? delay}) {
     if (!mounted || widget.isAutoScrolling || widget.onActiveWordPositioned == null) {
+      return;
+    }
+
+    // Fast exit: If this Ayah is not the active target or audio-active, skip position layout checks completely.
+    // Eliminates thousands of redundant Timer and post-frame layouts across idle verses during scrolling!
+    if (_getActiveTargetIndex() < 0) {
       return;
     }
 
@@ -302,6 +534,12 @@ class _VerseRowState extends State<VerseRow> {
       return null;
     }
 
+    if (_cachedRectTargetIndex == targetIndex &&
+        _cachedRectMaxWidth == maxWidth &&
+        _cachedWordRect != null) {
+      return _cachedWordRect;
+    }
+
     final painter = TextPainter(
       text: TextSpan(children: _cachedSpans),
       textAlign: TextAlign.justify,
@@ -336,7 +574,11 @@ class _VerseRowState extends State<VerseRow> {
       if (r.bottom > bottom) bottom = r.bottom;
     }
 
-    return Rect.fromLTRB(left, top, right, bottom);
+    final result = Rect.fromLTRB(left, top, right, bottom);
+    _cachedRectTargetIndex = targetIndex;
+    _cachedRectMaxWidth = maxWidth;
+    _cachedWordRect = result;
+    return result;
   }
 
   /// Compact hash representing active state, word colors, blur, theme, and font size.
@@ -345,16 +587,14 @@ class _VerseRowState extends State<VerseRow> {
     final app = AppState.instance;
     final ayah = widget.verse.ayah;
     final surah = widget.verse.surah;
-    final activeMatch = ctrl.currentMatchedVerse;
-    final bool isRecitingActive =
-        activeMatch != null &&
-        activeMatch.verse.surah == surah &&
-        activeMatch.verse.ayah == ayah;
     final bool isSelected = ctrl.activeAyah.value == ayah;
-    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
-        app.activeAudioSurah.value == surah &&
-        app.activeAudioAyah.value == ayah;
-    final bool isActive = isRecitingActive || isSelected || isAudioActive;
+    final bool isAudioActive = VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+    final bool isActive = VerseRow.isAyahActive(
+      surah: surah,
+      ayah: ayah,
+      controller: ctrl,
+      app: app,
+    );
     final bool isCompleted = ctrl.completedAyahs.contains(ayah);
 
     int hash = isActive ? 1 : 0;
@@ -381,41 +621,22 @@ class _VerseRowState extends State<VerseRow> {
     return hash;
   }
 
-  void _handleWordErrorTap(int ayah, int wordIdx, String word) {
-    AppState.instance.markTajweedWordClicked();
-    final errors = widget.controller.getWordErrors(ayah, wordIdx);
-    if (errors != null && errors.isNotEmpty) {
-      ErrorDetailDialog.show(
-        context,
-        word: word,
-        errors: errors,
-        surah: widget.verse.surah,
-        ayah: ayah,
-        wordIndex: wordIdx,
-      );
-      widget.onWordErrorTap?.call();
-    }
-  }
-  static String _toArabicDigits(int number) {
-    const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return number.toString().split('').map((e) => digits[int.parse(e)]).join('');
-  }
+  static String _toArabicDigits(int number) => VerseRow.toArabicDigits(number);
 
   @override
   Widget build(BuildContext context) {
     final AppState app = AppState.instance;
     final ThemeColors c = app.colors;
     final words = widget.verse.uthmaniWords;
-    final activeMatch = widget.controller.currentMatchedVerse;
-    final bool isRecitingActive =
-        activeMatch != null &&
-        activeMatch.verse.surah == widget.verse.surah &&
-        activeMatch.verse.ayah == widget.verse.ayah;
-    final bool isSelected = widget.controller.activeAyah.value == widget.verse.ayah;
-    final bool isAudioActive = (app.isAudioPlaying.value || QuranAudioService.instance.isPaused) &&
-        app.activeAudioSurah.value == widget.verse.surah &&
-        app.activeAudioAyah.value == widget.verse.ayah;
-    final bool isActive = isRecitingActive || isSelected || isAudioActive;
+    final surah = widget.verse.surah;
+    final ayah = widget.verse.ayah;
+    final bool isAudioActive = VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+    final bool isActive = VerseRow.isAyahActive(
+      surah: surah,
+      ayah: ayah,
+      controller: widget.controller,
+      app: app,
+    );
     _wasAudioActive = isAudioActive;
 
     if (_cachedSpans == null) {
@@ -430,13 +651,29 @@ class _VerseRowState extends State<VerseRow> {
         colors: c,
         recognizersSink: _recognizers,
         onVerseTap: widget.onTap,
-        onWordErrorTap: _handleWordErrorTap,
-        onWordAudioTap: (ayah, wordIdx) {
-          widget.controller.setManualAyah(widget.verse.surah, ayah);
-          QuranAudioService.instance.playWord(
+        onWordErrorTap: (ayah, wordIdx, word) {
+          VerseRow.handleWordTap(
+            context: context,
             surah: widget.verse.surah,
             ayah: ayah,
             wordIndex: wordIdx,
+            wordText: word,
+            controller: widget.controller,
+            isAutoScrolling: widget.isAutoScrolling,
+            onWordErrorTap: widget.onWordErrorTap,
+            onAyahTap: widget.onTap,
+          );
+        },
+        onWordAudioTap: (ayah, wordIdx) {
+          VerseRow.handleWordTap(
+            context: context,
+            surah: widget.verse.surah,
+            ayah: ayah,
+            wordIndex: wordIdx,
+            wordText: widget.verse.uthmaniWords[wordIdx],
+            controller: widget.controller,
+            isAutoScrolling: widget.isAutoScrolling,
+            onAyahTap: widget.onTap,
           );
         },
       );
@@ -444,10 +681,14 @@ class _VerseRowState extends State<VerseRow> {
 
     return ExcludeSemantics(
       child: GestureDetector(
-        onTap: widget.isAutoScrolling ? null : () {
-          HapticFeedback.lightImpact();
-          widget.onTap?.call();
-        },
+        onTap: widget.isAutoScrolling
+            ? null
+            : () => VerseRow.selectAyah(
+                  surah: widget.verse.surah,
+                  ayah: widget.verse.ayah,
+                  controller: widget.controller,
+                  onTap: widget.onTap,
+                ),
         child: Directionality(
           textDirection: TextDirection.rtl,
           child: AnimatedContainer(
@@ -530,25 +771,14 @@ class _VerseRowState extends State<VerseRow> {
                       ],
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          if (AppState.instance.isAudioBuffering.value &&
-                              AppState.instance.activeAudioSurah.value == widget.verse.surah &&
-                              AppState.instance.activeAudioAyah.value == widget.verse.ayah) {
-                            return;
-                          }
-                          HapticFeedback.selectionClick();
-                          widget.controller.setManualAyah(widget.verse.surah, widget.verse.ayah);
-                          widget.onTap?.call();
-                          if (widget.onAudioPlayToggle != null) {
-                            widget.onAudioPlayToggle!();
-                          } else {
-                            AppState.instance.toggleVerseAudio(
-                              surah: widget.verse.surah,
-                              ayah: widget.verse.ayah,
-                              continuous: !widget.isRecording,
-                            );
-                          }
-                        },
+                        onTap: () => VerseRow.toggleAyahAudio(
+                          surah: widget.verse.surah,
+                          ayah: widget.verse.ayah,
+                          controller: widget.controller,
+                          isRecording: widget.isRecording,
+                          onTap: widget.onTap,
+                          onExplicitToggle: widget.onAudioPlayToggle,
+                        ),
                         child: Container(
                           width: 32,
                           padding: const EdgeInsets.symmetric(vertical: 2),
@@ -629,10 +859,8 @@ class _VerseAudioButton extends StatelessWidget {
         app.isAudioBuffering,
       ]),
       builder: (context, _) {
-        final bool isThisAyah = app.activeAudioSurah.value == surah &&
-            app.activeAudioAyah.value == ayah;
-        final bool isPlaying = isThisAyah && app.isAudioPlaying.value;
-        final bool isBuffering = isThisAyah && app.isAudioBuffering.value;
+        final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
+        final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
         return _buildButton(context, isPlaying, isBuffering: isBuffering);
       },
     );
@@ -673,26 +901,14 @@ class _VerseAudioButton extends StatelessWidget {
       label: isPlaying ? 'إيقاف مؤقت' : 'تشغيل التلاوة',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () {
-          // If already attempting to connect/buffer this Ayah, ignore duplicate rapid tap
-          if (AppState.instance.isAudioBuffering.value &&
-              AppState.instance.activeAudioSurah.value == surah &&
-              AppState.instance.activeAudioAyah.value == ayah) {
-            return;
-          }
-          HapticFeedback.selectionClick();
-          controller.setManualAyah(surah, ayah);
-          onTapVerse?.call();
-          if (onExplicitToggle != null) {
-            onExplicitToggle!();
-          } else {
-            AppState.instance.toggleVerseAudio(
-              surah: surah,
-              ayah: ayah,
-              continuous: !isRecording,
-            );
-          }
-        },
+        onTap: () => VerseRow.toggleAyahAudio(
+          surah: surah,
+          ayah: ayah,
+          controller: controller,
+          isRecording: isRecording,
+          onTap: onTapVerse,
+          onExplicitToggle: onExplicitToggle,
+        ),
         child: Container(
           width: 32,
           height: 30,
@@ -764,12 +980,15 @@ class _ActiveWordHighlightPainter extends CustomPainter {
     required this.app,
     required this.cachedSpans,
     this.isAudioMode = false,
-  }) : super(repaint: isAudioMode ? Listenable.merge([app.activeAudioWordIndex, app.isAudioPlaying]) : null);
+  }) : super(repaint: isAudioMode ? Listenable.merge([app.activeAudioWordIndex, app.isAudioPlaying, app.isAudioBuffering]) : null);
+
+  static final Map<int, RRect> _rrectCache = {};
 
   @override
   void paint(Canvas canvas, Size size) {
     int targetIndex = -1;
     if (isAudioMode) {
+      if (!app.isAudioPlaying.value && !app.isAudioBuffering.value) return;
       targetIndex = app.activeAudioWordIndex.value ?? -1;
     } else {
       for (int i = 0; i < words.length; i++) {
@@ -783,6 +1002,20 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       }
     }
     if (targetIndex < 0 || targetIndex >= words.length) return;
+
+    final bool isBlack = app.isDarkMode;
+    final Color highlightColor = app.colors.wordHighlight;
+    final double opacity = isBlack ? 0.12 : 0.085;
+    final paint = Paint()
+      ..color = highlightColor.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
+
+    final int cacheKey = Object.hash(ayah, targetIndex, (size.width * 10).round());
+    final cached = _rrectCache[cacheKey];
+    if (cached != null) {
+      canvas.drawRRect(cached, paint);
+      return;
+    }
 
     final painter = TextPainter(
       text: TextSpan(children: cachedSpans),
@@ -801,7 +1034,10 @@ class _ActiveWordHighlightPainter extends CustomPainter {
         extentOffset: charOffset + words[targetIndex].length,
       ),
     );
-    if (rects.isEmpty) return;
+    if (rects.isEmpty) {
+      painter.dispose();
+      return;
+    }
     double left = rects.first.left;
     double right = rects.first.right;
     double top = rects.first.top;
@@ -815,27 +1051,17 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       if (r.bottom > bottom) bottom = r.bottom;
     }
 
-    final bool isBlack = app.isDarkMode;
-
-    // Eye-comfortable color specifically adapted to Black vs White modes:
-    // Soothing serene teal/cyan that eliminates harsh/dirty gold glare, provides
-    // maximum eye comfort, and creates a tranquil focus aura.
-    final Color highlightColor = app.colors.wordHighlight;
-
-    // Slight, delicate opacity tuned for effortless readability without eye strain:
-    final double opacity = isBlack ? 0.12 : 0.085;
-
     final rrect = RRect.fromRectAndRadius(
       Rect.fromLTRB(left - 4.0, top - 2.5, right + 4.0, bottom + 2.5),
       const Radius.circular(8),
     );
 
-    final paint = Paint()
-      ..color = highlightColor.withValues(alpha: opacity)
-      ..style = PaintingStyle.fill;
+    if (_rrectCache.length > 500) _rrectCache.clear();
+    _rrectCache[cacheKey] = rrect;
 
     canvas.drawRRect(rrect, paint);
     painter.dispose();
+    return;
   }
 
   @override

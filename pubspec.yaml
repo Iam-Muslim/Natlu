@@ -50,6 +50,7 @@ flutter:
   assets:
     - assets/model/zipformer_p_arabic_v3.int8.onnx
     - assets/icon/app_icon.png
+    - assets/data/mushaf_pages.json
 
 
   fonts:

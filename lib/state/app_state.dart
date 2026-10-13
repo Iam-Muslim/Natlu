@@ -126,12 +126,16 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('blurMode', isBlurMode);
   }
 
-  // ── Mushaf Layout Mode (Bypassed) ──────────────────────────────────────────
-  // Deactivated to ensure optimal 60 FPS verse scrolling stability.
+  // ── Mushaf Layout Mode ──────────────────────────────────────────────────
   bool isMushafLayout = false;
 
-  void toggleMushafLayout() {
-    // Bypassed: disabled
+  void toggleMushafLayout() async {
+    isMushafLayout = !isMushafLayout;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mushafLayout', isMushafLayout);
+    } catch (_) {}
   }
 
   // ── Last Recitation Position ──────────────────────────────────────────────
@@ -383,13 +387,19 @@ class AppState extends ChangeNotifier {
     bool continuous = true,
   }) {
     final bool isWord = QuranAudioService.instance.isSingleWordMode;
-    if (!isWord &&
-        activeAudioSurah.value == surah &&
+    if (isWord) {
+      QuranAudioService.instance.play(
+        surah: surah,
+        ayah: ayah,
+        continuous: continuous,
+      );
+      return;
+    }
+    if (activeAudioSurah.value == surah &&
         activeAudioAyah.value == ayah &&
         isAudioPlaying.value) {
       QuranAudioService.instance.pause();
-    } else if (!isWord &&
-               activeAudioSurah.value == surah &&
+    } else if (activeAudioSurah.value == surah &&
                activeAudioAyah.value == ayah &&
                QuranAudioService.instance.isPaused) {
       QuranAudioService.instance.resume();
@@ -544,11 +554,7 @@ class AppState extends ChangeNotifier {
         _theme = brightness == Brightness.dark ? AppTheme.black : AppTheme.white;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
-      // Mushaf layout bypassed: reset to false so no user is stuck in Mushaf mode
-      isMushafLayout = false;
-      if (prefs.containsKey('mushafLayout')) {
-        await prefs.remove('mushafLayout');
-      }
+      isMushafLayout = prefs.getBool('mushafLayout') ?? false;
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
       hasChosenAutoScrollSpeed = prefs.getBool('has_chosen_speed') ?? false;

@@ -46,14 +46,19 @@ class VerseAudioPlayer {
   AudioPlayer? _player;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<int?>? _currentIndexSub;
 
   int _sessionId = 0;
-  String? _loadedAyahKey;
   int? _currentSurah;
   int? _currentAyah;
   bool _isContinuous = true;
   bool _isHandlingComplete = false;
   double _lastCompleteTime = 0.0;
+
+  // Gapless continuous playlist state
+  List<int> _playlistAyahs = [];
+  int? _playlistSurah;
+  bool _isAppending = false;
 
   // Single word auditioning mode state
   bool _isSingleWordMode = false;
@@ -96,6 +101,25 @@ class VerseAudioPlayer {
       audioDir.createSync(recursive: true);
     }
     return File('${audioDir.path}/$s$a.mp3');
+  }
+
+  /// Creates an AudioSource for an Ayah, utilizing local cached file if present,
+  /// or streaming URL while downloading in the background.
+  static Future<AudioSource> createAyahAudioSource(int surah, int ayah) async {
+    final url = getAyahAudioUrl(surah, ayah);
+    if (kIsWeb) {
+      return AudioSource.uri(Uri.parse(url));
+    }
+    try {
+      final file = await getLocalAyahFile(surah, ayah);
+      if (file.existsSync() && file.lengthSync() > 1024) {
+        return AudioSource.file(file.path);
+      }
+      unawaited(_downloadAndCacheAyah(surah, ayah, file));
+      return AudioSource.uri(Uri.parse(url));
+    } catch (_) {
+      return AudioSource.uri(Uri.parse(url));
+    }
   }
 
   static final Set<String> _inFlightDownloads = {};
@@ -157,6 +181,8 @@ class VerseAudioPlayer {
     _positionSub = null;
     _playerStateSub?.cancel();
     _playerStateSub = null;
+    _currentIndexSub?.cancel();
+    _currentIndexSub = null;
   }
 
   AudioPlayer get _audioPlayer {
@@ -172,6 +198,7 @@ class VerseAudioPlayer {
 
   void _ensureSubscriptions(AudioPlayer p) {
     _positionSub ??= p.positionStream.listen(_handlePosition);
+    _currentIndexSub ??= p.currentIndexStream.listen(_handleIndexChanged);
 
     _playerStateSub ??= p.playerStateStream.listen((state) {
       final app = AppState.instance;
@@ -183,14 +210,80 @@ class VerseAudioPlayer {
         _handleTrackComplete();
       } else if (state.playing) {
         app.isAudioPlaying.value = true;
-        // When audio officially begins playing, activate word 0 if not yet set
-        if (!_isSingleWordMode && app.activeAudioWordIndex.value == null) {
+        // When audio officially begins playing, activate target word or word 0
+        if (_isSingleWordMode) {
+          if (_targetWordIndex != null) {
+            app.activeAudioWordIndex.value = _targetWordIndex;
+          }
+        } else if (app.activeAudioWordIndex.value == null) {
           app.activeAudioWordIndex.value = 0;
         }
-      } else if (!state.playing && !isBuffering && (_isPaused || _currentAyah == null)) {
+      } else if (!state.playing && !isBuffering) {
         app.isAudioPlaying.value = false;
+        if (!_isSingleWordMode) {
+          app.activeAudioWordIndex.value = null;
+        }
       }
     });
+  }
+
+  /// Handles playlist index changes for seamless 0ms gapless transition between Ayahs.
+  void _handleIndexChanged(int? index) {
+    if (index == null || index < 0 || index >= _playlistAyahs.length) return;
+    if (_isSingleWordMode || _isPaused) return;
+
+    final newAyah = _playlistAyahs[index];
+    if (_currentAyah == newAyah) return;
+
+    _currentAyah = newAyah;
+    final app = AppState.instance;
+    app.activeAudioAyah.value = newAyah;
+    app.activeAudioWordIndex.value = 0;
+    if (_currentSurah != null) {
+      app.saveLastPosition(_currentSurah!, newAyah);
+    }
+
+    // Pre-cache next Ayah to disk in background on native
+    if (!kIsWeb && _currentSurah != null) {
+      final maxAyahs = (_currentSurah! >= 1 && _currentSurah! <= 114)
+          ? surahAyahCounts[_currentSurah! - 1]
+          : 286;
+      if (newAyah < maxAyahs) {
+        unawaited(ensureAyahDownloaded(_currentSurah!, newAyah + 1));
+      }
+    }
+
+    // Expand sliding playlist window ahead of time for uninterrupted playback
+    if (_isContinuous && !_isAppending && _currentSurah != null) {
+      final remaining = _playlistAyahs.length - 1 - index;
+      final lastInPlaylist = _playlistAyahs.last;
+      final maxAyahs = (_currentSurah! >= 1 && _currentSurah! <= 114)
+          ? surahAyahCounts[_currentSurah! - 1]
+          : 286;
+      if (remaining <= 2 && lastInPlaylist < maxAyahs) {
+        _expandPlaylist(_currentSurah!, maxAyahs);
+      }
+    }
+  }
+
+  Future<void> _expandPlaylist(int surah, int maxAyahs) async {
+    if (_isAppending) return;
+    _isAppending = true;
+    try {
+      final last = _playlistAyahs.last;
+      final nextStart = last + 1;
+      final nextEnd = (nextStart + 3).clamp(nextStart, maxAyahs);
+      for (int a = nextStart; a <= nextEnd; a++) {
+        final source = await createAyahAudioSource(surah, a);
+        if (_player != null && _playlistSurah == surah && !_isSingleWordMode) {
+          await _player!.addAudioSource(source);
+          _playlistAyahs.add(a);
+        }
+      }
+    } catch (_) {
+    } finally {
+      _isAppending = false;
+    }
   }
 
   /// Plays a single word in [ayah] of [surah] recited by Sheikh Mahmoud Khalil Al-Husary.
@@ -207,6 +300,8 @@ class VerseAudioPlayer {
     _currentAyah = ayah;
     _targetWordIndex = wordIndex;
     _isContinuous = false;
+    _playlistSurah = surah;
+    _playlistAyahs = [ayah];
 
     final app = AppState.instance;
     app.activeAudioSurah.value = surah;
@@ -240,8 +335,8 @@ class VerseAudioPlayer {
 
       final player = _audioPlayer;
 
-      // 2. Fetch/resolve cached 64kbps Ayah file
-      final audioPath = await ensureAyahDownloaded(surah, ayah);
+      // 2. Fetch/resolve cached 64kbps Ayah file AudioSource
+      final source = await createAyahAudioSource(surah, ayah);
       if (session != _sessionId) return;
 
       int startMs = 0;
@@ -253,29 +348,20 @@ class VerseAudioPlayer {
 
       _targetWordEndMs = endMs;
 
-      final ayahKey = '$surah:$ayah';
-      if (_loadedAyahKey != ayahKey) {
-        _loadedAyahKey = ayahKey;
-        try {
-          await player.stop();
-        } catch (_) {}
-        if (session != _sessionId) return;
+      try {
+        await player.stop();
+      } catch (_) {}
+      if (session != _sessionId) return;
 
-        final AudioSource source = audioPath.startsWith('http')
-            ? AudioSource.uri(Uri.parse(audioPath))
-            : AudioSource.file(audioPath);
-
-        await player.setAudioSource(
-          source,
-          initialPosition: Duration(milliseconds: startMs),
-        );
-      } else {
-        await player.seek(Duration(milliseconds: startMs));
-      }
+      await player.setAudioSources(
+        [source],
+        initialPosition: Duration(milliseconds: startMs),
+      );
       if (session != _sessionId) return;
 
       app.isAudioBuffering.value = false;
       app.isAudioPlaying.value = true;
+      app.activeAudioWordIndex.value = wordIndex;
 
       await player.play();
     } on PlatformException catch (e, stack) {
@@ -293,7 +379,8 @@ class VerseAudioPlayer {
     }
   }
 
-  /// Plays [ayah] in [surah] recited by Sheikh Mahmoud Khalil Al-Husary (64kbps).
+  /// Plays [ayah] in [surah] recited by Sheikh Mahmoud Khalil Al-Husary (64kbps) with
+  /// gapless 0ms playlist queuing matching `quran_library`.
   Future<void> play({
     required int surah,
     required int ayah,
@@ -321,13 +408,12 @@ class VerseAudioPlayer {
     _currentSurah = surah;
     _currentAyah = ayah;
     _isContinuous = continuous;
+    _playlistSurah = surah;
 
     final app = AppState.instance;
     app.activeAudioSurah.value = surah;
     app.activeAudioAyah.value = ayah;
     app.saveLastPosition(surah, ayah);
-    // CRITICAL BUGFIX: Do NOT set word index to 0 while buffering!
-    // Keep it null so no premature word highlighting occurs before sound plays.
     app.activeAudioWordIndex.value = null;
     app.isContinuousPlayback.value = continuous;
     app.isAudioBuffering.value = true;
@@ -338,27 +424,32 @@ class VerseAudioPlayer {
 
     try {
       final player = _audioPlayer;
+      final int maxAyahs = (surah >= 1 && surah <= 114)
+          ? surahAyahCounts[surah - 1]
+          : 286;
 
-      // 1. Ensure small 64kbps file is cached (~25KB)
-      final audioPath = await ensureAyahDownloaded(surah, ayah);
+      // Build sliding playlist window: 5 Ayahs ahead for instant gapless buffering
+      final int windowSize = continuous ? 5 : 1;
+      final int endAyah = (ayah + windowSize - 1).clamp(ayah, maxAyahs);
+      _playlistAyahs = [for (int a = ayah; a <= endAyah; a++) a];
+
+      final sources = await Future.wait(
+        _playlistAyahs.map((a) => createAyahAudioSource(surah, a)),
+      );
       if (session != _sessionId) return;
 
-      final ayahKey = '$surah:$ayah';
-      if (_loadedAyahKey != ayahKey) {
-        _loadedAyahKey = ayahKey;
-        try {
-          await player.stop();
-        } catch (_) {}
-        if (session != _sessionId) return;
+      try {
+        await player.stop();
+      } catch (_) {}
+      if (session != _sessionId) return;
 
-        final AudioSource source = audioPath.startsWith('http')
-            ? AudioSource.uri(Uri.parse(audioPath))
-            : AudioSource.file(audioPath);
+      await player.setAudioSources(
+        sources,
+        initialIndex: 0,
+      );
+      await player.setShuffleModeEnabled(false);
+      await player.setLoopMode(LoopMode.off);
 
-        await player.setAudioSource(source);
-      } else {
-        await player.seek(Duration.zero);
-      }
       if (session != _sessionId) return;
 
       app.isAudioBuffering.value = false;
@@ -366,16 +457,6 @@ class VerseAudioPlayer {
       app.activeAudioWordIndex.value = 0; // Highlight first word as sound starts
 
       await player.play();
-
-      // 2. Pre-cache the subsequent Ayah in background for gapless continuity
-      if (continuous) {
-        final maxAyahs = (surah >= 1 && surah <= 114)
-            ? surahAyahCounts[surah - 1]
-            : 286;
-        if (ayah < maxAyahs) {
-          unawaited(ensureAyahDownloaded(surah, ayah + 1));
-        }
-      }
     } catch (e, stack) {
       if (session == _sessionId) {
         log('Error playing $surah:$ayah: $e',
@@ -430,20 +511,14 @@ class VerseAudioPlayer {
       }
 
       final surah = _currentSurah;
-      final ayah = _currentAyah;
-
-      if (_isContinuous && surah != null && ayah != null) {
-        final int maxAyahs = (surah >= 1 && surah <= 114)
-            ? surahAyahCounts[surah - 1]
-            : 286;
-        if (ayah < maxAyahs) {
-          play(
-            surah: surah,
-            ayah: ayah + 1,
-            continuous: true,
-          );
-          return;
-        }
+      if (_isContinuous && surah != null && surah < 114) {
+        // Entire Surah finished in playlist; roll seamlessly to next Surah
+        play(
+          surah: surah + 1,
+          ayah: 1,
+          continuous: true,
+        );
+        return;
       }
 
       stop();
@@ -452,7 +527,7 @@ class VerseAudioPlayer {
     }
   }
 
-  /// Pauses playback and retains the current word highlight.
+  /// Pauses playback and clears active word highlight while retaining resume state.
   Future<void> pause() async {
     try {
       _isPaused = true;
@@ -466,6 +541,7 @@ class VerseAudioPlayer {
     final app = AppState.instance;
     app.isAudioPlaying.value = false;
     app.isAudioBuffering.value = false;
+    app.activeAudioWordIndex.value = null;
   }
 
   /// Resumes playback from the exact paused position.
@@ -507,10 +583,14 @@ class VerseAudioPlayer {
     _pausedWordIndex = null;
     _currentSurah = null;
     _currentAyah = null;
+    _playlistAyahs = [];
+    _playlistSurah = null;
+    _isAppending = false;
 
     final app = AppState.instance;
     app.activeAudioWordIndex.value = null;
     app.activeAudioAyah.value = null;
+    app.activeAudioSurah.value = null;
     app.isAudioBuffering.value = false;
     app.isAudioPlaying.value = false;
 
@@ -526,6 +606,5 @@ class VerseAudioPlayer {
       await _player?.dispose();
     } catch (_) {}
     _player = null;
-    _loadedAyahKey = null;
   }
 }

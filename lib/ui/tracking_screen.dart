@@ -16,6 +16,7 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
+import 'widgets/mushaf/mushaf_view.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
@@ -317,7 +318,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   /// - TOP RECOVERY: If scrolled too far up under the top bar, glides down to the natural eye view.
   /// - DISTANT NAVIGATION: If completely off-screen (picker, voice search), animates to natural 25% gaze.
   void _ensureAyahVisibleSmart(int ayah, {bool isManualTap = false}) {
-    if (!_scroll.hasClients || _isAutoScrolling) return;
+    if (AppState.instance.isMushafLayout || !_scroll.hasClients || _isAutoScrolling) return;
     if (_isUserDragging && !isManualTap) return;
 
     final bounds = _getSafeViewportBounds();
@@ -424,7 +425,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _maintainWordInEyeView(int ayah, int wordIndex, Rect globalWordRect) {
-    if (_isAutoScrolling || _isUserDragging || !_scroll.hasClients) {
+    if (AppState.instance.isMushafLayout || _isAutoScrolling || _isUserDragging || !_scroll.hasClients) {
       return;
     }
 
@@ -933,7 +934,25 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                     const SizedBox(width: 4),
 
-                    // ── 4. Settings Action ──
+                    // ── 4. Layout Mode Toggle (Mushaf vs Verses) ──
+                    _buildIconActionButton(
+                      icon: app.isMushafLayout
+                          ? Icons.menu_book_rounded
+                          : Icons.auto_stories_outlined,
+                      isActive: app.isMushafLayout,
+                      c: c,
+                      tooltip: app.isArabic
+                          ? (app.isMushafLayout ? 'عرض الآيات' : 'عرض المصحف')
+                          : (app.isMushafLayout ? 'Verse View' : 'Mushaf View'),
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        app.toggleMushafLayout();
+                      },
+                    ),
+
+                    const SizedBox(width: 4),
+
+                    // ── 5. Settings Action ──
                     _buildIconActionButton(
                       icon: Icons.settings_rounded,
                       isActive: false,
@@ -1112,6 +1131,15 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
+    if (app.isMushafLayout) {
+      return MushafView(
+        controller: widget.controller,
+        isRecording: widget.isRecording,
+        isAutoScrolling: _isAutoScrolling,
+        onToggleAutoScroll: _toggleAutoScroll,
+      );
+    }
+
     return Builder(
       key: const ValueKey('verse_list_content'),
       builder: (context) {

@@ -21,6 +21,17 @@ class TajweedTooltipPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (app.hasClickedTajweedWord) return;
 
+    // Fast check: if this Ayah has no yellow words, exit immediately!
+    // Eliminates 100% of synchronous HarfBuzz layout passes across idle verses during scrolling.
+    bool hasYellowWord = false;
+    for (int i = 0; i < words.length; i++) {
+      if (controller.isWordYellow(ayah, i)) {
+        hasYellowWord = true;
+        break;
+      }
+    }
+    if (!hasYellowWord) return;
+
     // We must exactly replicate the RichText layout to get accurate coordinates
     // We MUST set minWidth to size.width so the TextPainter matches the full width of the
     // stretched RichText, otherwise the RTL text will be offset to the left!
