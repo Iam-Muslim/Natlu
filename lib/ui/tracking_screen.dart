@@ -889,11 +889,25 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                     const SizedBox(width: 6),
 
-                    // ── 2. Read (Auto-Scroll) Action Button ──
+                    // ── 2. Voice Search Action Button (Small Toolbar Icon) ──
                     _buildIconActionButton(
-                      icon: _isAutoScrolling
-                          ? Icons.pause_rounded
-                          : Icons.auto_stories_rounded,
+                      icon: Icons.graphic_eq_rounded,
+                      isActive: widget.isVoiceSearching,
+                      c: c,
+                      tooltip: app.isArabic ? 'بحث صوتي' : 'Voice Search',
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        app.dismissBanner();
+                        AppState.instance.stopVerseAudio();
+                        widget.onVoiceSearchToggle();
+                      },
+                    ),
+
+                    const SizedBox(width: 4),
+
+                    // ── 3. Read (Auto-Scroll) Action Button ──
+                    _buildIconActionButton(
+                      icon: Icons.keyboard_double_arrow_down_rounded,
                       isActive: _isAutoScrolling,
                       c: c,
                       tooltip: app.isArabic
@@ -908,22 +922,6 @@ class _TrackingScreenState extends State<TrackingScreen>
                         app.dismissBanner();
                         AppState.instance.stopVerseAudio();
                         _toggleAutoScroll();
-                      },
-                    ),
-
-                    const SizedBox(width: 4),
-
-                    // ── 3. Voice Search Action Button (Small Toolbar Icon) ──
-                    _buildIconActionButton(
-                      icon: Icons.graphic_eq_rounded,
-                      isActive: widget.isVoiceSearching,
-                      c: c,
-                      tooltip: app.isArabic ? 'بحث صوتي' : 'Voice Search',
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        app.dismissBanner();
-                        AppState.instance.stopVerseAudio();
-                        widget.onVoiceSearchToggle();
                       },
                     ),
 
