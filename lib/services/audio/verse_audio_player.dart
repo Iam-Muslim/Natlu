@@ -289,7 +289,10 @@ class VerseAudioPlayer {
 
   AudioPlayer get _audioPlayer {
     if (_player == null) {
-      final p = AudioPlayer();
+      final p = AudioPlayer(
+        handleInterruptions: false,
+        handleAudioSessionActivation: false,
+      );
       _player = p;
       _ensureSubscriptions(p);
     } else {

@@ -72,10 +72,12 @@ class VerseSpanBuilder {
       color: colors.text,
     );
 
-    const InlineSpan spaceSpan = TextSpan(
+    final InlineSpan spaceSpan = TextSpan(
       text: ' ',
       style: TextStyle(
         fontFamily: 'HafsSmart',
+        fontSize: app.fontSize,
+        height: 2.6,
         wordSpacing: 5.0,
       ),
     );

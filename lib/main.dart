@@ -51,8 +51,10 @@ void main() async {
         } catch (_) {}
       }
 
-      // Initialize iOS audio session to disable VPIO processing for accurate ASR
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      // Initialize audio session for accurate ASR and concurrent play/record routing
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.android)) {
         try {
           final session = await AudioSession.instance;
           await session.configure(
@@ -61,7 +63,13 @@ void main() async {
               avAudioSessionCategoryOptions:
                   AVAudioSessionCategoryOptions.defaultToSpeaker |
                   AVAudioSessionCategoryOptions.allowBluetooth,
-              avAudioSessionMode: AVAudioSessionMode.defaultMode,
+              avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+              androidAudioAttributes: const AndroidAudioAttributes(
+                contentType: AndroidAudioContentType.speech,
+                usage: AndroidAudioUsage.voiceCommunication,
+              ),
+              androidAudioFocusGainType:
+                  AndroidAudioFocusGainType.gainTransientMayDuck,
             ),
           );
         } catch (e) {
@@ -423,11 +431,40 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
     return _engine.isInitialized;
   }
 
+  Future<void> _startAudioRecordingStream() async {
+    try {
+      await _audio.start(
+        onChunk: (chunk, isFinal) {
+          // Software mute: drop mic frames while verse audio is playing
+          // so the AI model never hears the phone speaker or accepts input!
+          if (AppState.instance.isAudioPlaying.value) return;
+          _ctrl?.feed(chunk, isFinal: isFinal);
+        },
+      );
+    } catch (e) {
+      DebugLogger.logSimple('AUDIO', '❌ ERROR: $e');
+      if (mounted) setState(() => _isRecording = false);
+    }
+  }
+
   void _onVerseAudioPlayingChanged() {
     final bool isAudio = AppState.instance.isAudioPlaying.value;
-    if (!isAudio && _isRecording) {
-      _audio.clearBuffer();
-      _engine.resetBuffer();
+    if (_isRecording) {
+      if (isAudio) {
+        // While verse audio is playing on Android, release the hardware mic
+        // so playback doesn't conflict with capture or get invalidated by Android OS.
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          _audio.stop().catchError((_) {});
+        }
+      } else {
+        // Verse audio has stopped:
+        _audio.clearBuffer();
+        _engine.resetBuffer();
+        // On Android, seamlessly re-open the mic stream so recitation works immediately!
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          _startAudioRecordingStream();
+        }
+      }
     }
     if (!kIsWeb) {
       if (isAudio || _isRecording || _isVoiceSearching) {
@@ -489,19 +526,7 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
 
         if (_ctrl != null) {
           _ctrl!.startRecordingSession();
-          _audio
-              .start(
-                onChunk: (chunk, isFinal) {
-                  // Software mute: drop mic frames while verse audio is playing
-                  // so the AI model never hears the phone speaker or accepts input!
-                  if (AppState.instance.isAudioPlaying.value) return;
-                  _ctrl?.feed(chunk, isFinal: isFinal);
-                },
-              )
-              .catchError((e) {
-                DebugLogger.logSimple('AUDIO', '❌ ERROR: $e');
-                if (mounted) setState(() => _isRecording = false);
-              });
+          await _startAudioRecordingStream();
         }
       }
     } catch (e) {

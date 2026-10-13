@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -538,16 +539,6 @@ class _VerseRowState extends State<VerseRow> {
       return _cachedWordRect;
     }
 
-    final int cacheKey =
-        Object.hash(widget.verse.ayah, targetIndex, (maxWidth * 10).round());
-    final precomputedRect = _ActiveWordHighlightPainter._rectCache[cacheKey];
-    if (precomputedRect != null) {
-      _cachedRectTargetIndex = targetIndex;
-      _cachedRectMaxWidth = maxWidth;
-      _cachedWordRect = precomputedRect;
-      return precomputedRect;
-    }
-
     final painter = TextPainter(
       text: TextSpan(children: _cachedSpans),
       textAlign: TextAlign.justify,
@@ -560,7 +551,7 @@ class _VerseRowState extends State<VerseRow> {
       charOffset += words[i].length + 1;
     }
 
-    final rects = painter.getBoxesForSelection(
+    final rawBoxes = painter.getBoxesForSelection(
       TextSelection(
         baseOffset: charOffset,
         extentOffset: charOffset + words[targetIndex].length,
@@ -568,18 +559,25 @@ class _VerseRowState extends State<VerseRow> {
     );
     painter.dispose();
 
-    if (rects.isEmpty) return null;
-    double left = rects.first.left;
-    double right = rects.first.right;
-    double top = rects.first.top;
-    double bottom = rects.first.bottom;
+    final validBoxes =
+        rawBoxes.where((b) => (b.right - b.left).abs() > 1.0).toList();
+    if (validBoxes.isEmpty) return null;
 
-    for (int k = 1; k < rects.length; k++) {
-      final r = rects[k];
-      if (r.left < left) left = r.left;
-      if (r.right > right) right = r.right;
-      if (r.top < top) top = r.top;
-      if (r.bottom > bottom) bottom = r.bottom;
+    double left = math.min(validBoxes.first.left, validBoxes.first.right);
+    double right = math.max(validBoxes.first.left, validBoxes.first.right);
+    double top = math.min(validBoxes.first.top, validBoxes.first.bottom);
+    double bottom = math.max(validBoxes.first.top, validBoxes.first.bottom);
+
+    for (int k = 1; k < validBoxes.length; k++) {
+      final b = validBoxes[k];
+      final bLeft = math.min(b.left, b.right);
+      final bRight = math.max(b.left, b.right);
+      final bTop = math.min(b.top, b.bottom);
+      final bBottom = math.max(b.top, b.bottom);
+      if (bLeft < left) left = bLeft;
+      if (bRight > right) right = bRight;
+      if (bTop < top) top = bTop;
+      if (bBottom > bottom) bottom = bBottom;
     }
 
     final result = Rect.fromLTRB(left, top, right, bottom);
@@ -730,13 +728,14 @@ class _VerseRowState extends State<VerseRow> {
                     painter: _cachedSpans != null &&
                             ((isActive && widget.isRecording) || isAudioActive)
                         ? _ActiveWordHighlightPainter(
-                            words: words,
+                            surah: widget.verse.surah,
                             ayah: widget.verse.ayah,
+                            words: words,
                             controller: widget.controller,
                             app: app,
                             cachedSpans: _cachedSpans!,
-                            targetIndex: _getActiveTargetIndex(),
                             isAudioMode: isAudioActive,
+                            isRecording: widget.isRecording,
                           )
                         : null,
                     foregroundPainter: _cachedSpans != null &&
@@ -979,49 +978,57 @@ class _VerseAudioButton extends StatelessWidget {
 /// Paints a tight, rounded background pill behind the current active target word.
 /// Fits the word's actual font bounds instead of the entire line height.
 class _ActiveWordHighlightPainter extends CustomPainter {
-  final List<String> words;
+  final int surah;
   final int ayah;
+  final List<String> words;
   final HighlightingController controller;
   final AppState app;
   final List<InlineSpan> cachedSpans;
-  final int targetIndex;
   final bool isAudioMode;
+  final bool isRecording;
 
   _ActiveWordHighlightPainter({
-    required this.words,
+    required this.surah,
     required this.ayah,
+    required this.words,
     required this.controller,
     required this.app,
     required this.cachedSpans,
-    required this.targetIndex,
-    this.isAudioMode = false,
-  }) : super(repaint: isAudioMode ? Listenable.merge([app.activeAudioWordIndex, app.isAudioPlaying, app.isAudioBuffering]) : null);
-
-  static final Map<int, RRect> _rrectCache = {};
-  static final Map<int, Rect> _rectCache = {};
+    required this.isAudioMode,
+    required this.isRecording,
+  }) : super(
+          repaint: isAudioMode
+              ? Listenable.merge([
+                  app.activeAudioWordIndex,
+                  app.isAudioPlaying,
+                  app.isAudioBuffering,
+                ])
+              : controller,
+        );
 
   @override
   void paint(Canvas canvas, Size size) {
-    int activeIndex = targetIndex;
+    final int activeIndex;
     if (isAudioMode) {
       if (!app.isAudioPlaying.value && !app.isAudioBuffering.value) return;
       activeIndex = app.activeAudioWordIndex.value ?? -1;
+    } else {
+      if (!isRecording) return;
+      // Recitation matching mode: highlight the coming word to be recited
+      int nextUnspoken = -1;
+      for (int i = 0; i < words.length; i++) {
+        if (!controller.isWordGreen(ayah, i) &&
+            !controller.isWordRed(ayah, i) &&
+            !controller.isWordYellow(ayah, i) &&
+            !controller.isWordNeutral(ayah, i)) {
+          nextUnspoken = i;
+          break;
+        }
+      }
+      activeIndex = nextUnspoken;
     }
+
     if (activeIndex < 0 || activeIndex >= words.length) return;
-
-    final bool isBlack = app.isDarkMode;
-    final Color highlightColor = app.colors.wordHighlight;
-    final double opacity = isBlack ? 0.12 : 0.085;
-    final paint = Paint()
-      ..color = highlightColor.withValues(alpha: opacity)
-      ..style = PaintingStyle.fill;
-
-    final int cacheKey = Object.hash(ayah, activeIndex, (size.width * 10).round());
-    final cached = _rrectCache[cacheKey];
-    if (cached != null) {
-      canvas.drawRRect(cached, paint);
-      return;
-    }
 
     final painter = TextPainter(
       text: TextSpan(children: cachedSpans),
@@ -1034,53 +1041,73 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       charOffset += words[i].length + 1;
     }
 
-    final rects = painter.getBoxesForSelection(
+    final rawBoxes = painter.getBoxesForSelection(
       TextSelection(
         baseOffset: charOffset,
         extentOffset: charOffset + words[activeIndex].length,
       ),
     );
-    if (rects.isEmpty) {
-      painter.dispose();
-      return;
-    }
-    double left = rects.first.left;
-    double right = rects.first.right;
-    double top = rects.first.top;
-    double bottom = rects.first.bottom;
-
-    for (int k = 1; k < rects.length; k++) {
-      final r = rects[k];
-      if (r.left < left) left = r.left;
-      if (r.right > right) right = r.right;
-      if (r.top < top) top = r.top;
-      if (r.bottom > bottom) bottom = r.bottom;
-    }
-
-    final rawRect = Rect.fromLTRB(left, top, right, bottom);
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromLTRB(left - 4.0, top - 2.5, right + 4.0, bottom + 2.5),
-      const Radius.circular(8),
-    );
-
-    if (_rrectCache.length > 500) {
-      _rrectCache.clear();
-      _rectCache.clear();
-    }
-    _rrectCache[cacheKey] = rrect;
-    _rectCache[cacheKey] = rawRect;
-
-    canvas.drawRRect(rrect, paint);
     painter.dispose();
-    return;
+
+    // Filter out zero-width cursor affinity / line margin boxes that cause bounds explosion
+    final validBoxes =
+        rawBoxes.where((b) => (b.right - b.left).abs() > 1.0).toList();
+    if (validBoxes.isEmpty) return;
+
+    final bool isBlack = app.isDarkMode;
+    final Color highlightColor = app.colors.wordHighlight;
+    final double opacity = isBlack ? 0.14 : 0.095;
+    final paint = Paint()
+      ..color = highlightColor.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
+
+    // Group boxes by line to unite all letter/glyph boxes into one smooth, single word pill
+    final List<Rect> lineRects = [];
+    for (final box in validBoxes) {
+      final bLeft = math.min(box.left, box.right);
+      final bRight = math.max(box.left, box.right);
+      final bTop = math.min(box.top, box.bottom);
+      final bBottom = math.max(box.top, box.bottom);
+      final rect = Rect.fromLTRB(bLeft, bTop, bRight, bBottom);
+
+      int lineIndex = -1;
+      for (int i = 0; i < lineRects.length; i++) {
+        final existing = lineRects[i];
+        if ((rect.top - existing.top).abs() < 12.0 ||
+            (rect.bottom - existing.bottom).abs() < 12.0) {
+          lineIndex = i;
+          break;
+        }
+      }
+
+      if (lineIndex >= 0) {
+        lineRects[lineIndex] = lineRects[lineIndex].expandToInclude(rect);
+      } else {
+        lineRects.add(rect);
+      }
+    }
+
+    for (final lineRect in lineRects) {
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromLTRB(
+          lineRect.left - 4.0,
+          lineRect.top - 2.0,
+          lineRect.right + 4.0,
+          lineRect.bottom + 2.0,
+        ),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(rrect, paint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _ActiveWordHighlightPainter oldDelegate) {
-    return oldDelegate.ayah != ayah ||
-        oldDelegate.targetIndex != targetIndex ||
+    return oldDelegate.surah != surah ||
+        oldDelegate.ayah != ayah ||
         oldDelegate.cachedSpans != cachedSpans ||
-        oldDelegate.isAudioMode != isAudioMode;
+        oldDelegate.isAudioMode != isAudioMode ||
+        oldDelegate.isRecording != isRecording;
   }
 }
 

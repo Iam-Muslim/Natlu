@@ -684,50 +684,23 @@ class _MushafPageState extends State<_MushafPage> {
   }) {
     final type = lineData['t'] as String?;
 
-    // 1. Surah Header Line
+    // 1. Surah Header Line (Modern Flat Banner - من غير زخرفة)
     if (type == 'header') {
       final surahNum = lineData['s'] as int? ?? 1;
       final surahName = lineData['name'] as String? ?? 'سورة $surahNum';
 
-      return SizedBox(
-        width: lineWidth,
-        height: lineHeight,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => VerseRow.selectAyah(
-              surah: surahNum,
-              ayah: 1,
-              controller: widget.controller,
-            ),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 2),
-              padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 28),
-              decoration: BoxDecoration(
-                color: c.gold.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: c.gold.withValues(alpha: 0.35), width: 1.2),
-              ),
-              child: Text(
-                surahName,
-                textDirection: TextDirection.rtl,
-                textScaler: TextScaler.noScaling,
-                style: TextStyle(
-                  fontFamily: widget.wordFontFamily,
-                  fontSize: (fontSize * 0.80).clamp(15.0, 22.0),
-                  fontWeight: FontWeight.w700,
-                  color: c.gold,
-                ),
-              ),
-            ),
-          ),
-        ),
+      return _buildSurahHeaderBanner(
+        surahNum: surahNum,
+        surahName: surahName,
+        lineWidth: lineWidth,
+        lineHeight: lineHeight,
+        fontSize: fontSize,
+        c: c,
+        app: app,
       );
     }
 
-    // 2. Basmala Line
+    // 2. Basmala Line (Authentic Quranic Calligraphy)
     if (type == 'basmala') {
       return SizedBox(
         width: lineWidth,
@@ -922,7 +895,85 @@ class _MushafPageState extends State<_MushafPage> {
     );
   }
 
-  /// Customizable Ayah Marker: supports custom circular border, colors, width, and fonts.
+  /// Modern Flat Surah Header Banner (من غير زخرفة):
+  /// - Minimalist flat card container styled strictly with app theme tokens.
+  /// - Zero traditional decorative clipart or complex floral arabesque.
+  /// - Pure centered Surah title in authentic Quranic typography.
+  Widget _buildSurahHeaderBanner({
+    required int surahNum,
+    required String surahName,
+    required double lineWidth,
+    required double lineHeight,
+    required double fontSize,
+    required ThemeColors c,
+    required AppState app,
+  }) {
+    final bool isDark = app.isDarkMode;
+    final double bannerHeight = (lineHeight * 0.86).clamp(34.0, 44.0);
+
+    return SizedBox(
+      width: lineWidth,
+      height: lineHeight,
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              VerseRow.selectAyah(
+                surah: surahNum,
+                ayah: 1,
+                controller: widget.controller,
+              );
+            },
+            child: Container(
+              width: lineWidth,
+              height: bannerHeight,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: c.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: c.border.withValues(alpha: isDark ? 0.70 : 0.85),
+                  width: 0.85,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                surahName,
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: widget.wordFontFamily,
+                  fontSize: (fontSize * 0.82).clamp(16.0, 21.0),
+                  fontWeight: FontWeight.w700,
+                  color: c.text,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Modern Flat Ayah Marker:
+  /// - Modern flat squircle (rounded square) with zero ornaments (no زخرفة, no brackets).
+  /// - Numerals properly fit and are optically centered in the box with authentic Quranic typography.
+  /// - Eye-comfortable colors bound directly to app theme tokens (surfaceHigh, border, gold, primary).
+  /// - Smooth active states for recitation and audio playback.
   Widget _buildAyahMarker({
     required int surah,
     required int ayah,
@@ -931,19 +982,44 @@ class _MushafPageState extends State<_MushafPage> {
     required ThemeColors c,
     required AppState app,
   }) {
-    final double circleSize = (fontSize * 0.82).clamp(16.0, 24.0);
+    final bool isDark = app.isDarkMode;
     final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
     final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
 
-    final Color borderColor = (isPlaying || isBuffering)
-        ? c.primary
-        : (widget.ayahMarkerBorderColor ?? (isAyahActive ? c.gold : c.gold.withValues(alpha: 0.8)));
+    // Height of the flat box (matches line proportions)
+    final double boxHeight = (fontSize * 0.90).clamp(20.0, 26.0);
+    // Dynamic width adapting to 1, 2, or 3 Arabic digits so numerals fit comfortably
+    final double boxWidth = (ayah >= 100)
+        ? (boxHeight * 1.35)
+        : ((ayah >= 10) ? (boxHeight * 1.12) : boxHeight);
 
-    final Color bgColor = (isPlaying || isBuffering)
-        ? c.primary.withValues(alpha: app.isDarkMode ? 0.22 : 0.12)
-        : (isAyahActive ? c.gold.withValues(alpha: 0.18) : Colors.transparent);
+    // Proportional numeral font size in HafsSmart:
+    final double numFontSize = (ayah >= 100)
+        ? (boxHeight * 0.60)
+        : (boxHeight * 0.72);
 
-    final Color textColor = widget.ayahMarkerTextColor ?? ((isPlaying || isBuffering) ? c.primary : c.gold);
+    // App Theme Color Palette tokens:
+    final Color boxBgColor;
+    final Color boxBorderColor;
+    final Color numTextColor;
+
+    if (isPlaying || isBuffering) {
+      boxBgColor = c.primary;
+      boxBorderColor = c.primary;
+      numTextColor = c.onPrimary;
+    } else if (isAyahActive) {
+      boxBgColor = c.gold.withValues(alpha: isDark ? 0.22 : 0.15);
+      boxBorderColor = c.gold;
+      numTextColor = c.gold;
+    } else {
+      // Idle state: using app's exact surface elevation and border tokens
+      boxBgColor = c.surfaceHigh;
+      boxBorderColor = c.border.withValues(alpha: isDark ? 0.70 : 0.85);
+      numTextColor = c.gold;
+    }
+
+    final Color effectiveBorder = widget.ayahMarkerBorderColor ?? boxBorderColor;
+    final Color effectiveText = widget.ayahMarkerTextColor ?? numTextColor;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -956,46 +1032,59 @@ class _MushafPageState extends State<_MushafPage> {
         );
       },
       child: Container(
-        width: widget.showAyahMarkerCircle ? circleSize : null,
-        height: widget.showAyahMarkerCircle ? circleSize : null,
-        margin: const EdgeInsets.symmetric(horizontal: 2.0),
-        padding: widget.showAyahMarkerCircle ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 2.5),
+        width: widget.showAyahMarkerCircle ? boxWidth : null,
+        height: widget.showAyahMarkerCircle ? boxHeight : null,
+        margin: const EdgeInsets.symmetric(horizontal: 2.5),
+        alignment: Alignment.center,
         decoration: widget.showAyahMarkerCircle
             ? BoxDecoration(
-                shape: BoxShape.circle,
+                color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
+                borderRadius: BorderRadius.circular(boxHeight * 0.28), // Sleek flat squircle
                 border: Border.all(
-                  color: borderColor,
-                  width: widget.ayahMarkerBorderWidth,
+                  color: effectiveBorder,
+                  width: widget.ayahMarkerBorderWidth > 0 ? widget.ayahMarkerBorderWidth : 0.85,
                 ),
-                color: bgColor,
               )
             : null,
-        alignment: Alignment.center,
         child: isBuffering
             ? SizedBox(
-                width: circleSize * 0.45,
-                height: circleSize * 0.45,
+                width: boxHeight * 0.48,
+                height: boxHeight * 0.48,
                 child: CircularProgressIndicator(
-                  strokeWidth: 1.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(c.primary),
+                  strokeWidth: 1.6,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isPlaying ? c.onPrimary : c.primary,
+                  ),
                 ),
               )
             : isPlaying
                 ? Icon(
                     Icons.pause_rounded,
-                    size: circleSize * 0.58,
-                    color: c.primary,
+                    size: boxHeight * 0.60,
+                    color: c.onPrimary,
                   )
-                : Text(
-                    VerseRow.toArabicDigits(ayah),
-                    textDirection: TextDirection.rtl,
-                    textScaler: TextScaler.noScaling,
-                    style: TextStyle(
-                      fontFamily: widget.ayahMarkerFontFamily ?? widget.wordFontFamily,
-                      fontSize: widget.showAyahMarkerCircle ? circleSize * 0.48 : fontSize * 0.72,
-                      color: textColor,
-                      fontWeight: FontWeight.w700,
-                      height: 1.0,
+                : Center(
+                    child: Transform.translate(
+                      // HafsSmart Eastern Arabic numerals have extra ascender headroom;
+                      // a subtle -1.0px vertical compensation centers the glyph optically
+                      offset: const Offset(0, -1.0),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.center,
+                        child: Text(
+                          VerseRow.toArabicDigits(ayah),
+                          textDirection: TextDirection.rtl,
+                          textScaler: TextScaler.noScaling,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: widget.ayahMarkerFontFamily ?? widget.wordFontFamily,
+                            fontSize: numFontSize,
+                            color: effectiveText,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
       ),
@@ -1013,9 +1102,9 @@ class _MushafPageState extends State<_MushafPage> {
           textScaler: TextScaler.noScaling,
           style: TextStyle(
             fontFamily: widget.wordFontFamily,
-            fontSize: 19.0,
-            color: c.gold,
-            fontWeight: FontWeight.w700,
+            fontSize: 18.0,
+            color: c.textSecondary,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
