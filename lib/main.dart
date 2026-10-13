@@ -38,9 +38,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
-// //logs
-List<String> globalSessionLogs = [];
-
 void main() async {
   runZonedGuarded(
     () async {
@@ -77,7 +74,6 @@ void main() async {
 
       if (kReleaseMode) {
         debugPrint = (String? message, {int? wrapWidth}) {
-          // //logs: Send debugPrint into our custom print zone instead of the void!
           if (message != null) print(message);
         };
       }
@@ -101,12 +97,6 @@ void main() async {
     },
     zoneSpecification: ZoneSpecification(
       print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
-        // //logs
-        globalSessionLogs.add('[${DateTime.now().toIso8601String()}] $line');
-        if (globalSessionLogs.length > 5000) {
-          globalSessionLogs.removeRange(0, 1000);
-        }
-
         if (!kReleaseMode || kIsWeb) {
           parent.print(zone, line);
         }

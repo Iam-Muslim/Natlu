@@ -325,6 +325,7 @@ class VerseAudioPlayer {
     final app = AppState.instance;
     app.activeAudioSurah.value = surah;
     app.activeAudioAyah.value = ayah;
+    app.saveLastPosition(surah, ayah);
     // CRITICAL BUGFIX: Do NOT set word index to 0 while buffering!
     // Keep it null so no premature word highlighting occurs before sound plays.
     app.activeAudioWordIndex.value = null;

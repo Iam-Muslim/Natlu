@@ -140,7 +140,7 @@ class AppState extends ChangeNotifier {
   int lastAyah = 1;
 
   Future<void> saveLastPosition(int surah, int ayah) async {
-    if (surah < 1 || surah > 114) return;
+    if (surah < 1 || surah > 114 || ayah < 1 || ayah > 286) return;
     if (lastSurah == surah && lastAyah == ayah) return;
     lastSurah = surah;
     lastAyah = ayah;

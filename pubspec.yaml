@@ -18,7 +18,6 @@ dependencies:
   path_provider: ^2.1.5
   permission_handler: ^13.0.1
   record: ^7.1.1
-  share_plus: ^13.1.0
   shared_preferences: ^2.2.0
   # PINNED, do not loosen to ^1.13.5 without testing an iOS archive.
   # sherpa_onnx_ios 1.13.6 renamed the bundle to sherpa-onnx.xcframework but left
