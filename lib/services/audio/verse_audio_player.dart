@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' show log;
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
@@ -97,31 +98,56 @@ class VerseAudioPlayer {
     return File('${audioDir.path}/$s$a.mp3');
   }
 
-  /// Fast first-time cache: checks local disk first (0ms), otherwise downloads
-  /// the tiny 64kbps file (~25KB) with HTTP and caches it to disk.
+  static final Set<String> _inFlightDownloads = {};
+
+  /// Fast first-time cache: checks local disk first (0ms), otherwise returns the
+  /// streaming URL immediately for zero-wait progressive playback while caching
+  /// to disk in the background for instant future offline replays.
   static Future<String> ensureAyahDownloaded(int surah, int ayah) async {
+    final url = getAyahAudioUrl(surah, ayah);
+    if (kIsWeb) return url;
+
     try {
       final file = await getLocalAyahFile(surah, ayah);
       if (file.existsSync() && file.lengthSync() > 1024) {
         return file.path;
       }
 
-      final url = getAyahAudioUrl(surah, ayah);
-      final client = http.Client();
-      try {
-        final res = await client
-            .get(Uri.parse(url), headers: {'User-Agent': 'Flutter/Natlu'})
-            .timeout(const Duration(seconds: 15));
-        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          await file.writeAsBytes(res.bodyBytes, flush: true);
-          return file.path;
-        }
-      } finally {
-        client.close();
-      }
+      // Download and cache to disk in background; stream progressively right now
+      unawaited(_downloadAndCacheAyah(surah, ayah, file));
       return url;
     } catch (_) {
-      return getAyahAudioUrl(surah, ayah);
+      return url;
+    }
+  }
+
+  static Future<void> _downloadAndCacheAyah(
+    int surah,
+    int ayah,
+    File file,
+  ) async {
+    final key = '$surah:$ayah';
+    if (_inFlightDownloads.contains(key)) return;
+    _inFlightDownloads.add(key);
+
+    final client = http.Client();
+    try {
+      final url = getAyahAudioUrl(surah, ayah);
+      final res = await client.get(
+        Uri.parse(url),
+        headers: {
+          if (!kIsWeb) 'User-Agent': 'Flutter/Natlu',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        await file.writeAsBytes(res.bodyBytes, flush: true);
+      }
+    } catch (_) {
+      // Background cache failure is non-fatal; playback continues via HTTP stream
+    } finally {
+      _inFlightDownloads.remove(key);
+      client.close();
     }
   }
 
@@ -155,13 +181,13 @@ class VerseAudioPlayer {
 
       if (state.processingState == ProcessingState.completed) {
         _handleTrackComplete();
-      } else if (state.playing && !isBuffering) {
+      } else if (state.playing) {
         app.isAudioPlaying.value = true;
         // When audio officially begins playing, activate word 0 if not yet set
         if (!_isSingleWordMode && app.activeAudioWordIndex.value == null) {
           app.activeAudioWordIndex.value = 0;
         }
-      } else if (!state.playing) {
+      } else if (!state.playing && !isBuffering && (_isPaused || _currentAyah == null)) {
         app.isAudioPlaying.value = false;
       }
     });

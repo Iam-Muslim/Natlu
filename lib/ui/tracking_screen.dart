@@ -89,8 +89,11 @@ class _TrackingScreenState extends State<TrackingScreen>
     AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
 
-    // Warm up Surah timings in memory in the background for zero-latency instant play
+    // Warm up Surah timings and Ayah 1 audio in memory/disk in the background for zero-latency instant play
     unawaited(QuranTimingService.instance.ensureSurahLoaded(widget.controller.targetSurah));
+    if (!kIsWeb) {
+      unawaited(QuranAudioService.ensureAyahDownloaded(widget.controller.targetSurah, 1));
+    }
   }
 
   void _syncScreenWakeLock() {
@@ -607,6 +610,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
           await widget.controller.setTargetSurah(n);
           unawaited(QuranTimingService.instance.ensureSurahLoaded(n));
+          if (!kIsWeb) {
+            unawaited(QuranAudioService.ensureAyahDownloaded(n, 1));
+          }
           if (ayah != null) {
             widget.controller.setManualAyah(n, ayah);
           }
@@ -1194,6 +1200,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     await widget.controller.setTargetSurah(newSurah);
     unawaited(QuranTimingService.instance.ensureSurahLoaded(newSurah));
+    if (!kIsWeb) {
+      unawaited(QuranAudioService.ensureAyahDownloaded(newSurah, 1));
+    }
 
     if (mounted) {
       setState(() {

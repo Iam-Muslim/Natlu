@@ -21,6 +21,10 @@ class QuranAudioService {
   /// Returns the streaming URL for a Surah audio file from MP3Quran.
   static String getSurahAudioUrl(int surah) => VerseAudioPlayer.getSurahAudioUrl(surah);
 
+  /// Pre-caches or resolves Ayah audio file in background for instant 0ms playback.
+  static Future<String> ensureAyahDownloaded(int surah, int ayah) =>
+      VerseAudioPlayer.ensureAyahDownloaded(surah, ayah);
+
   /// Plays an individual word alone using Sheikh Al-Husary's recitation from MP3Quran.
   Future<void> playWord({
     required int surah,

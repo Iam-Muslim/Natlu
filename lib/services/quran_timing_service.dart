@@ -233,7 +233,7 @@ class QuranTimingService {
         uri,
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'Flutter/Natlu',
+          if (!kIsWeb) 'User-Agent': 'Flutter/Natlu',
         },
       ).timeout(const Duration(seconds: 15));
 
