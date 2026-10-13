@@ -34,6 +34,7 @@ import 'ui/tracking_screen.dart';
 import 'ui/widgets/dialogs/theme_selection_dialog.dart';
 import 'ui/widgets/dialogs/permission_dialog.dart';
 import 'ui/widgets/dialogs/model_download_dialog.dart';
+import 'ui/widgets/mushaf/mushaf_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -365,12 +366,8 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
           // silently discarding the final word's right-context tail every ayah.
         },
       );
-      if (initialSurah != 1) {
-        await _ctrl!.setTargetSurah(initialSurah);
-      }
-      if (initialAyah > 1) {
-        _ctrl!.setManualAyah(initialSurah, initialAyah);
-      }
+      await _ctrl!.setTargetSurah(initialSurah);
+      _ctrl!.setManualAyah(initialSurah, initialAyah);
       if (!kIsWeb) {
         try {
           WakelockPlus.enable();
@@ -521,11 +518,14 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
         AppState.instance.stopVerseAudio();
         _engine.resetBuffer();
 
-        // Instant UI feedback before hardware mic starts
-        if (mounted) setState(() => _isRecording = true);
-
         if (_ctrl != null) {
+          if (AppState.instance.isMushafMode) {
+            await MushafView.ensureActiveAyahOnCurrentPage(
+              controller: _ctrl!,
+            );
+          }
           _ctrl!.startRecordingSession();
+          if (mounted) setState(() => _isRecording = true);
           await _startAudioRecordingStream();
         }
       }

@@ -129,6 +129,7 @@ class AppState extends ChangeNotifier {
   // ── Mushaf Layout Mode ─────────────────────────────────────────────────────
 
   bool isMushafMode = false;
+  final ValueNotifier<int> currentMushafPage = ValueNotifier<int>(1);
 
   void toggleMushafMode() async {
     isMushafMode = !isMushafMode;
@@ -445,6 +446,12 @@ class AppState extends ChangeNotifier {
       QuranAudioService.instance.play(
         surah: currentSurah,
         ayah: currentAyah + 1,
+        continuous: true,
+      );
+    } else if (currentSurah < 114) {
+      QuranAudioService.instance.play(
+        surah: currentSurah + 1,
+        ayah: 1,
         continuous: true,
       );
     } else {

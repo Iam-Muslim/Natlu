@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
 
@@ -31,6 +33,18 @@ Map<int, List<Map<String, dynamic>>>? _mushafPagesCache;
 
 /// Fast lookup from "surah:ayah" to pageNumber
 Map<String, int>? _ayahToPageCache;
+
+/// Fast O(1) lookup: pageNumber -> first (surah, ayah)
+Map<int, (int, int)>? _pageFirstAyahCache;
+
+/// Fast O(1) lookup: pageNumber -> last MushafWordRef
+Map<int, MushafWordRef>? _pageLastWordCache;
+
+/// Fast O(1) lookup: pageNumber -> Set of all "surah:ayah" appearing on this page
+Map<int, Set<String>>? _pageAyahsCache;
+
+/// Fast O(1) lookup: pageNumber -> Set of all surahs appearing on this page
+Map<int, Set<int>>? _pageSurahsCache;
 
 /// Fast typed word reference within a Medina Mushaf page
 class MushafWordRef {
@@ -89,6 +103,127 @@ class MushafView extends StatefulWidget {
     this.showBottomPageNumber = true,
   });
 
+  /// Returns the first (surah, ayah) appearing on [pageNumber] in O(1) time.
+  static (int surah, int ayah)? getFirstAyahOnPage(int pageNumber) {
+    return _pageFirstAyahCache?[pageNumber];
+  }
+
+  /// Checks if the given Ayah is located on [pageNumber] in O(1) time.
+  static bool isAyahOnPage({
+    required int pageNumber,
+    required int surah,
+    required int ayah,
+  }) {
+    return _pageAyahsCache?[pageNumber]?.contains('$surah:$ayah') ?? false;
+  }
+
+  /// Returns the very last word reference located on [pageNumber] in O(1) time.
+  static MushafWordRef? getLastWordOnPage(int pageNumber) {
+    return _pageLastWordCache?[pageNumber];
+  }
+
+  /// Loads mushaf_pages.json if not already cached and builds instant O(1) lookup indices.
+  static Future<void> _loadMushafPagesJson() async {
+    if (_mushafPagesCache != null) return;
+    try {
+      final jsonStr = await rootBundle.loadString('assets/data/mushaf_pages.json');
+      final Map<String, dynamic> rawMap = json.decode(jsonStr);
+
+      final Map<int, List<Map<String, dynamic>>> pages = {};
+      final Map<String, int> ayahMap = {};
+      final Map<int, (int, int)> firstAyahMap = {};
+      final Map<int, MushafWordRef> lastWordMap = {};
+      final Map<int, Set<String>> pageAyahsMap = {};
+      final Map<int, Set<int>> pageSurahsMap = {};
+
+      rawMap.forEach((key, val) {
+        final pageNum = int.tryParse(key);
+        if (pageNum != null && val is List) {
+          final List<Map<String, dynamic>> lines = [];
+          final Set<String> pageAyahs = {};
+          final Set<int> pageSurahs = {};
+          (int, int)? firstAyah;
+          MushafWordRef? lastWord;
+
+          for (final line in val) {
+            if (line is Map) {
+              final castedLine = Map<String, dynamic>.from(line);
+              if (castedLine['t'] == 'header' && castedLine['s'] is int) {
+                pageSurahs.add(castedLine['s'] as int);
+              } else if (castedLine['t'] == 'text' && castedLine['w'] is List) {
+                final List<MushafWordRef> parsedWords = [];
+                for (final loc in castedLine['w']) {
+                  final parts = loc.toString().split(':');
+                  if (parts.length >= 3) {
+                    final s = int.parse(parts[0]);
+                    final a = int.parse(parts[1]);
+                    final w1 = int.parse(parts[2]);
+                    final ref = MushafWordRef(s, a, w1, w1 - 1);
+                    parsedWords.add(ref);
+                    ayahMap.putIfAbsent('$s:$a', () => pageNum);
+                    pageAyahs.add('$s:$a');
+                    pageSurahs.add(s);
+                    firstAyah ??= (s, a);
+                    lastWord = ref;
+                  }
+                }
+                castedLine['parsed_words'] = parsedWords;
+              }
+              lines.add(castedLine);
+            }
+          }
+          pages[pageNum] = lines;
+          pageAyahsMap[pageNum] = pageAyahs;
+          pageSurahsMap[pageNum] = pageSurahs;
+          if (firstAyah != null) firstAyahMap[pageNum] = firstAyah;
+          if (lastWord != null) lastWordMap[pageNum] = lastWord;
+        }
+      });
+
+      _mushafPagesCache = pages;
+      _ayahToPageCache = ayahMap;
+      _pageFirstAyahCache = firstAyahMap;
+      _pageLastWordCache = lastWordMap;
+      _pageAyahsCache = pageAyahsMap;
+      _pageSurahsCache = pageSurahsMap;
+    } catch (e) {
+      debugPrint('Error loading mushaf_pages.json: $e');
+    }
+  }
+
+  /// Ensures that the active Ayah is on the visible page.
+  /// If no Ayah on the current page is selected, automatically selects
+  /// the first Ayah at the top of the current page.
+  static Future<void> ensureActiveAyahOnCurrentPage({
+    required HighlightingController controller,
+    int? pageNumber,
+  }) async {
+    if (_mushafPagesCache == null) {
+      await _loadMushafPagesJson();
+    }
+    final page = pageNumber ?? AppState.instance.currentMushafPage.value;
+    final int? activeAyah = controller.activeAyah.value;
+    final int targetSurah = controller.targetSurah;
+
+    final bool isOnCurrentPage = activeAyah != null &&
+        isAyahOnPage(pageNumber: page, surah: targetSurah, ayah: activeAyah);
+
+    if (!isOnCurrentPage) {
+      final first = getFirstAyahOnPage(page);
+      if (first != null) {
+        if (controller.targetSurah != first.$1) {
+          await controller.setTargetSurah(
+            first.$1,
+            preserveOtherSurahStates: true,
+            clearTargetSurah: false,
+          );
+        }
+        controller.setManualAyah(first.$1, first.$2);
+        AppState.instance.saveLastPosition(first.$1, first.$2);
+      }
+    }
+  }
+
   @override
   State<MushafView> createState() => _MushafViewState();
 }
@@ -105,9 +240,11 @@ class _MushafViewState extends State<MushafView> {
   void initState() {
     super.initState();
     _currentPage = _findInitialPage();
+    AppState.instance.currentMushafPage.value = _currentPage;
     _pageController = PageController(initialPage: _currentPage - 1);
 
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+    widget.controller.addListener(_onControllerProgress);
     AppState.instance.activeAudioAyah.addListener(_onAudioAyahChanged);
     AppState.instance.activeAudioSurah.addListener(_onAudioAyahChanged);
 
@@ -119,73 +256,70 @@ class _MushafViewState extends State<MushafView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.activeAyah.removeListener(_onActiveAyahChanged);
+      oldWidget.controller.removeListener(_onControllerProgress);
       widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+      widget.controller.addListener(_onControllerProgress);
+    }
+    if (!oldWidget.isRecording && widget.isRecording) {
+      final active = widget.controller.activeAyah.value;
+      if (active == null ||
+          !MushafView.isAyahOnPage(
+            pageNumber: _currentPage,
+            surah: widget.controller.targetSurah,
+            ayah: active,
+          )) {
+        MushafView.ensureActiveAyahOnCurrentPage(
+          controller: widget.controller,
+          pageNumber: _currentPage,
+        );
+      }
     }
   }
 
   int _findInitialPage() {
-    final surah = widget.controller.targetSurah;
-    final ayah = widget.controller.activeAyah.value ?? 1;
+    final surah = widget.controller.targetSurah != 0
+        ? widget.controller.targetSurah
+        : AppState.instance.lastSurah;
+    final ayah = widget.controller.activeAyah.value ?? AppState.instance.lastAyah;
     if (_ayahToPageCache != null) {
       final key = '$surah:$ayah';
-      return _ayahToPageCache![key] ?? 1;
+      return _ayahToPageCache![key] ?? _ayahToPageCache!['$surah:1'] ?? 1;
     }
     return 1;
   }
 
   Future<void> _initMushafData() async {
-    if (_mushafPagesCache == null) {
-      try {
-        final jsonStr = await rootBundle.loadString('assets/data/mushaf_pages.json');
-        final Map<String, dynamic> rawMap = json.decode(jsonStr);
-
-        final Map<int, List<Map<String, dynamic>>> pages = {};
-        final Map<String, int> ayahMap = {};
-
-        rawMap.forEach((key, val) {
-          final pageNum = int.tryParse(key);
-          if (pageNum != null && val is List) {
-            final List<Map<String, dynamic>> lines = [];
-            for (final line in val) {
-              if (line is Map) {
-                final castedLine = Map<String, dynamic>.from(line);
-                if (castedLine['t'] == 'text' && castedLine['w'] is List) {
-                  final List<MushafWordRef> parsedWords = [];
-                  for (final loc in castedLine['w']) {
-                    final parts = loc.toString().split(':');
-                    if (parts.length >= 3) {
-                      final s = int.parse(parts[0]);
-                      final a = int.parse(parts[1]);
-                      final w1 = int.parse(parts[2]);
-                      parsedWords.add(MushafWordRef(s, a, w1, w1 - 1));
-                      ayahMap.putIfAbsent('$s:$a', () => pageNum);
-                    }
-                  }
-                  castedLine['parsed_words'] = parsedWords;
-                }
-                lines.add(castedLine);
-              }
-            }
-            pages[pageNum] = lines;
-          }
-        });
-
-        _mushafPagesCache = pages;
-        _ayahToPageCache = ayahMap;
-      } catch (e) {
-        debugPrint('Error loading mushaf_pages.json: $e');
-      }
-    }
+    await MushafView._loadMushafPagesJson();
 
     if (mounted) {
       final initialPage = _findInitialPage();
       _currentPage = initialPage;
+      AppState.instance.currentMushafPage.value = _currentPage;
+      if (widget.controller.targetSurah == 0) {
+        await widget.controller.setTargetSurah(
+          AppState.instance.lastSurah,
+          preserveOtherSurahStates: true,
+          clearTargetSurah: false,
+        );
+      }
       final targetIndex = _currentPage - 1;
-      if (_pageController.hasClients && (_pageController.page?.round() ?? 0) != targetIndex) {
-        _pageController.jumpToPage(targetIndex);
+      if (_pageController.hasClients) {
+        if ((_pageController.page?.round() ?? 0) != targetIndex) {
+          _pageController.jumpToPage(targetIndex);
+        }
+      } else {
+        _pageController.dispose();
+        _pageController = PageController(initialPage: targetIndex);
       }
       _ensurePageSurahsLoaded(_currentPage);
       setState(() => _isLoading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            _pageController.hasClients &&
+            (_pageController.page?.round() ?? 0) != targetIndex) {
+          _pageController.jumpToPage(targetIndex);
+        }
+      });
     }
   }
 
@@ -193,11 +327,72 @@ class _MushafViewState extends State<MushafView> {
   void dispose() {
     _debounceSyncTimer?.cancel();
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
+    widget.controller.removeListener(_onControllerProgress);
     AppState.instance.activeAudioAyah.removeListener(_onAudioAyahChanged);
     AppState.instance.activeAudioSurah.removeListener(_onAudioAyahChanged);
     _pageController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  bool _isAutoAdvancingPage = false;
+
+  void _onControllerProgress() {
+    if (!mounted || _isAutoAdvancingPage || _mushafPagesCache == null) return;
+
+    final ctrl = widget.controller;
+    final lastWord = MushafView.getLastWordOnPage(_currentPage);
+    if (lastWord == null) return;
+
+    // Check if the last word on the currently visible page was finished
+    final bool isLastWordFinished = ctrl.isWordGreen(lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
+        ctrl.isWordNeutral(lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
+        ctrl.completedAyahsFor(lastWord.surah).contains(lastWord.ayah);
+
+    if (!isLastWordFinished) return;
+
+    final int nextPage = _currentPage + 1;
+    if (nextPage > 604) return;
+
+    final nextFirst = MushafView.getFirstAyahOnPage(nextPage);
+    if (nextFirst == null) return;
+
+    final int nextSurah = nextFirst.$1;
+    final int nextAyah = nextFirst.$2;
+
+    _isAutoAdvancingPage = true;
+
+    () async {
+      try {
+        if (nextSurah != ctrl.targetSurah) {
+          // The next page begins with a NEW SURAH!
+          _goToPage(nextPage);
+
+          await ctrl.setTargetSurah(
+            nextSurah,
+            preserveOtherSurahStates: true,
+            clearTargetSurah: false,
+          );
+          ctrl.setManualAyah(nextSurah, nextAyah);
+          AppState.instance.saveLastPosition(nextSurah, nextAyah);
+          if (widget.isRecording) {
+            ctrl.startRecordingSession();
+          }
+        } else {
+          // If the next page is in the same Surah:
+          if (ctrl.activeAyah.value != nextAyah) {
+            ctrl.setManualAyah(nextSurah, nextAyah);
+            AppState.instance.saveLastPosition(nextSurah, nextAyah);
+          }
+          _goToPage(nextPage);
+        }
+      } catch (e) {
+        debugPrint('Error advancing page on last word: $e');
+      } finally {
+        await Future.delayed(const Duration(milliseconds: 600));
+        _isAutoAdvancingPage = false;
+      }
+    }();
   }
 
   void _onAudioAyahChanged() {
@@ -213,11 +408,14 @@ class _MushafViewState extends State<MushafView> {
 
   void _onActiveAyahChanged() {
     final active = widget.controller.activeAyah.value;
-    if (active != null && _ayahToPageCache != null) {
+    if (active != null) {
       final surah = widget.controller.targetSurah;
-      final targetPage = _ayahToPageCache!['$surah:$active'];
-      if (targetPage != null && targetPage != _currentPage) {
-        _goToPage(targetPage);
+      AppState.instance.saveLastPosition(surah, active);
+      if (_ayahToPageCache != null) {
+        final targetPage = _ayahToPageCache!['$surah:$active'];
+        if (targetPage != null && targetPage != _currentPage) {
+          _goToPage(targetPage);
+        }
       }
     }
   }
@@ -266,6 +464,7 @@ class _MushafViewState extends State<MushafView> {
     final clamped = page.clamp(1, 604);
     if (clamped == _currentPage) return;
     _currentPage = clamped;
+    AppState.instance.currentMushafPage.value = clamped;
     if (_pageController.hasClients) {
       _pageController.animateToPage(
         clamped - 1,
@@ -275,6 +474,10 @@ class _MushafViewState extends State<MushafView> {
     }
     _ensurePageSurahsLoaded(clamped);
     _debounceSyncSurah(clamped);
+    final first = MushafView.getFirstAyahOnPage(clamped);
+    if (first != null) {
+      AppState.instance.saveLastPosition(first.$1, first.$2);
+    }
   }
 
   void _nextPage() {
@@ -370,10 +573,15 @@ class _MushafViewState extends State<MushafView> {
                 final newPage = index + 1;
                 if (_currentPage == newPage) return;
                 _currentPage = newPage;
+                AppState.instance.currentMushafPage.value = newPage;
                 _ensurePageSurahsLoaded(newPage);
                 if (newPage < 604) _ensurePageSurahsLoaded(newPage + 1);
                 if (newPage > 1) _ensurePageSurahsLoaded(newPage - 1);
                 _debounceSyncSurah(newPage);
+                final first = MushafView.getFirstAyahOnPage(newPage);
+                if (first != null) {
+                  AppState.instance.saveLastPosition(first.$1, first.$2);
+                }
               },
               itemBuilder: (context, index) {
                 final pageNumber = index + 1;
@@ -460,16 +668,28 @@ class _MushafPageState extends State<_MushafPage> {
   }
 
   void _extractPageMetadata() {
-    final lines = _mushafPagesCache?[widget.pageNumber] ?? [];
-    for (final line in lines) {
-      if (line['t'] == 'header' && line['s'] is int) {
-        _pageSurahs.add(line['s'] as int);
-      } else if (line['t'] == 'text') {
-        final words = line['parsed_words'] as List<MushafWordRef>?;
-        if (words != null) {
-          for (final w in words) {
-            _pageSurahs.add(w.surah);
-            _pageAyahs.add('${w.surah}:${w.ayah}');
+    _pageSurahs.clear();
+    _pageAyahs.clear();
+    final cachedSurahs = _pageSurahsCache?[widget.pageNumber];
+    if (cachedSurahs != null) {
+      _pageSurahs.addAll(cachedSurahs);
+    }
+    final cachedAyahs = _pageAyahsCache?[widget.pageNumber];
+    if (cachedAyahs != null) {
+      _pageAyahs.addAll(cachedAyahs);
+    }
+    if (_pageAyahs.isEmpty) {
+      final lines = _mushafPagesCache?[widget.pageNumber] ?? [];
+      for (final line in lines) {
+        if (line['t'] == 'header' && line['s'] is int) {
+          _pageSurahs.add(line['s'] as int);
+        } else if (line['t'] == 'text') {
+          final words = line['parsed_words'] as List<MushafWordRef>?;
+          if (words != null) {
+            for (final w in words) {
+              _pageSurahs.add(w.surah);
+              _pageAyahs.add('${w.surah}:${w.ayah}');
+            }
           }
         }
       }
@@ -477,6 +697,7 @@ class _MushafPageState extends State<_MushafPage> {
   }
 
   void _subscribe() {
+    widget.controller.addListener(_onRelevantChange);
     widget.controller.globalRevision.addListener(_onRelevantChange);
     widget.controller.activeAyah.addListener(_onRelevantChange);
     AppState.instance.activeAudioAyah.addListener(_onRelevantChange);
@@ -487,6 +708,7 @@ class _MushafPageState extends State<_MushafPage> {
   }
 
   void _unsubscribe(HighlightingController controller) {
+    controller.removeListener(_onRelevantChange);
     controller.globalRevision.removeListener(_onRelevantChange);
     controller.activeAyah.removeListener(_onRelevantChange);
     AppState.instance.activeAudioAyah.removeListener(_onRelevantChange);
@@ -502,19 +724,88 @@ class _MushafPageState extends State<_MushafPage> {
     super.dispose();
   }
 
+  int _lastFingerprint = -1;
+
+  int _computePageFingerprint() {
+    final ctrl = widget.controller;
+    final app = AppState.instance;
+
+    final int? activeAyah = ctrl.activeAyah.value;
+    final int targetSurah = ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
+    final int? audioAyah = app.activeAudioAyah.value;
+    final int? audioSurah = app.activeAudioSurah.value;
+
+    final bool reciterOnThisPage = activeAyah != null &&
+        (_pageAyahs.contains('$targetSurah:$activeAyah') ||
+            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: targetSurah, ayah: activeAyah));
+    final bool audioOnThisPage = audioAyah != null &&
+        audioSurah != null &&
+        (_pageAyahs.contains('$audioSurah:$audioAyah') ||
+            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: audioSurah, ayah: audioAyah));
+
+    if (!reciterOnThisPage && !audioOnThisPage) {
+      return (_hadActiveReciter || _hadActiveAudio) ? 1 : 0;
+    }
+
+    int hash = 17;
+    hash = hash * 31 + (activeAyah ?? 0);
+    hash = hash * 31 + targetSurah;
+    hash = hash * 31 + (audioAyah ?? 0);
+    hash = hash * 31 + (audioSurah ?? 0);
+    hash = hash * 31 + (app.activeAudioWordIndex.value ?? -1);
+    hash = hash * 31 + (app.isAudioPlaying.value ? 1 : 0);
+    hash = hash * 31 + (app.isAudioBuffering.value ? 1 : 0);
+    hash = hash * 31 + (widget.isRecording ? 1 : 0);
+
+    final int currentAyahToCheck = reciterOnThisPage ? activeAyah : (audioAyah ?? 0);
+    final verse = ctrl.repository.getVerse(
+      reciterOnThisPage ? targetSurah : (audioSurah ?? targetSurah),
+      currentAyahToCheck,
+    );
+    if (verse != null) {
+      final int wordCount = verse.uthmaniWords.length;
+      for (int i = 0; i < wordCount; i++) {
+        if (ctrl.isWordGreen(currentAyahToCheck, i)) {
+          hash = hash * 31 + (i + 1) * 7;
+        } else if (ctrl.isWordRed(currentAyahToCheck, i)) {
+          hash = hash * 31 + (i + 1) * 13;
+        } else if (ctrl.isWordYellow(currentAyahToCheck, i)) {
+          hash = hash * 31 + (i + 1) * 17;
+        }
+      }
+    }
+
+    return hash;
+  }
+
   void _onRelevantChange() {
     if (!mounted) return;
-    // Fast filter: Check if any active recitation or audio event matches this page
+    if (_pageAyahs.isEmpty) {
+      _extractPageMetadata();
+    }
     final int? activeAyah = widget.controller.activeAyah.value;
-    final int targetSurah = widget.controller.targetSurah;
+    final int targetSurah = widget.controller.targetSurah != 0
+        ? widget.controller.targetSurah
+        : AppState.instance.lastSurah;
     final int? audioAyah = AppState.instance.activeAudioAyah.value;
     final int? audioSurah = AppState.instance.activeAudioSurah.value;
 
-    final bool reciterOnThisPage = activeAyah != null && _pageAyahs.contains('$targetSurah:$activeAyah');
-    final bool audioOnThisPage = audioAyah != null && audioSurah != null && _pageAyahs.contains('$audioSurah:$audioAyah');
+    final bool reciterOnThisPage = activeAyah != null &&
+        (_pageAyahs.contains('$targetSurah:$activeAyah') ||
+            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: targetSurah, ayah: activeAyah));
+    final bool audioOnThisPage = audioAyah != null &&
+        audioSurah != null &&
+        (_pageAyahs.contains('$audioSurah:$audioAyah') ||
+            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: audioSurah, ayah: audioAyah));
 
-    // Only rebuild if recitation/audio is currently on this page OR was just on this page (to clear highlight)
-    if (reciterOnThisPage || audioOnThisPage || _hadActiveReciter || _hadActiveAudio) {
+    // Exit immediately if this page is completely idle
+    if (!reciterOnThisPage && !audioOnThisPage && !_hadActiveReciter && !_hadActiveAudio) {
+      return;
+    }
+
+    final fp = _computePageFingerprint();
+    if (fp != _lastFingerprint) {
+      _lastFingerprint = fp;
       _hadActiveReciter = reciterOnThisPage;
       _hadActiveAudio = audioOnThisPage;
       setState(() {});
@@ -740,7 +1031,10 @@ class _MushafPageState extends State<_MushafPage> {
         (!isLastLineOfPage || pageNumber <= 599) &&
         parsedWords.length >= 5;
 
+    final bool isDark = app.isDarkMode;
     final wordWidgets = <Widget>[];
+    int? highlightStartIndex;
+    int? highlightEndIndex;
 
     QuranVerse? cachedVerse;
     bool cachedIsAyahActive = false;
@@ -759,12 +1053,15 @@ class _MushafPageState extends State<_MushafPage> {
         cachedSurah = surah;
         cachedAyah = ayah;
         cachedVerse = widget.controller.repository.getVerse(surah, ayah);
-        cachedIsAyahActive = VerseRow.isAyahActive(
-          surah: surah,
-          ayah: ayah,
-          controller: widget.controller,
-          app: app,
-        );
+        final int effectiveTargetSurah = widget.controller.targetSurah != 0
+            ? widget.controller.targetSurah
+            : app.lastSurah;
+        final bool isSelected = effectiveTargetSurah == surah &&
+            widget.controller.activeAyah.value == ayah;
+        final bool isRecitingActive = widget.controller.currentMatchedVerse?.verse.surah == surah &&
+            widget.controller.currentMatchedVerse?.verse.ayah == ayah;
+        final bool isAudioActive = VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+        cachedIsAyahActive = isSelected || isRecitingActive || isAudioActive;
         cachedTargetIndex = cachedIsAyahActive
             ? VerseRow.getTargetWordIndex(
                 surah: surah,
@@ -795,8 +1092,9 @@ class _MushafPageState extends State<_MushafPage> {
         isAutoScrolling: widget.isAutoScrolling,
       );
 
-      void handleWordTap() {
+      void handleWordTap() async {
         if (widget.isAutoScrolling) return;
+        HapticFeedback.lightImpact();
         if (widget.controller.isWordYellow(ayah, wordIndex0)) {
           VerseRow.handleWordTap(
             context: context,
@@ -807,26 +1105,48 @@ class _MushafPageState extends State<_MushafPage> {
             controller: widget.controller,
             isAutoScrolling: widget.isAutoScrolling,
           );
-        } else {
-          VerseRow.selectAyah(
-            surah: surah,
-            ayah: ayah,
-            controller: widget.controller,
+          return;
+        }
+        if (widget.controller.targetSurah != surah) {
+          await widget.controller.setTargetSurah(
+            surah,
+            preserveOtherSurahStates: true,
+            clearTargetSurah: false,
           );
         }
+        widget.controller.setManualAyah(surah, ayah);
+        AppState.instance.saveLastPosition(surah, ayah);
+        if (mounted) setState(() {});
       }
 
+      // Modern, eye-comfortable active word focus pill:
+      // Distinct, soothing luminous oceanic teal with soft ambient glow,
+      // creating an elegant contrast against the neutral white-grey Ayah ribbon.
       final BoxDecoration? wordDecoration = isWordActive
-          ? VerseRow.activeHighlightDecoration(
-              isWordActive: true,
-              app: app,
+          ? BoxDecoration(
+              color: c.wordHighlight.withValues(
+                alpha: isDark ? 0.25 : 0.18,
+              ),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: c.wordHighlight.withValues(alpha: isDark ? 0.70 : 0.50),
+                width: 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: c.wordHighlight.withValues(alpha: isDark ? 0.22 : 0.12),
+                  blurRadius: 6,
+                  spreadRadius: 0.5,
+                ),
+              ],
             )
-          : (isAyahActive
-              ? BoxDecoration(
-                  color: c.gold.withValues(alpha: app.isDarkMode ? 0.12 : 0.08),
-                  borderRadius: BorderRadius.circular(4),
-                )
-              : null);
+          : null;
+
+      final int wordWidgetIndex = wordWidgets.length;
+      if (isAyahActive) {
+        highlightStartIndex ??= wordWidgetIndex;
+        highlightEndIndex = wordWidgetIndex;
+      }
 
       wordWidgets.add(
         GestureDetector(
@@ -854,6 +1174,11 @@ class _MushafPageState extends State<_MushafPage> {
       // Ayah number marker at the end of the Ayah
       final bool isLastWordOfAyah = wordIndex1 == verse.uthmaniWords.length;
       if (isLastWordOfAyah) {
+        final int markerWidgetIndex = wordWidgets.length;
+        if (isAyahActive) {
+          highlightStartIndex ??= markerWidgetIndex;
+          highlightEndIndex = markerWidgetIndex;
+        }
         wordWidgets.add(
           _buildAyahMarker(
             surah: surah,
@@ -880,13 +1205,25 @@ class _MushafPageState extends State<_MushafPage> {
           ),
           child: SizedBox(
             height: lineHeight,
-            child: Row(
+            child: _MushafHighlightRow(
               mainAxisSize: MainAxisSize.min,
               textDirection: TextDirection.rtl,
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: shouldJustify
                   ? MainAxisAlignment.spaceBetween
                   : MainAxisAlignment.center,
+              highlightStartIndex: highlightStartIndex,
+              highlightEndIndex: highlightEndIndex,
+              highlightColor: highlightStartIndex != null
+                  ? (isDark
+                      ? Colors.white.withValues(alpha: 0.10)
+                      : const Color(0xFF64748B).withValues(alpha: 0.09))
+                  : null,
+              highlightBorderColor: highlightStartIndex != null
+                  ? (isDark
+                      ? Colors.white.withValues(alpha: 0.24)
+                      : const Color(0xFF64748B).withValues(alpha: 0.22))
+                  : null,
               children: wordWidgets,
             ),
           ),
@@ -969,11 +1306,12 @@ class _MushafPageState extends State<_MushafPage> {
     );
   }
 
-  /// Modern Flat Ayah Marker:
-  /// - Modern flat squircle (rounded square) with zero ornaments (no زخرفة, no brackets).
-  /// - Numerals properly fit and are optically centered in the box with authentic Quranic typography.
-  /// - Eye-comfortable colors bound directly to app theme tokens (surfaceHigh, border, gold, primary).
-  /// - Smooth active states for recitation and audio playback.
+  /// Standard Medina Mushaf Ayah Marker:
+  /// - Uniform 1:1 square/squircle dimensions across ALL ayahs (never stretching into rectangles).
+  /// - Calibrated standard typographic scale: 1, 2, and 3 digits maintain harmonious optical size and weight.
+  /// - Optically centered vertically and horizontally inside the box.
+  /// - Eye-comfortable grey scheme matching the Ayah highlight ribbon (zero distraction).
+  /// - Instant selection and highlighting on tap.
   Widget _buildAyahMarker({
     required int surah,
     required int ayah,
@@ -986,19 +1324,24 @@ class _MushafPageState extends State<_MushafPage> {
     final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
     final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
 
-    // Height of the flat box (matches line proportions)
-    final double boxHeight = (fontSize * 0.90).clamp(20.0, 26.0);
-    // Dynamic width adapting to 1, 2, or 3 Arabic digits so numerals fit comfortably
-    final double boxWidth = (ayah >= 100)
-        ? (boxHeight * 1.35)
-        : ((ayah >= 10) ? (boxHeight * 1.12) : boxHeight);
+    // Standard uniform 1:1 box size across all ayahs on the page (matches line height proportions)
+    final double boxSize = (fontSize * 1.02).clamp(22.0, 26.5);
 
-    // Proportional numeral font size in HafsSmart:
-    final double numFontSize = (ayah >= 100)
-        ? (boxHeight * 0.60)
-        : (boxHeight * 0.72);
+    // Calibrated standard typography so 1, 2, and 3 digits maintain standard optical height and weight
+    final double numFontSize;
+    final double letterSpacing;
+    if (ayah < 10) {
+      numFontSize = (boxSize * 0.52).clamp(11.5, 13.5);
+      letterSpacing = 0.0;
+    } else if (ayah < 100) {
+      numFontSize = (boxSize * 0.48).clamp(10.5, 12.2);
+      letterSpacing = -0.2;
+    } else {
+      numFontSize = (boxSize * 0.43).clamp(9.5, 11.0);
+      letterSpacing = -0.4;
+    }
 
-    // App Theme Color Palette tokens:
+    // Color scheme: Grey/neutral palette matching the highlighted Ayah ribbon for eye comfort and zero distraction
     final Color boxBgColor;
     final Color boxBorderColor;
     final Color numTextColor;
@@ -1008,48 +1351,68 @@ class _MushafPageState extends State<_MushafPage> {
       boxBorderColor = c.primary;
       numTextColor = c.onPrimary;
     } else if (isAyahActive) {
-      boxBgColor = c.gold.withValues(alpha: isDark ? 0.22 : 0.15);
-      boxBorderColor = c.gold;
-      numTextColor = c.gold;
+      boxBgColor = isDark
+          ? Colors.white.withValues(alpha: 0.15)
+          : const Color(0xFF64748B).withValues(alpha: 0.13);
+      boxBorderColor = isDark
+          ? Colors.white.withValues(alpha: 0.35)
+          : const Color(0xFF64748B).withValues(alpha: 0.32);
+      numTextColor = isDark ? Colors.white : const Color(0xFF0F172A);
     } else {
-      // Idle state: using app's exact surface elevation and border tokens
-      boxBgColor = c.surfaceHigh;
-      boxBorderColor = c.border.withValues(alpha: isDark ? 0.70 : 0.85);
-      numTextColor = c.gold;
+      boxBgColor = isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : const Color(0xFF64748B).withValues(alpha: 0.075);
+      boxBorderColor = isDark
+          ? Colors.white.withValues(alpha: 0.22)
+          : const Color(0xFF64748B).withValues(alpha: 0.20);
+      numTextColor = isDark
+          ? const Color(0xFFCBD5E1) // Slate 300
+          : const Color(0xFF475569); // Slate 600
     }
 
     final Color effectiveBorder = widget.ayahMarkerBorderColor ?? boxBorderColor;
     final Color effectiveText = widget.ayahMarkerTextColor ?? numTextColor;
 
+    final String markerFont = widget.ayahMarkerFontFamily ?? 'cairo';
+    final bool isHafs = markerFont.toLowerCase().contains('hafs');
+    final double verticalOffset = isHafs ? -2.0 : -0.4;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        VerseRow.toggleAyahAudio(
-          surah: surah,
-          ayah: ayah,
-          controller: widget.controller,
-          isRecording: widget.isRecording,
-        );
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        if (widget.controller.targetSurah != surah) {
+          await widget.controller.setTargetSurah(
+            surah,
+            preserveOtherSurahStates: true,
+            clearTargetSurah: false,
+          );
+        }
+        widget.controller.setManualAyah(surah, ayah);
+        AppState.instance.saveLastPosition(surah, ayah);
+        if (mounted) {
+          setState(() {});
+        }
       },
       child: Container(
-        width: widget.showAyahMarkerCircle ? boxWidth : null,
-        height: widget.showAyahMarkerCircle ? boxHeight : null,
-        margin: const EdgeInsets.symmetric(horizontal: 2.5),
+        width: widget.showAyahMarkerCircle ? boxSize : null,
+        height: widget.showAyahMarkerCircle ? boxSize : null,
+        margin: const EdgeInsets.symmetric(horizontal: 2.0),
         alignment: Alignment.center,
         decoration: widget.showAyahMarkerCircle
             ? BoxDecoration(
                 color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
-                borderRadius: BorderRadius.circular(boxHeight * 0.28), // Sleek flat squircle
+                borderRadius: BorderRadius.circular(boxSize * 0.28), // Sleek flat squircle
                 border: Border.all(
                   color: effectiveBorder,
-                  width: widget.ayahMarkerBorderWidth > 0 ? widget.ayahMarkerBorderWidth : 0.85,
+                  width: widget.ayahMarkerBorderWidth > 0 ? widget.ayahMarkerBorderWidth : 1.0,
                 ),
               )
             : null,
         child: isBuffering
             ? SizedBox(
-                width: boxHeight * 0.48,
-                height: boxHeight * 0.48,
+                width: boxSize * 0.48,
+                height: boxSize * 0.48,
                 child: CircularProgressIndicator(
                   strokeWidth: 1.6,
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -1060,14 +1423,12 @@ class _MushafPageState extends State<_MushafPage> {
             : isPlaying
                 ? Icon(
                     Icons.pause_rounded,
-                    size: boxHeight * 0.60,
+                    size: boxSize * 0.60,
                     color: c.onPrimary,
                   )
                 : Center(
                     child: Transform.translate(
-                      // HafsSmart Eastern Arabic numerals have extra ascender headroom;
-                      // a subtle -1.0px vertical compensation centers the glyph optically
-                      offset: const Offset(0, -1.0),
+                      offset: Offset(0, verticalOffset),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.center,
@@ -1077,11 +1438,13 @@ class _MushafPageState extends State<_MushafPage> {
                           textScaler: TextScaler.noScaling,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: widget.ayahMarkerFontFamily ?? widget.wordFontFamily,
+                            fontFamily: markerFont,
                             fontSize: numFontSize,
+                            letterSpacing: letterSpacing,
                             color: effectiveText,
                             fontWeight: FontWeight.w700,
                             height: 1.0,
+                            leadingDistribution: TextLeadingDistribution.even,
                           ),
                         ),
                       ),
@@ -1109,5 +1472,178 @@ class _MushafPageState extends State<_MushafPage> {
         ),
       ),
     );
+  }
+}
+
+/// Specialized Flex widget that paints a seamless, continuous background ribbon
+/// behind active Ayah items (spanning across words and their justification gaps)
+/// without disturbing flex layout, word justification, or causing any overflow.
+class _MushafHighlightRow extends Flex {
+  final int? highlightStartIndex;
+  final int? highlightEndIndex;
+  final Color? highlightColor;
+  final Color? highlightBorderColor;
+
+  const _MushafHighlightRow({
+    required super.children,
+    super.mainAxisAlignment = MainAxisAlignment.spaceBetween,
+    super.crossAxisAlignment = CrossAxisAlignment.center,
+    super.mainAxisSize = MainAxisSize.min,
+    super.textDirection = TextDirection.rtl,
+    this.highlightStartIndex,
+    this.highlightEndIndex,
+    this.highlightColor,
+    this.highlightBorderColor,
+  }) : super(direction: Axis.horizontal);
+
+  @override
+  RenderFlex createRenderObject(BuildContext context) {
+    return _RenderMushafHighlightFlex(
+      direction: direction,
+      mainAxisAlignment: mainAxisAlignment,
+      mainAxisSize: mainAxisSize,
+      crossAxisAlignment: crossAxisAlignment,
+      textDirection: getEffectiveTextDirection(context),
+      verticalDirection: verticalDirection,
+      textBaseline: textBaseline,
+      clipBehavior: clipBehavior,
+      highlightStartIndex: highlightStartIndex,
+      highlightEndIndex: highlightEndIndex,
+      highlightColor: highlightColor,
+      highlightBorderColor: highlightBorderColor,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderMushafHighlightFlex renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.highlightStartIndex = highlightStartIndex;
+    renderObject.highlightEndIndex = highlightEndIndex;
+    renderObject.highlightColor = highlightColor;
+    renderObject.highlightBorderColor = highlightBorderColor;
+  }
+}
+
+class _RenderMushafHighlightFlex extends RenderFlex {
+  int? _highlightStartIndex;
+  int? _highlightEndIndex;
+  Color? _highlightColor;
+  Color? _highlightBorderColor;
+  static const double _highlightRadius = 6.0;
+
+  _RenderMushafHighlightFlex({
+    super.direction = Axis.horizontal,
+    super.mainAxisSize = MainAxisSize.max,
+    super.mainAxisAlignment = MainAxisAlignment.start,
+    super.crossAxisAlignment = CrossAxisAlignment.center,
+    super.textDirection,
+    super.verticalDirection = VerticalDirection.down,
+    super.textBaseline,
+    super.clipBehavior = Clip.none,
+    int? highlightStartIndex,
+    int? highlightEndIndex,
+    Color? highlightColor,
+    Color? highlightBorderColor,
+  })  : _highlightStartIndex = highlightStartIndex,
+        _highlightEndIndex = highlightEndIndex,
+        _highlightColor = highlightColor,
+        _highlightBorderColor = highlightBorderColor;
+
+  int? get highlightStartIndex => _highlightStartIndex;
+  set highlightStartIndex(int? value) {
+    if (_highlightStartIndex != value) {
+      _highlightStartIndex = value;
+      markNeedsPaint();
+    }
+  }
+
+  int? get highlightEndIndex => _highlightEndIndex;
+  set highlightEndIndex(int? value) {
+    if (_highlightEndIndex != value) {
+      _highlightEndIndex = value;
+      markNeedsPaint();
+    }
+  }
+
+  Color? get highlightColor => _highlightColor;
+  set highlightColor(Color? value) {
+    if (_highlightColor != value) {
+      _highlightColor = value;
+      markNeedsPaint();
+    }
+  }
+
+  Color? get highlightBorderColor => _highlightBorderColor;
+  set highlightBorderColor(Color? value) {
+    if (_highlightBorderColor != value) {
+      _highlightBorderColor = value;
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_highlightColor != null &&
+        _highlightStartIndex != null &&
+        _highlightEndIndex != null &&
+        _highlightStartIndex! <= _highlightEndIndex!) {
+      int index = 0;
+      RenderBox? child = firstChild;
+      double? minX;
+      double? maxX;
+      double? minY;
+      double? maxY;
+
+      while (child != null) {
+        if (index >= _highlightStartIndex! && index <= _highlightEndIndex!) {
+          final parentData = child.parentData as FlexParentData;
+          final childOffset = offset + parentData.offset;
+          final childSize = child.size;
+
+          final left = childOffset.dx;
+          final right = childOffset.dx + childSize.width;
+          final top = childOffset.dy;
+          final bottom = childOffset.dy + childSize.height;
+
+          minX = minX == null ? left : math.min(minX, left);
+          maxX = maxX == null ? right : math.max(maxX, right);
+          minY = minY == null ? top : math.min(minY, top);
+          maxY = maxY == null ? bottom : math.max(maxY, bottom);
+        }
+        child = childAfter(child);
+        index++;
+      }
+
+      if (minX != null && maxX != null && minY != null && maxY != null) {
+        // Expand horizontally and vertically slightly for a comfortable breathing room
+        final clampLeft = (minX - 3.0).clamp(offset.dx, offset.dx + size.width);
+        final clampRight = (maxX + 3.0).clamp(offset.dx, offset.dx + size.width);
+        final clampTop = (minY - 2.0).clamp(offset.dy, offset.dy + size.height);
+        final clampBottom = (maxY + 2.0).clamp(offset.dy, offset.dy + size.height);
+
+        if (clampRight > clampLeft && clampBottom > clampTop) {
+          final rect = Rect.fromLTRB(clampLeft, clampTop, clampRight, clampBottom);
+          final rrect = RRect.fromRectAndRadius(rect, Radius.circular(_highlightRadius));
+
+          final fillPaint = Paint()
+            ..color = _highlightColor!
+            ..style = PaintingStyle.fill;
+          context.canvas.drawRRect(rrect, fillPaint);
+
+          if (_highlightBorderColor != null) {
+            final borderPaint = Paint()
+              ..color = _highlightBorderColor!
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.0;
+            context.canvas.drawRRect(rrect, borderPaint);
+          }
+        }
+      }
+    }
+
+    super.paint(context, offset);
   }
 }

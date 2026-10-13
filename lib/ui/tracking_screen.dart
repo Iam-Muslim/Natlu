@@ -1115,6 +1115,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         isAutoScrolling: _isAutoScrolling,
         onToggleAutoScroll: _toggleAutoScroll,
         wordFontFamily: 'HafsSmart',
+        ayahMarkerFontFamily: 'cairo',
         showBottomPageNumber: true,
       );
     }
