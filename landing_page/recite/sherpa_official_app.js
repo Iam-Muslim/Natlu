@@ -126,6 +126,22 @@ function primeRecognizer() {
 }
 
 function processAudioSamples(samples) {
+  window.feedSherpaAudioChunk(samples, false);
+}
+
+// Feed audio samples from Dart AudioProcessor into the Sherpa recognizer
+window.feedSherpaAudioChunk = function(chunk, isFinal) {
+  if (!chunk) return;
+  let samples = chunk;
+  if (!(samples instanceof Float32Array)) {
+    if (samples && samples.buffer) {
+      samples = new Float32Array(samples.buffer, samples.byteOffset || 0, samples.length);
+    } else {
+      samples = new Float32Array(chunk);
+    }
+  }
+  if (!samples || samples.length === 0) return;
+
   if (!isRecognizerReady || !recognizer) return;
 
   if (!recognizerStream) {
@@ -134,13 +150,20 @@ function processAudioSamples(samples) {
   }
 
   recognizerStream.acceptWaveform(SAMPLE_RATE, samples);
+
+  if (isFinal) {
+    try {
+      recognizerStream.inputFinished();
+    } catch (_) {}
+  }
+
   while (recognizer.isReady(recognizerStream)) {
     recognizer.decode(recognizerStream);
   }
 
   const isEndpoint = recognizer.isEndpoint(recognizerStream);
   const fullResult = recognizer.getResult(recognizerStream);
-  const resultText = fullResult.text;
+  const resultText = (fullResult && fullResult.text) ? fullResult.text : '';
 
   if (resultText && resultText !== lastResult) {
     lastResult = resultText;
@@ -149,10 +172,12 @@ function processAudioSamples(samples) {
     }
   }
 
-  if (isEndpoint && window.dartSherpaOnResult) {
+  if ((isEndpoint || isFinal) && window.dartSherpaOnResult) {
     window.dartSherpaOnResult(JSON.stringify(fullResult), true);
   }
-}
+};
+globalThis.feedSherpaAudioChunk = window.feedSherpaAudioChunk;
+
 
 window.startOfficialSherpa = async function() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {

@@ -1,7 +1,7 @@
 // Service Worker for Recite Quran (اتلو القران)
 // Provides complete offline caching, dynamic caching, and Cross-Origin Isolation (COOP/COEP) for WebAssembly.
 
-const CACHE_NAME = 'recite-quran-pwa-v14';
+const CACHE_NAME = 'recite-quran-pwa-v16';
 
 const STATIC_PRECACHE = [
   './',
