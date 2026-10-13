@@ -187,7 +187,11 @@ class SettingsDialog extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             onTap: () async {
                               final prefs = await SharedPreferences.getInstance();
+                              final savedSurah = prefs.getInt('last_surah');
+                              final savedAyah = prefs.getInt('last_ayah');
                               await prefs.clear();
+                              if (savedSurah != null) await prefs.setInt('last_surah', savedSurah);
+                              if (savedAyah != null) await prefs.setInt('last_ayah', savedAyah);
                               if (context.mounted) {
                                 await app.load();
                                 if (context.mounted) {
