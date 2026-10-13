@@ -126,6 +126,26 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('blurMode', isBlurMode);
   }
 
+  // ── Mushaf Layout Mode ─────────────────────────────────────────────────────
+
+  bool isMushafMode = false;
+
+  void toggleMushafMode() async {
+    isMushafMode = !isMushafMode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('mushafMode', isMushafMode);
+  }
+
+  void setMushafMode(bool value) async {
+    if (isMushafMode != value) {
+      isMushafMode = value;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mushafMode', isMushafMode);
+    }
+  }
+
 
   // ── Last Recitation Position ──────────────────────────────────────────────
 
@@ -543,6 +563,7 @@ class AppState extends ChangeNotifier {
         _theme = brightness == Brightness.dark ? AppTheme.black : AppTheme.white;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
+      isMushafMode = prefs.getBool('mushafMode') ?? false;
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
       hasChosenAutoScrollSpeed = prefs.getBool('has_chosen_speed') ?? false;

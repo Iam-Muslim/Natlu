@@ -16,6 +16,7 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
+import 'widgets/mushaf/mushaf_view.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
@@ -1106,6 +1107,18 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
+    if (app.isMushafMode) {
+      return MushafView(
+        key: const ValueKey('mushaf_view_main'),
+        controller: widget.controller,
+        isRecording: widget.isRecording,
+        isAutoScrolling: _isAutoScrolling,
+        onToggleAutoScroll: _toggleAutoScroll,
+        wordFontFamily: 'HafsSmart',
+        showBottomPageNumber: true,
+      );
+    }
+
     return Builder(
       key: const ValueKey('verse_list_content'),
       builder: (context) {

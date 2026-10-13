@@ -127,7 +127,28 @@ class SettingsDialog extends StatelessWidget {
                                 ),
                                 PremiumSettingDivider(c: c),
 
-                                // 2. Theme
+                                // 2. Reading Display Mode (List vs Mushaf)
+                                SettingTile(
+                                  icon: Icons.menu_book_rounded,
+                                  title: isAr ? 'طريقة العرض' : 'Reading View',
+                                  c: c,
+                                  trailing: PremiumPillSelector(
+                                    labels: isAr
+                                        ? const ['قائمة', 'مصحف']
+                                        : const ['List', 'Mushaf'],
+                                    selected: app.isMushafMode ? 1 : 0,
+                                    c: c,
+                                    onSelected: (i) {
+                                      final enableMushaf = (i == 1);
+                                      if (app.isMushafMode != enableMushaf) {
+                                        app.toggleMushafMode();
+                                      }
+                                    },
+                                  ),
+                                ),
+                                PremiumSettingDivider(c: c),
+
+                                // 3. Theme
                                 SettingTile(
                                   icon: Icons.palette_rounded,
                                   title: isAr ? 'مظهر التطبيق' : 'App Theme',

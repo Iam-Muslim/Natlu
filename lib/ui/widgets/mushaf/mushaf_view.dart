@@ -53,12 +53,40 @@ class MushafView extends StatefulWidget {
   final bool isAutoScrolling;
   final VoidCallback? onToggleAutoScroll;
 
+  /// Custom font family for Quranic words (e.g. 'HafsSmart', 'cairo', or any custom TTF).
+  final String wordFontFamily;
+
+  /// Custom font family for Ayah numbers inside markers (defaults to wordFontFamily).
+  final String? ayahMarkerFontFamily;
+
+  /// Custom border color for the circle around the Ayah number.
+  final Color? ayahMarkerBorderColor;
+
+  /// Custom text color for the Ayah number.
+  final Color? ayahMarkerTextColor;
+
+  /// Border width for the circle surrounding the Ayah number.
+  final double ayahMarkerBorderWidth;
+
+  /// Whether to show the surrounding circle border around the Ayah number.
+  final bool showAyahMarkerCircle;
+
+  /// Whether to display bottom page numbers (false = pure distraction-free canvas).
+  final bool showBottomPageNumber;
+
   const MushafView({
     super.key,
     required this.controller,
     required this.isRecording,
     this.isAutoScrolling = false,
     this.onToggleAutoScroll,
+    this.wordFontFamily = 'HafsSmart',
+    this.ayahMarkerFontFamily,
+    this.ayahMarkerBorderColor,
+    this.ayahMarkerTextColor,
+    this.ayahMarkerBorderWidth = 1.2,
+    this.showAyahMarkerCircle = true,
+    this.showBottomPageNumber = true,
   });
 
   @override
@@ -355,6 +383,13 @@ class _MushafViewState extends State<MushafView> {
                   controller: widget.controller,
                   isRecording: widget.isRecording,
                   isAutoScrolling: widget.isAutoScrolling,
+                  wordFontFamily: widget.wordFontFamily,
+                  ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
+                  ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
+                  ayahMarkerTextColor: widget.ayahMarkerTextColor,
+                  ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
+                  showAyahMarkerCircle: widget.showAyahMarkerCircle,
+                  showBottomPageNumber: widget.showBottomPageNumber,
                 );
               },
             ),
@@ -375,6 +410,13 @@ class _MushafPage extends StatefulWidget {
   final HighlightingController controller;
   final bool isRecording;
   final bool isAutoScrolling;
+  final String wordFontFamily;
+  final String? ayahMarkerFontFamily;
+  final Color? ayahMarkerBorderColor;
+  final Color? ayahMarkerTextColor;
+  final double ayahMarkerBorderWidth;
+  final bool showAyahMarkerCircle;
+  final bool showBottomPageNumber;
 
   const _MushafPage({
     super.key,
@@ -382,6 +424,13 @@ class _MushafPage extends StatefulWidget {
     required this.controller,
     required this.isRecording,
     required this.isAutoScrolling,
+    required this.wordFontFamily,
+    this.ayahMarkerFontFamily,
+    this.ayahMarkerBorderColor,
+    this.ayahMarkerTextColor,
+    required this.ayahMarkerBorderWidth,
+    required this.showAyahMarkerCircle,
+    required this.showBottomPageNumber,
   });
 
   @override
@@ -486,30 +535,47 @@ class _MushafPageState extends State<_MushafPage> {
           final double maxWidth = constraints.maxWidth;
           final double maxHeight = constraints.maxHeight;
 
-          final double pageWidth = maxWidth > 650 ? 580.0 : maxWidth;
-          const double horizontalPadding = 12.0;
-          const double bottomNumberHeight = 32.0;
+          final double bottomNumberHeight = widget.showBottomPageNumber ? 30.0 : 0.0;
+          final double availableHeight = maxHeight - bottomNumberHeight;
+          final double availableWidth = maxWidth;
 
-          final double lineWidth = pageWidth - (horizontalPadding * 2);
-          final double linesContainerHeight = maxHeight - bottomNumberHeight;
+          // Authentic King Fahd Medina Mushaf page physical aspect ratio (width / height ≈ 0.635).
+          // Exactly like the reference implementations (mushaf-svelte A4 ratio), the page width MUST NOT
+          // stretch arbitrarily when the screen is wide. It locks to authentic vertical page proportions
+          // so word-spacing remains natural (10-14px) and never stretches into awkward 60-80px voids.
+          const double mushafAspectRatio = 0.635;
+
+          double textBlockHeight = availableHeight;
+          double textBlockWidth = textBlockHeight * mushafAspectRatio;
+
+          const double minHorizontalPadding = 12.0;
+          if (textBlockWidth > availableWidth - (minHorizontalPadding * 2)) {
+            textBlockWidth = availableWidth - (minHorizontalPadding * 2);
+            textBlockHeight = textBlockWidth / mushafAspectRatio;
+          }
+
+          final double lineWidth = textBlockWidth;
+          final double linesContainerHeight = textBlockHeight;
 
           // Pages 1 & 2 special centered layout (Al-Fatihah and start of Al-Baqarah)
           if (widget.pageNumber <= 2) {
             final double lineHeight = (linesContainerHeight / (lines.length + 3)).clamp(44.0, 72.0);
-            final double fontSize = (lineHeight * 0.48).clamp(17.0, 24.0);
+            final double fontSize = (lineHeight * 0.46).clamp(16.0, 23.0);
 
             return Directionality(
               textDirection: TextDirection.rtl,
               child: Center(
                 child: SizedBox(
-                  width: pageWidth,
+                  width: lineWidth,
                   height: maxHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: horizontalPadding),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.center,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: List.generate(lines.length, (lineIndex) {
@@ -534,9 +600,10 @@ class _MushafPageState extends State<_MushafPage> {
                             ),
                           ),
                         ),
+                      ),
+                      if (widget.showBottomPageNumber)
                         _buildBottomPageNumber(widget.pageNumber, bottomNumberHeight, c),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
               ),
@@ -544,43 +611,56 @@ class _MushafPageState extends State<_MushafPage> {
           }
 
           // Standard 15-line Medina Mushaf pages:
+          // Unified typography: all 15 lines share the exact same scale and baseline.
           final double lineHeight = linesContainerHeight / lines.length;
-          final double fontSize = (lineWidth / 18.2).clamp(15.5, (lineHeight * 0.52).clamp(17.0, 28.0));
+          final double fontSize = (lineHeight * 0.52).clamp(16.0, 26.0);
 
           return Directionality(
             textDirection: TextDirection.rtl,
             child: Center(
               child: SizedBox(
-                width: pageWidth,
+                width: lineWidth,
                 height: maxHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: horizontalPadding),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          children: List.generate(lines.length, (lineIndex) {
-                            final nextLine = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
-                            return Expanded(
-                              child: _buildLine(
-                                lineData: lines[lineIndex],
-                                nextLineData: nextLine,
-                                lineIndex: lineIndex,
-                                totalLines: lines.length,
-                                pageNumber: widget.pageNumber,
-                                lineWidth: lineWidth,
-                                lineHeight: lineHeight,
-                                fontSize: fontSize,
-                                c: c,
-                                app: app,
-                              ),
-                            );
-                          }),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: lineWidth,
+                            height: linesContainerHeight,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: List.generate(lines.length, (lineIndex) {
+                                final nextLine = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+                                return SizedBox(
+                                  width: lineWidth,
+                                  height: lineHeight,
+                                  child: _buildLine(
+                                    lineData: lines[lineIndex],
+                                    nextLineData: nextLine,
+                                    lineIndex: lineIndex,
+                                    totalLines: lines.length,
+                                    pageNumber: widget.pageNumber,
+                                    lineWidth: lineWidth,
+                                    lineHeight: lineHeight,
+                                    fontSize: fontSize,
+                                    c: c,
+                                    app: app,
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
                         ),
                       ),
+                    ),
+                    if (widget.showBottomPageNumber)
                       _buildBottomPageNumber(widget.pageNumber, bottomNumberHeight, c),
-                    ],
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -612,14 +692,16 @@ class _MushafPageState extends State<_MushafPage> {
       return SizedBox(
         width: lineWidth,
         height: lineHeight,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => VerseRow.selectAyah(
-            surah: surahNum,
-            ayah: 1,
-            controller: widget.controller,
-          ),
-          child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => VerseRow.selectAyah(
+              surah: surahNum,
+              ayah: 1,
+              controller: widget.controller,
+            ),
             child: Container(
               margin: const EdgeInsets.symmetric(vertical: 2),
               padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 28),
@@ -633,7 +715,7 @@ class _MushafPageState extends State<_MushafPage> {
                 textDirection: TextDirection.rtl,
                 textScaler: TextScaler.noScaling,
                 style: TextStyle(
-                  fontFamily: 'HafsSmart',
+                  fontFamily: widget.wordFontFamily,
                   fontSize: (fontSize * 0.80).clamp(15.0, 22.0),
                   fontWeight: FontWeight.w700,
                   color: c.gold,
@@ -652,6 +734,7 @@ class _MushafPageState extends State<_MushafPage> {
         height: lineHeight,
         child: FittedBox(
           fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
           child: Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
@@ -660,7 +743,7 @@ class _MushafPageState extends State<_MushafPage> {
                 textDirection: TextDirection.rtl,
                 textScaler: TextScaler.noScaling,
                 style: TextStyle(
-                  fontFamily: 'HafsSmart',
+                  fontFamily: widget.wordFontFamily,
                   fontSize: (fontSize * 0.90).clamp(16.0, 24.0),
                   fontWeight: FontWeight.w700,
                   color: c.text,
@@ -678,9 +761,11 @@ class _MushafPageState extends State<_MushafPage> {
 
     final bool nextLineIsHeader = nextLineData != null && nextLineData['t'] == 'header';
     final bool isLastLineOfPage = lineIndex == totalLines - 1;
+    // Exactly like mushaf-svelte: short end-lines are centered so words never drift apart with awkward voids.
     final bool shouldJustify = pageNumber > 2 &&
         !nextLineIsHeader &&
-        (!isLastLineOfPage || pageNumber <= 599);
+        (!isLastLineOfPage || pageNumber <= 599) &&
+        parsedWords.length >= 5;
 
     final wordWidgets = <Widget>[];
 
@@ -775,14 +860,15 @@ class _MushafPageState extends State<_MushafPage> {
           behavior: HitTestBehavior.opaque,
           onTap: handleWordTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 1.5, vertical: 1.0),
+            margin: EdgeInsets.symmetric(horizontal: shouldJustify ? 1.0 : 3.5),
+            padding: const EdgeInsets.symmetric(horizontal: 1.0, vertical: 1.0),
             decoration: wordDecoration,
             child: Text(
               wordText,
               textDirection: TextDirection.rtl,
               textScaler: TextScaler.noScaling,
               style: TextStyle(
-                fontFamily: 'HafsSmart',
+                fontFamily: widget.wordFontFamily,
                 fontSize: fontSize,
                 color: textColor,
                 height: 1.25,
@@ -792,69 +878,17 @@ class _MushafPageState extends State<_MushafPage> {
         ),
       );
 
-      // Ayah number circle at the end of the Ayah
+      // Ayah number marker at the end of the Ayah
       final bool isLastWordOfAyah = wordIndex1 == verse.uthmaniWords.length;
       if (isLastWordOfAyah) {
-        final double circleSize = (fontSize * 0.82).clamp(17.0, 24.0);
-        final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
-        final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
-
         wordWidgets.add(
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              VerseRow.toggleAyahAudio(
-                surah: surah,
-                ayah: ayah,
-                controller: widget.controller,
-                isRecording: widget.isRecording,
-              );
-            },
-            child: Container(
-              width: circleSize,
-              height: circleSize,
-              margin: const EdgeInsets.symmetric(horizontal: 2.0),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: (isPlaying || isBuffering)
-                      ? c.primary
-                      : (isAyahActive ? c.gold : c.gold.withValues(alpha: 0.8)),
-                  width: 1.2,
-                ),
-                color: (isPlaying || isBuffering)
-                    ? c.primary.withValues(alpha: app.isDarkMode ? 0.22 : 0.12)
-                    : (isAyahActive ? c.gold.withValues(alpha: 0.18) : Colors.transparent),
-              ),
-              alignment: Alignment.center,
-              child: isBuffering
-                  ? SizedBox(
-                      width: circleSize * 0.45,
-                      height: circleSize * 0.45,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(c.primary),
-                      ),
-                    )
-                  : isPlaying
-                      ? Icon(
-                          Icons.pause_rounded,
-                          size: circleSize * 0.58,
-                          color: c.primary,
-                        )
-                      : Text(
-                          VerseRow.toArabicDigits(ayah),
-                          textDirection: TextDirection.rtl,
-                          textScaler: TextScaler.noScaling,
-                          style: TextStyle(
-                            fontFamily: 'HafsSmart',
-                            fontSize: circleSize * 0.48,
-                            color: c.gold,
-                            fontWeight: FontWeight.w700,
-                            height: 1.0,
-                          ),
-                        ),
-            ),
+          _buildAyahMarker(
+            surah: surah,
+            ayah: ayah,
+            fontSize: fontSize,
+            isAyahActive: isAyahActive,
+            c: c,
+            app: app,
           ),
         );
       }
@@ -866,23 +900,110 @@ class _MushafPageState extends State<_MushafPage> {
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.center,
-        child: SizedBox(
-          width: lineWidth,
-          height: lineHeight,
-          child: Row(
-            textDirection: TextDirection.rtl,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: shouldJustify
-                ? MainAxisAlignment.spaceBetween
-                : MainAxisAlignment.center,
-            children: wordWidgets,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: lineWidth,
+            maxHeight: lineHeight,
+          ),
+          child: SizedBox(
+            height: lineHeight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              textDirection: TextDirection.rtl,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: shouldJustify
+                  ? MainAxisAlignment.spaceBetween
+                  : MainAxisAlignment.center,
+              children: wordWidgets,
+            ),
           ),
         ),
       ),
     );
   }
 
+  /// Customizable Ayah Marker: supports custom circular border, colors, width, and fonts.
+  Widget _buildAyahMarker({
+    required int surah,
+    required int ayah,
+    required double fontSize,
+    required bool isAyahActive,
+    required ThemeColors c,
+    required AppState app,
+  }) {
+    final double circleSize = (fontSize * 0.82).clamp(16.0, 24.0);
+    final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
+    final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
+
+    final Color borderColor = (isPlaying || isBuffering)
+        ? c.primary
+        : (widget.ayahMarkerBorderColor ?? (isAyahActive ? c.gold : c.gold.withValues(alpha: 0.8)));
+
+    final Color bgColor = (isPlaying || isBuffering)
+        ? c.primary.withValues(alpha: app.isDarkMode ? 0.22 : 0.12)
+        : (isAyahActive ? c.gold.withValues(alpha: 0.18) : Colors.transparent);
+
+    final Color textColor = widget.ayahMarkerTextColor ?? ((isPlaying || isBuffering) ? c.primary : c.gold);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        VerseRow.toggleAyahAudio(
+          surah: surah,
+          ayah: ayah,
+          controller: widget.controller,
+          isRecording: widget.isRecording,
+        );
+      },
+      child: Container(
+        width: widget.showAyahMarkerCircle ? circleSize : null,
+        height: widget.showAyahMarkerCircle ? circleSize : null,
+        margin: const EdgeInsets.symmetric(horizontal: 2.0),
+        padding: widget.showAyahMarkerCircle ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 2.5),
+        decoration: widget.showAyahMarkerCircle
+            ? BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: borderColor,
+                  width: widget.ayahMarkerBorderWidth,
+                ),
+                color: bgColor,
+              )
+            : null,
+        alignment: Alignment.center,
+        child: isBuffering
+            ? SizedBox(
+                width: circleSize * 0.45,
+                height: circleSize * 0.45,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(c.primary),
+                ),
+              )
+            : isPlaying
+                ? Icon(
+                    Icons.pause_rounded,
+                    size: circleSize * 0.58,
+                    color: c.primary,
+                  )
+                : Text(
+                    VerseRow.toArabicDigits(ayah),
+                    textDirection: TextDirection.rtl,
+                    textScaler: TextScaler.noScaling,
+                    style: TextStyle(
+                      fontFamily: widget.ayahMarkerFontFamily ?? widget.wordFontFamily,
+                      fontSize: widget.showAyahMarkerCircle ? circleSize * 0.48 : fontSize * 0.72,
+                      color: textColor,
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                    ),
+                  ),
+      ),
+    );
+  }
+
   Widget _buildBottomPageNumber(int pageNumber, double height, ThemeColors c) {
+    if (height <= 0) return const SizedBox.shrink();
     return SizedBox(
       height: height,
       child: Center(
@@ -891,7 +1012,7 @@ class _MushafPageState extends State<_MushafPage> {
           textDirection: TextDirection.rtl,
           textScaler: TextScaler.noScaling,
           style: TextStyle(
-            fontFamily: 'HafsSmart',
+            fontFamily: widget.wordFontFamily,
             fontSize: 19.0,
             color: c.gold,
             fontWeight: FontWeight.w700,
