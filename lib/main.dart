@@ -342,7 +342,9 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
       if (mounted) setState(() => _initStatus = 'Loading Quran database…');
       final service = QuranMetadataService();
       _repo = QuranRepository(service);
-      await _repo!.loadSurahAsync(1);
+      final initialSurah = AppState.instance.lastSurah;
+      final initialAyah = AppState.instance.lastAyah;
+      await _repo!.loadSurahAsync(initialSurah);
       _voiceSearchCtrl.repository = _repo;
 
       _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background
@@ -365,6 +367,12 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
           // silently discarding the final word's right-context tail every ayah.
         },
       );
+      if (initialSurah != 1) {
+        await _ctrl!.setTargetSurah(initialSurah);
+      }
+      if (initialAyah > 1) {
+        _ctrl!.setManualAyah(initialSurah, initialAyah);
+      }
       if (!kIsWeb) {
         try {
           WakelockPlus.enable();

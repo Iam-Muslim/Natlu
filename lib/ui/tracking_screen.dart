@@ -94,6 +94,16 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (!kIsWeb) {
       unawaited(QuranAudioService.ensureAyahDownloaded(widget.controller.targetSurah, 1));
     }
+
+    // Auto-scroll to saved last Ayah on startup
+    if (AppState.instance.lastAyah > 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _lastAyah = AppState.instance.lastAyah;
+          _ensureAyahVisibleSmart(AppState.instance.lastAyah, isManualTap: false);
+        }
+      });
+    }
   }
 
   void _syncScreenWakeLock() {
@@ -126,6 +136,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     if (isPlaying && ayah != null && !_isAutoScrolling) {
       _wasAudioPlaying = true;
+      AppState.instance.saveLastPosition(widget.controller.targetSurah, ayah);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
@@ -253,6 +264,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     final active = widget.controller.activeAyah.value;
     if (active != null && active != _lastAyah) {
       _lastAyah = active;
+      AppState.instance.saveLastPosition(widget.controller.targetSurah, active);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _ensureAyahVisibleSmart(active);
@@ -615,6 +627,9 @@ class _TrackingScreenState extends State<TrackingScreen>
           }
           if (ayah != null) {
             widget.controller.setManualAyah(n, ayah);
+            AppState.instance.saveLastPosition(n, ayah);
+          } else {
+            AppState.instance.saveLastPosition(n, 1);
           }
 
           setState(() {
@@ -1166,6 +1181,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         onTap: () {
                           widget.controller.setManualAyah(v.surah, v.ayah);
                           _lastAyah = v.ayah;
+                          AppState.instance.saveLastPosition(v.surah, v.ayah);
                           _ensureAyahVisibleSmart(v.ayah, isManualTap: true);
                         },
                         onWordErrorTap: null,
@@ -1199,6 +1215,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
 
     await widget.controller.setTargetSurah(newSurah);
+    AppState.instance.saveLastPosition(newSurah, 1);
     unawaited(QuranTimingService.instance.ensureSurahLoaded(newSurah));
     if (!kIsWeb) {
       unawaited(QuranAudioService.ensureAyahDownloaded(newSurah, 1));

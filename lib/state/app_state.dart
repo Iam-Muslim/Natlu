@@ -134,6 +134,23 @@ class AppState extends ChangeNotifier {
     // Bypassed: disabled
   }
 
+  // ── Last Recitation Position ──────────────────────────────────────────────
+
+  int lastSurah = 1;
+  int lastAyah = 1;
+
+  Future<void> saveLastPosition(int surah, int ayah) async {
+    if (surah < 1 || surah > 114) return;
+    if (lastSurah == surah && lastAyah == ayah) return;
+    lastSurah = surah;
+    lastAyah = ayah;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_surah', surah);
+      await prefs.setInt('last_ayah', ayah);
+    } catch (_) {}
+  }
+
   // ── Auto-Scroll Speed ──────────────────────────────────────────────────────
 
   static const List<double> autoScrollMultipliers = [0.25, 0.5, 1.0, 1.5, 3.0, 4.5, 6.0];
@@ -550,6 +567,9 @@ class AppState extends ChangeNotifier {
       if (seenBanners != null) {
         _seenBannerIds.addAll(seenBanners);
       }
+
+      lastSurah = (prefs.getInt('last_surah') ?? 1).clamp(1, 114);
+      lastAyah = (prefs.getInt('last_ayah') ?? 1).clamp(1, 286);
 
       notifyListeners();
     } catch (e) {
