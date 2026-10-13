@@ -52,6 +52,7 @@ class VerseSpanBuilder {
     required int ayah,
     required bool isActive,
     required bool isAutoScrolling,
+    bool isRecording = false,
     required HighlightingController controller,
     required AppState app,
     required ThemeColors colors,
@@ -61,6 +62,23 @@ class VerseSpanBuilder {
     void Function(int ayah, int wordIndex)? onWordAudioTap,
   }) {
     final List<InlineSpan> spans = [];
+    final bool enableGestures = !isAutoScrolling;
+
+    final TextStyle defaultStyle = TextStyle(
+      fontFamily: 'HafsSmart',
+      fontSize: app.fontSize,
+      height: 2.6,
+      wordSpacing: 5.0,
+      color: colors.text,
+    );
+
+    const InlineSpan spaceSpan = TextSpan(
+      text: ' ',
+      style: TextStyle(
+        fontFamily: 'HafsSmart',
+        wordSpacing: 5.0,
+      ),
+    );
 
     for (int i = 0; i < words.length; i++) {
       final Color color = resolveWordDisplayColor(
@@ -74,24 +92,23 @@ class VerseSpanBuilder {
 
       final word = words[i];
       final wordIdx = i;
-      final recognizer = TapGestureRecognizer()
-        ..onTap = () {
-          if (isAutoScrolling) return;
-          if (controller.isWordYellow(ayah, wordIdx)) {
-            onWordErrorTap(ayah, wordIdx, word);
-          } else {
-            onWordAudioTap?.call(ayah, wordIdx);
-          }
-        };
-      recognizersSink.add(recognizer);
 
-      final style = TextStyle(
-        fontFamily: 'HafsSmart',
-        fontSize: app.fontSize,
-        height: 2.6,
-        wordSpacing: 5.0,
-        color: color,
-      );
+      TapGestureRecognizer? recognizer;
+      if (enableGestures) {
+        recognizer = TapGestureRecognizer()
+          ..onTap = () {
+            if (controller.isWordYellow(ayah, wordIdx)) {
+              onWordErrorTap(ayah, wordIdx, word);
+            } else {
+              onWordAudioTap?.call(ayah, wordIdx);
+            }
+          };
+        recognizersSink.add(recognizer);
+      }
+
+      final TextStyle? style = (color == colors.text)
+          ? defaultStyle
+          : defaultStyle.copyWith(color: color);
 
       // ALWAYS add the word as a standard TextSpan!
       spans.add(
@@ -104,17 +121,7 @@ class VerseSpanBuilder {
 
       // Word separator
       if (i < words.length - 1) {
-        spans.add(
-          TextSpan(
-            text: ' ',
-            style: TextStyle(
-              fontFamily: 'HafsSmart',
-              fontSize: app.fontSize,
-              height: 2.6,
-              wordSpacing: 5.0,
-            ),
-          ),
-        );
+        spans.add(spaceSpan);
       }
     }
 

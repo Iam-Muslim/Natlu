@@ -246,9 +246,7 @@ class VerseRow extends StatefulWidget {
             : Colors.transparent,
         width: 1.0,
       ),
-      color: isActive
-          ? c.gold.withValues(alpha: app.isDarkMode ? 0.05 : 0.035)
-          : Colors.transparent,
+      color: Colors.transparent,
     );
   }
 
@@ -460,19 +458,15 @@ class _VerseRowState extends State<VerseRow> {
     }
 
     final words = widget.verse.uthmaniWords;
-    int lastMatched = -1;
     for (int i = 0; i < words.length; i++) {
-      if (widget.controller.isWordGreen(ayah, i) ||
-          widget.controller.isWordRed(ayah, i) ||
-          widget.controller.isWordYellow(ayah, i) ||
-          widget.controller.isWordNeutral(ayah, i)) {
-        lastMatched = i;
+      if (!widget.controller.isWordGreen(ayah, i) &&
+          !widget.controller.isWordRed(ayah, i) &&
+          !widget.controller.isWordYellow(ayah, i) &&
+          !widget.controller.isWordNeutral(ayah, i)) {
+        return i; // First unspoken word: incoming/waited word to be dictated!
       }
     }
-
-    // If words have been recited, track the current/most recent recited word.
-    // If no word is recited yet in this active Ayah, focus is on index 0 (first word).
-    return lastMatched >= 0 ? lastMatched : 0;
+    return -1; // All words in this Ayah have been recited
   }
 
   void _scheduleWordPositionCheck({Duration? delay}) {
@@ -544,6 +538,16 @@ class _VerseRowState extends State<VerseRow> {
       return _cachedWordRect;
     }
 
+    final int cacheKey =
+        Object.hash(widget.verse.ayah, targetIndex, (maxWidth * 10).round());
+    final precomputedRect = _ActiveWordHighlightPainter._rectCache[cacheKey];
+    if (precomputedRect != null) {
+      _cachedRectTargetIndex = targetIndex;
+      _cachedRectMaxWidth = maxWidth;
+      _cachedWordRect = precomputedRect;
+      return precomputedRect;
+    }
+
     final painter = TextPainter(
       text: TextSpan(children: _cachedSpans),
       textAlign: TextAlign.justify,
@@ -607,12 +611,19 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + (isCompleted ? 1 : 0);
     hash = hash * 31 + (widget.isRecording ? 1 : 0);
     hash = hash * 31 + (app.activeAudioWordIndex.value ?? -1);
+    hash = hash * 31 + _getActiveTargetIndex();
 
     final wordCount = widget.verse.uthmaniWords.length;
     for (int i = 0; i < wordCount; i++) {
-      if (ctrl.isWordGreen(ayah, i)) hash = hash * 31 + (i + 1) * 7;
-      if (ctrl.isWordRed(ayah, i)) hash = hash * 31 + (i + 1) * 13;
-      if (ctrl.isWordYellow(ayah, i)) hash = hash * 31 + (i + 1) * 17;
+      if (ctrl.isWordGreen(ayah, i)) {
+        hash = hash * 31 + (i + 1) * 7;
+      } else if (ctrl.isWordRed(ayah, i)) {
+        hash = hash * 31 + (i + 1) * 13;
+      } else if (ctrl.isWordYellow(ayah, i)) {
+        hash = hash * 31 + (i + 1) * 17;
+      } else if (ctrl.isWordNeutral(ayah, i)) {
+        hash = hash * 31 + (i + 1) * 23;
+      }
     }
 
     hash = hash * 31 + (app.isBlurMode ? 1 : 0);
@@ -650,6 +661,7 @@ class _VerseRowState extends State<VerseRow> {
         ayah: widget.verse.ayah,
         isActive: isActive,
         isAutoScrolling: widget.isAutoScrolling,
+        isRecording: widget.isRecording,
         controller: widget.controller,
         app: app,
         colors: c,
@@ -986,6 +998,7 @@ class _ActiveWordHighlightPainter extends CustomPainter {
   }) : super(repaint: isAudioMode ? Listenable.merge([app.activeAudioWordIndex, app.isAudioPlaying, app.isAudioBuffering]) : null);
 
   static final Map<int, RRect> _rrectCache = {};
+  static final Map<int, Rect> _rectCache = {};
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1044,13 +1057,18 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       if (r.bottom > bottom) bottom = r.bottom;
     }
 
+    final rawRect = Rect.fromLTRB(left, top, right, bottom);
     final rrect = RRect.fromRectAndRadius(
       Rect.fromLTRB(left - 4.0, top - 2.5, right + 4.0, bottom + 2.5),
       const Radius.circular(8),
     );
 
-    if (_rrectCache.length > 500) _rrectCache.clear();
+    if (_rrectCache.length > 500) {
+      _rrectCache.clear();
+      _rectCache.clear();
+    }
     _rrectCache[cacheKey] = rrect;
+    _rectCache[cacheKey] = rawRect;
 
     canvas.drawRRect(rrect, paint);
     painter.dispose();
