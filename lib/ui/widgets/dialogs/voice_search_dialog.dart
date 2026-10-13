@@ -470,34 +470,24 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
     required double maxHeight,
     required ThemeColors c,
   }) {
+    final double width = count * 7.0;
     return RepaintBoundary(
       child: SizedBox(
+        width: width,
         height: maxHeight,
-        child: Center(
-          child: AnimatedBuilder(
-            animation: _pulseCtrl,
-            builder: (_, __) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: List.generate(count, (i) {
-                  final h = baseHeight +
-                      (maxHeight - baseHeight) *
-                          math.sin((_pulseCtrl.value * math.pi) + (i * 0.7)).abs();
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: 3,
-                    height: h.clamp(baseHeight, maxHeight),
-                    decoration: BoxDecoration(
-                      color: c.primary.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  );
-                }),
-              );
-            },
-          ),
+        child: AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (_, __) {
+            return CustomPaint(
+              painter: _VoiceWaveBarsPainter(
+                count: count,
+                baseHeight: baseHeight,
+                maxHeight: maxHeight,
+                animationValue: _pulseCtrl.value,
+                color: c.primary.withValues(alpha: 0.7),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -784,5 +774,57 @@ class _VoiceSearchDialogState extends State<VoiceSearchDialog>
         ),
       ),
     );
+  }
+}
+
+class _VoiceWaveBarsPainter extends CustomPainter {
+  final int count;
+  final double baseHeight;
+  final double maxHeight;
+  final double animationValue;
+  final Color color;
+
+  _VoiceWaveBarsPainter({
+    required this.count,
+    required this.baseHeight,
+    required this.maxHeight,
+    required this.animationValue,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    const double barWidth = 3.0;
+    const double margin = 2.0;
+    final double step = barWidth + (margin * 2);
+    final double totalWidth = count * step;
+    double startX = (size.width - totalWidth) / 2 + margin;
+    final double centerY = size.height / 2;
+    const rrectRadius = Radius.circular(2.0);
+
+    for (int i = 0; i < count; i++) {
+      final double h = (baseHeight +
+              (maxHeight - baseHeight) *
+                  math.sin((animationValue * math.pi) + (i * 0.7)).abs())
+          .clamp(baseHeight, maxHeight);
+
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(startX, centerY - (h / 2), barWidth, h),
+        rrectRadius,
+      );
+      canvas.drawRRect(rect, paint);
+      startX += step;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _VoiceWaveBarsPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue ||
+        oldDelegate.color != color ||
+        oldDelegate.count != count;
   }
 }

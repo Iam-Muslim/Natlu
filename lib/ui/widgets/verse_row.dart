@@ -285,8 +285,10 @@ class _VerseRowState extends State<VerseRow> {
     AppState.instance.activeAudioSurah.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioWordIndex.addListener(_onAudioWordChanged);
     _updateSubscription();
-    _scheduleWordPositionCheck();
-    _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
+    if (_getActiveTargetIndex() >= 0) {
+      _scheduleWordPositionCheck();
+      _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
+    }
   }
 
   @override
@@ -376,8 +378,10 @@ class _VerseRowState extends State<VerseRow> {
   void _onActiveAyahChanged() {
     _updateSubscription();
     _onStateChanged();
-    _scheduleWordPositionCheck();
-    _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
+    if (_getActiveTargetIndex() >= 0) {
+      _scheduleWordPositionCheck();
+      _scheduleWordPositionCheck(delay: const Duration(milliseconds: 450));
+    }
   }
 
   void _updateSubscription() {
@@ -691,21 +695,15 @@ class _VerseRowState extends State<VerseRow> {
                 ),
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
+          child: Container(
             margin: const EdgeInsets.symmetric(
               horizontal: 10,
               vertical: 3.5,
             ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isActive
-                    ? c.gold.withValues(alpha: app.isDarkMode ? 0.70 : 0.60)
-                    : Colors.transparent,
-                width: 1.0,
-              ),
+            decoration: VerseRow.activeAyahBorderDecoration(
+              isActive: isActive,
+              app: app,
+              borderRadius: 16,
             ),
             child: Stack(
               children: [
@@ -725,10 +723,13 @@ class _VerseRowState extends State<VerseRow> {
                             controller: widget.controller,
                             app: app,
                             cachedSpans: _cachedSpans!,
+                            targetIndex: _getActiveTargetIndex(),
                             isAudioMode: isAudioActive,
                           )
                         : null,
-                    foregroundPainter: _cachedSpans != null && !app.hasClickedTajweedWord
+                    foregroundPainter: _cachedSpans != null &&
+                            !app.hasClickedTajweedWord &&
+                            app.currentMode == AppMode.tajweed
                         ? TajweedTooltipPainter(
                             words: words,
                             ayah: widget.verse.ayah,
@@ -971,6 +972,7 @@ class _ActiveWordHighlightPainter extends CustomPainter {
   final HighlightingController controller;
   final AppState app;
   final List<InlineSpan> cachedSpans;
+  final int targetIndex;
   final bool isAudioMode;
 
   _ActiveWordHighlightPainter({
@@ -979,6 +981,7 @@ class _ActiveWordHighlightPainter extends CustomPainter {
     required this.controller,
     required this.app,
     required this.cachedSpans,
+    required this.targetIndex,
     this.isAudioMode = false,
   }) : super(repaint: isAudioMode ? Listenable.merge([app.activeAudioWordIndex, app.isAudioPlaying, app.isAudioBuffering]) : null);
 
@@ -986,22 +989,12 @@ class _ActiveWordHighlightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    int targetIndex = -1;
+    int activeIndex = targetIndex;
     if (isAudioMode) {
       if (!app.isAudioPlaying.value && !app.isAudioBuffering.value) return;
-      targetIndex = app.activeAudioWordIndex.value ?? -1;
-    } else {
-      for (int i = 0; i < words.length; i++) {
-        if (!controller.isWordGreen(ayah, i) &&
-            !controller.isWordRed(ayah, i) &&
-            !controller.isWordYellow(ayah, i) &&
-            !controller.isWordNeutral(ayah, i)) {
-          targetIndex = i;
-          break;
-        }
-      }
+      activeIndex = app.activeAudioWordIndex.value ?? -1;
     }
-    if (targetIndex < 0 || targetIndex >= words.length) return;
+    if (activeIndex < 0 || activeIndex >= words.length) return;
 
     final bool isBlack = app.isDarkMode;
     final Color highlightColor = app.colors.wordHighlight;
@@ -1010,7 +1003,7 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       ..color = highlightColor.withValues(alpha: opacity)
       ..style = PaintingStyle.fill;
 
-    final int cacheKey = Object.hash(ayah, targetIndex, (size.width * 10).round());
+    final int cacheKey = Object.hash(ayah, activeIndex, (size.width * 10).round());
     final cached = _rrectCache[cacheKey];
     if (cached != null) {
       canvas.drawRRect(cached, paint);
@@ -1024,14 +1017,14 @@ class _ActiveWordHighlightPainter extends CustomPainter {
     )..layout(minWidth: size.width, maxWidth: size.width);
 
     int charOffset = 0;
-    for (int i = 0; i < targetIndex; i++) {
+    for (int i = 0; i < activeIndex; i++) {
       charOffset += words[i].length + 1;
     }
 
     final rects = painter.getBoxesForSelection(
       TextSelection(
         baseOffset: charOffset,
-        extentOffset: charOffset + words[targetIndex].length,
+        extentOffset: charOffset + words[activeIndex].length,
       ),
     );
     if (rects.isEmpty) {
@@ -1067,6 +1060,7 @@ class _ActiveWordHighlightPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ActiveWordHighlightPainter oldDelegate) {
     return oldDelegate.ayah != ayah ||
+        oldDelegate.targetIndex != targetIndex ||
         oldDelegate.cachedSpans != cachedSpans ||
         oldDelegate.isAudioMode != isAudioMode;
   }

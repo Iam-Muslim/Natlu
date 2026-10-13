@@ -16,7 +16,6 @@ import 'widgets/mic_bar.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/surah_picker.dart';
 import 'widgets/verse_row.dart';
-import 'widgets/mushaf/mushaf_view.dart';
 import 'widgets/dialogs/speed_selection_dialog.dart';
 
 /// Main interactive screen for real-time recitation tracking and reading.
@@ -73,6 +72,16 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   AppBannerInfo? _lastBanner;
   bool _wasAudioPlaying = false;
+  List<QuranVerse>? _cachedDisplayVerses;
+  int? _cachedTargetSurah;
+
+  List<QuranVerse> get _displayVerses {
+    if (_cachedDisplayVerses == null || _cachedTargetSurah != widget.controller.targetSurah) {
+      _cachedTargetSurah = widget.controller.targetSurah;
+      _cachedDisplayVerses = widget.controller.repository.getSurah(widget.controller.targetSurah);
+    }
+    return _cachedDisplayVerses!;
+  }
 
   @override
   void initState() {
@@ -86,7 +95,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
-    AppState.instance.addListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
 
@@ -186,7 +194,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
-    AppState.instance.removeListener(_onAppStateSpeedChanged);
     AppState.instance.activeAudioAyah.removeListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.removeListener(_onActiveAudioAyahChanged);
     _autoScrollTicker?.dispose();
@@ -241,6 +248,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         if (!mounted) return;
         setState(() {
           _lastSurah = widget.controller.targetSurah;
+          _cachedDisplayVerses = null;
           _keys.clear();
           _lastAyah = null;
         });
@@ -318,7 +326,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   /// - TOP RECOVERY: If scrolled too far up under the top bar, glides down to the natural eye view.
   /// - DISTANT NAVIGATION: If completely off-screen (picker, voice search), animates to natural 25% gaze.
   void _ensureAyahVisibleSmart(int ayah, {bool isManualTap = false}) {
-    if (AppState.instance.isMushafLayout || !_scroll.hasClients || _isAutoScrolling) return;
+    if (!_scroll.hasClients || _isAutoScrolling) return;
     if (_isUserDragging && !isManualTap) return;
 
     final bounds = _getSafeViewportBounds();
@@ -425,7 +433,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _maintainWordInEyeView(int ayah, int wordIndex, Rect globalWordRect) {
-    if (AppState.instance.isMushafLayout || _isAutoScrolling || _isUserDragging || !_scroll.hasClients) {
+    if (_isAutoScrolling || _isUserDragging || !_scroll.hasClients) {
       return;
     }
 
@@ -469,16 +477,6 @@ class _TrackingScreenState extends State<TrackingScreen>
       final double delta = wordTop - (upperSafeY + 16.0);
       _smoothScrollByDelta(delta);
       return;
-    }
-  }
-
-  int _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
-
-  void _onAppStateSpeedChanged() {
-    if (AppState.instance.autoScrollSpeed != _lastAutoScrollSpeed) {
-      _lastAutoScrollSpeed = AppState.instance.autoScrollSpeed;
-      // No animation cancellation or restart needed:
-      // The hardware VSYNC ticker reads the new velocity on the very next frame!
     }
   }
 
@@ -858,17 +856,14 @@ class _TrackingScreenState extends State<TrackingScreen>
                               Expanded(
                                 child: Builder(
                                   builder: (context) {
-                                    final displayVerses =
-                                        widget.controller.repository.getSurah(
-                                            widget.controller.targetSurah);
+                                    final verse1 =
+                                        widget.controller.repository.getVerse(
+                                            widget.controller.targetSurah, 1);
+                                    final name = app.isArabic
+                                        ? (verse1?.surahName ?? '')
+                                        : (verse1?.surahNameEn ?? '');
                                     return Text(
-                                      app.isArabic
-                                          ? (displayVerses.isNotEmpty
-                                              ? displayVerses.first.surahName
-                                              : '')
-                                          : (displayVerses.isNotEmpty
-                                              ? displayVerses.first.surahNameEn
-                                              : ''),
+                                      name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -934,25 +929,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                     const SizedBox(width: 4),
 
-                    // ── 4. Layout Mode Toggle (Mushaf vs Verses) ──
-                    _buildIconActionButton(
-                      icon: app.isMushafLayout
-                          ? Icons.menu_book_rounded
-                          : Icons.auto_stories_outlined,
-                      isActive: app.isMushafLayout,
-                      c: c,
-                      tooltip: app.isArabic
-                          ? (app.isMushafLayout ? 'عرض الآيات' : 'عرض المصحف')
-                          : (app.isMushafLayout ? 'Verse View' : 'Mushaf View'),
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        app.toggleMushafLayout();
-                      },
-                    ),
-
-                    const SizedBox(width: 4),
-
-                    // ── 5. Settings Action ──
+                    // ── 4. Settings Action ──
                     _buildIconActionButton(
                       icon: Icons.settings_rounded,
                       isActive: false,
@@ -1131,21 +1108,10 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildVerseContent(ThemeColors c, AppState app, double top) {
-    if (app.isMushafLayout) {
-      return MushafView(
-        controller: widget.controller,
-        isRecording: widget.isRecording,
-        isAutoScrolling: _isAutoScrolling,
-        onToggleAutoScroll: _toggleAutoScroll,
-      );
-    }
-
     return Builder(
       key: const ValueKey('verse_list_content'),
       builder: (context) {
-        final displayVerses = widget.controller.repository.getSurah(
-          widget.controller.targetSurah,
-        );
+        final displayVerses = _displayVerses;
 
         final bool isFullscreenMode = widget.isRecording || _isAutoScrolling;
         final topPadding = isFullscreenMode ? top + 10.0 : top + 74.0;
@@ -1177,19 +1143,11 @@ class _TrackingScreenState extends State<TrackingScreen>
                 delegate: SliverChildBuilderDelegate(
                   (_, i) {
                     if (i == 0) {
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        height: topPadding,
-                      );
+                      return SizedBox(height: topPadding);
                     }
 
                     if (i == displayVerses.length + 2) {
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOutCubic,
-                        height: bottomClearance,
-                      );
+                      return SizedBox(height: bottomClearance);
                     }
 
                     if (i == displayVerses.length + 1) {
@@ -1470,7 +1428,7 @@ class _TactileScaleButtonState extends State<_TactileScaleButton> {
       child: AnimatedScale(
         scale: _isDown ? 0.92 : 1.0,
         duration: const Duration(milliseconds: 120),
-        curve: _isDown ? Curves.easeOutQuad : Curves.easeOutBack,
+        curve: _isDown ? Curves.easeOutQuad : Curves.easeOutCubic,
         child: widget.child,
       ),
     );

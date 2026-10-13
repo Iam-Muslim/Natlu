@@ -56,8 +56,7 @@ class _SurahListTileState extends State<SurahListTile> {
           scale: _isPressed ? 0.97 : 1.0,
           duration: const Duration(milliseconds: 110),
           curve: Curves.easeOutCubic,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+          child: Container(
             padding: const EdgeInsetsDirectional.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: isSel

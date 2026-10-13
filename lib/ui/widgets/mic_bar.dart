@@ -524,43 +524,68 @@ class _AnimatedAudioWaveformState extends State<_AnimatedAudioWaveform>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 18,
-      child: Center(
+    return RepaintBoundary(
+      child: SizedBox(
+        width: 24,
+        height: 18,
         child: AnimatedBuilder(
           animation: _ctrl,
           builder: (context, _) {
-            final double v = _ctrl.value;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _buildBar(3.5 + 5.5 * v),
-                const SizedBox(width: 2.2),
-                _buildBar(8.5 - 4.5 * v),
-                const SizedBox(width: 2.2),
-                _buildBar(5.0 + 7.5 * v),
-                const SizedBox(width: 2.2),
-                _buildBar(11.0 - 6.5 * v),
-                const SizedBox(width: 2.2),
-                _buildBar(4.0 + 5.5 * (1.0 - v)),
-              ],
+            return CustomPaint(
+              painter: _WaveformBarsPainter(
+                animationValue: _ctrl.value,
+                color: widget.color,
+              ),
             );
           },
         ),
       ),
     );
   }
+}
 
-  Widget _buildBar(double height) {
-    return Container(
-      width: 2.2,
-      height: height.clamp(3.0, 13.0),
-      decoration: BoxDecoration(
-        color: widget.color,
-        borderRadius: BorderRadius.circular(1.5),
-      ),
-    );
+class _WaveformBarsPainter extends CustomPainter {
+  final double animationValue;
+  final Color color;
+
+  _WaveformBarsPainter({required this.animationValue, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final double v = animationValue;
+    final heights = [
+      (3.5 + 5.5 * v).clamp(3.0, 13.0),
+      (8.5 - 4.5 * v).clamp(3.0, 13.0),
+      (5.0 + 7.5 * v).clamp(3.0, 13.0),
+      (11.0 - 6.5 * v).clamp(3.0, 13.0),
+      (4.0 + 5.5 * (1.0 - v)).clamp(3.0, 13.0),
+    ];
+
+    const double barWidth = 2.2;
+    const double spacing = 2.2;
+    const double totalWidth = (5 * barWidth) + (4 * spacing);
+    double startX = (size.width - totalWidth) / 2;
+    final double centerY = size.height / 2;
+    const rrectRadius = Radius.circular(1.5);
+
+    for (int i = 0; i < heights.length; i++) {
+      final h = heights[i];
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(startX, centerY - (h / 2), barWidth, h),
+        rrectRadius,
+      );
+      canvas.drawRRect(rect, paint);
+      startX += barWidth + spacing;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformBarsPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue || oldDelegate.color != color;
   }
 }
 
@@ -588,7 +613,7 @@ class _TactileScaleButtonState extends State<_TactileScaleButton> {
       child: AnimatedScale(
         scale: _isDown ? 0.93 : 1.0,
         duration: const Duration(milliseconds: 110),
-        curve: _isDown ? Curves.easeOutQuad : Curves.easeOutBack,
+        curve: _isDown ? Curves.easeOutQuad : Curves.easeOutCubic,
         child: widget.child,
       ),
     );

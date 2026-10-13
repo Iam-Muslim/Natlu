@@ -34,6 +34,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   String _query = '';
   late final List<QuranVerse> _surahs;
   late final List<String> _normalizedNames;
+  late final List<String> _lowerEnNames;
   final TextEditingController _searchCtrl = TextEditingController();
   late final ScrollController _scrollCtrl;
 
@@ -41,7 +42,8 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   void initState() {
     super.initState();
     _surahs = widget.controller.repository.surahMetadata;
-    _normalizedNames = _surahs.map((s) => s.surahName).toList();
+    _normalizedNames = _surahs.map((s) => _normalizeArabic(s.surahName)).toList();
+    _lowerEnNames = _surahs.map((s) => s.surahNameEn.toLowerCase()).toList();
     final double initialOffset = ((widget.current - 1) * 78.0).clamp(0.0, 114 * 78.0);
     _scrollCtrl = ScrollController(initialScrollOffset: initialOffset);
   }
@@ -53,7 +55,7 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
     super.dispose();
   }
 
-  String _normalizeArabic(String text) {
+  static String _normalizeArabic(String text) {
     final RegExp diacritics = RegExp(r'[\u064B-\u065F\u0670]');
     String normalized = text.replaceAll(diacritics, '');
     normalized = normalized.replaceAll(RegExp(r'[أإآٱ]'), 'ا');
@@ -71,13 +73,14 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
     final isDark = app.isDarkMode;
     final isAr = app.isArabic;
     final normQuery = _normalizeArabic(_query);
+    final lowerQuery = _query.toLowerCase();
 
     final List<int> items = [];
     for (int i = 0; i < _surahs.length; i++) {
       final sNum = i + 1;
       if (_query.isEmpty ||
-          _normalizeArabic(_normalizedNames[i]).contains(normQuery) ||
-          _surahs[i].surahNameEn.toLowerCase().contains(_query.toLowerCase()) ||
+          _normalizedNames[i].contains(normQuery) ||
+          _lowerEnNames[i].contains(lowerQuery) ||
           '$sNum'.contains(_query)) {
         items.add(i);
       }

@@ -121,7 +121,7 @@ class PremiumPillSelector extends StatelessWidget {
               // Animated Background Pill
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutBack,
+                curve: Curves.easeOutCubic,
                 left: Directionality.of(context) == TextDirection.ltr
                     ? selected * pillWidth
                     : (labels.length - 1 - selected) * pillWidth,
