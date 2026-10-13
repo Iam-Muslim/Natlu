@@ -5,7 +5,7 @@ import 'audio/verse_audio_player.dart';
 ///
 /// Unifies both word-level auditioning and full-Ayah recitation under the exact same
 /// professional audio engine (matching `AudioCtrl` from `quran_library`):
-/// - Reciter: Sheikh Mahmoud Khalil Al-Husary exclusively across both words and ayahs.
+/// - Reciter:  Mahmoud Khalil Al-Husary exclusively across both words and ayahs.
 /// - Data Source: MP3Quran v4 streaming API with sample-accurate timestamp seeking.
 /// - Zero player conflict: uses a single [AudioPlayer] instance to eliminate native
 ///   audio focus contention, resource duplication, and "Loading interrupted" crashes.
@@ -19,13 +19,14 @@ class QuranAudioService {
   bool get isPaused => _player.isPaused;
 
   /// Returns the streaming URL for a Surah audio file from MP3Quran.
-  static String getSurahAudioUrl(int surah) => VerseAudioPlayer.getSurahAudioUrl(surah);
+  static String getSurahAudioUrl(int surah) =>
+      VerseAudioPlayer.getSurahAudioUrl(surah);
 
   /// Pre-caches or resolves Ayah audio file in background for instant 0ms playback.
   static Future<String> ensureAyahDownloaded(int surah, int ayah) =>
       VerseAudioPlayer.ensureAyahDownloaded(surah, ayah);
 
-  /// Plays an individual word alone using Sheikh Al-Husary's recitation from MP3Quran.
+  /// Plays an individual word alone using  Al-Husary's recitation from MP3Quran.
   Future<void> playWord({
     required int surah,
     required int ayah,
@@ -38,7 +39,7 @@ class QuranAudioService {
     );
   }
 
-  /// Plays the specified [ayah] in [surah] recited by Sheikh Mahmoud Khalil Al-Husary.
+  /// Plays the specified [ayah] in [surah] recited by  Mahmoud Khalil Al-Husary.
   Future<void> play({
     required int surah,
     required int ayah,

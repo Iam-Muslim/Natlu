@@ -34,16 +34,12 @@ to a live voice, and the highlighting can be observed as it happens.
 
 EXTERNAL SERVICES USED
 
-None. The app is entirely self-contained and works with the device offline or in
-airplane mode.
-
-- Speech recognition runs on device: a Zipformer CTC acoustic model bundled in
-  the app, executed locally through ONNX Runtime (CoreML on iOS).
-- No server, API, data provider, authentication service, payment processor or
-  third-party AI service. The app contains no networking code at all, and no
-  analytics or advertising SDK.
-- Recitation audio is processed in memory, never written to disk, and never
-  leaves the device.
+• Recitation Audio:
+  Public domain verse audio recordings ( Mahmoud Khalil Al-Husary) streamed and cached on-demand from everyayah.com for the recitation playback feature.
+• Speech recognition runs 100% on device:
+  A Zipformer CTC acoustic model bundled in the app, executed locally through ONNX Runtime (CoreML on iOS). No speech audio ever leaves the device.
+• No user tracking, no authentication, no user accounts, and no analytics or advertising SDKs.
+• Microphone audio from recitation practice is processed strictly in memory locally, never written to disk, and never transmitted over the network.
 
 REGIONAL DIFFERENCES
 

@@ -323,7 +323,8 @@ def distribute_to(group_name, external:)
     # Only external testers get an email; internal testers see it immediately.
     notify_external_testers: external,
     app_version: version,
-    build_number: build
+    build_number: build,
+    changelog: (File.read("#{METADATA_DIR}/en-US/release_notes.txt").strip rescue nil)
   )
   build
 end

@@ -125,7 +125,7 @@ class SurahTiming {
 }
 
 /// High-performance Quran timing service integrating Quran.com's official
-/// word-by-word segment API for Sheikh Mahmoud Khalil Al-Husary (Reciter 6).
+/// word-by-word segment API for  Mahmoud Khalil Al-Husary (Reciter 6).
 ///
 /// Architecture & Performance:
 /// - Fast Disk Cache: Saves decompressed Surah segments JSON to local app storage.

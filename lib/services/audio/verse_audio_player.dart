@@ -13,13 +13,13 @@ import '../quran_timing_service.dart';
 /// and stability patterns of `quran_library` and `alquranalkareem`.
 ///
 /// Architecture & Highlights:
-/// - **Reciter**: Sheikh Mahmoud Khalil Al-Husary at **64kbps** (per-Ayah files from EveryAyah).
+/// - **Reciter**:  Mahmoud Khalil Al-Husary at **64kbps** (per-Ayah files from EveryAyah).
 /// - **Zero Full-Surah Downloads**: Only downloads isolated, tiny per-Ayah files (~20-40 KB each).
 /// - **Fast First-Time Local Disk Cache**: Caches each Ayah file to `quran_audio/Husary_64kbps/$s$a.mp3`.
 ///   Once cached, playback from disk is 100% instant (0ms latency, zero network wait).
 /// - **Frame-Accurate Word Highlighting**: Synced with Quran.com Reciter 6 (Mahmoud Khalil Al-Husary)
 ///   0ms-relative word segments from [QuranTimingService].
-/// - **Single Word Playback**: Plays any tapped word in Sheikh Al-Husary's voice by seeking to
+/// - **Single Word Playback**: Plays any tapped word in  Al-Husary's voice by seeking to
 ///   the exact millisecond boundaries of that word in the cached Ayah file.
 /// - **Background Pre-Warming**: While Ayah $N$ is actively playing, automatically pre-downloads
 ///   Ayah $N+1$ so continuous transitions between verses are seamless.
@@ -29,18 +29,120 @@ class VerseAudioPlayer {
 
   /// Canonical Ayah count for Surahs 1 to 114.
   static const List<int> surahAyahCounts = [
-    7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-    123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-    112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-    34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-    54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-    60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-    14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-    28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-    29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-    15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-    11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-    5, 4, 5, 6
+    7,
+    286,
+    200,
+    176,
+    120,
+    165,
+    206,
+    75,
+    129,
+    109,
+    123,
+    111,
+    43,
+    52,
+    99,
+    128,
+    111,
+    110,
+    98,
+    135,
+    112,
+    78,
+    118,
+    64,
+    77,
+    227,
+    93,
+    88,
+    69,
+    60,
+    34,
+    30,
+    73,
+    54,
+    45,
+    83,
+    182,
+    88,
+    75,
+    85,
+    54,
+    53,
+    89,
+    59,
+    37,
+    35,
+    38,
+    29,
+    18,
+    45,
+    60,
+    49,
+    62,
+    55,
+    78,
+    96,
+    29,
+    22,
+    24,
+    13,
+    14,
+    11,
+    11,
+    18,
+    12,
+    12,
+    30,
+    52,
+    52,
+    44,
+    28,
+    28,
+    20,
+    56,
+    40,
+    31,
+    50,
+    40,
+    46,
+    42,
+    29,
+    19,
+    36,
+    25,
+    22,
+    17,
+    19,
+    26,
+    30,
+    20,
+    15,
+    21,
+    11,
+    8,
+    8,
+    19,
+    5,
+    8,
+    8,
+    11,
+    11,
+    8,
+    3,
+    9,
+    5,
+    4,
+    7,
+    3,
+    6,
+    3,
+    5,
+    4,
+    5,
+    6
   ];
 
   AudioPlayer? _player;
@@ -81,7 +183,7 @@ class VerseAudioPlayer {
   int? get currentSurah => _currentSurah;
   int? get currentAyah => _currentAyah;
 
-  /// Returns the per-Ayah 64kbps audio URL (Sheikh Mahmoud Khalil Al-Husary).
+  /// Returns the per-Ayah 64kbps audio URL ( Mahmoud Khalil Al-Husary).
   static String getAyahAudioUrl(int surah, int ayah) {
     final s = surah.toString().padLeft(3, '0');
     final a = ayah.toString().padLeft(3, '0');
@@ -286,7 +388,7 @@ class VerseAudioPlayer {
     }
   }
 
-  /// Plays a single word in [ayah] of [surah] recited by Sheikh Mahmoud Khalil Al-Husary.
+  /// Plays a single word in [ayah] of [surah] recited by  Mahmoud Khalil Al-Husary.
   Future<void> playWord({
     required int surah,
     required int ayah,
@@ -379,7 +481,7 @@ class VerseAudioPlayer {
     }
   }
 
-  /// Plays [ayah] in [surah] recited by Sheikh Mahmoud Khalil Al-Husary (64kbps) with
+  /// Plays [ayah] in [surah] recited by  Mahmoud Khalil Al-Husary (64kbps) with
   /// gapless 0ms playlist queuing matching `quran_library`.
   Future<void> play({
     required int surah,
@@ -424,9 +526,8 @@ class VerseAudioPlayer {
 
     try {
       final player = _audioPlayer;
-      final int maxAyahs = (surah >= 1 && surah <= 114)
-          ? surahAyahCounts[surah - 1]
-          : 286;
+      final int maxAyahs =
+          (surah >= 1 && surah <= 114) ? surahAyahCounts[surah - 1] : 286;
 
       // Build sliding playlist window: 5 Ayahs ahead for instant gapless buffering
       final int windowSize = continuous ? 5 : 1;
@@ -454,7 +555,8 @@ class VerseAudioPlayer {
 
       app.isAudioBuffering.value = false;
       app.isAudioPlaying.value = true;
-      app.activeAudioWordIndex.value = 0; // Highlight first word as sound starts
+      app.activeAudioWordIndex.value =
+          0; // Highlight first word as sound starts
 
       await player.play();
     } catch (e, stack) {
