@@ -32,21 +32,21 @@ class VerseSpanBuilder {
     int? surah,
   }) {
     if (wordIndex < 0) return colors.text;
-    final isRead = controller.isWordGreen(ayah, wordIndex, surah: surah) ||
-        controller.isWordRed(ayah, wordIndex, surah: surah) ||
-        controller.isWordYellow(ayah, wordIndex, surah: surah) ||
-        controller.isWordNeutral(ayah, wordIndex, surah: surah);
+    if (app.isBlurMode && !isAutoScrolling) {
+      final isRead = controller.isWordGreen(ayah, wordIndex, surah: surah) ||
+          controller.isWordRed(ayah, wordIndex, surah: surah) ||
+          controller.isWordYellow(ayah, wordIndex, surah: surah) ||
+          controller.isWordNeutral(ayah, wordIndex, surah: surah);
+      if (!isRead) return Colors.transparent;
+    }
 
-    final isHidden = app.isBlurMode && !isRead && !isAutoScrolling;
-    return isHidden
-        ? Colors.transparent
-        : resolveWordColor(
-            ayah: ayah,
-            wordIndex: wordIndex,
-            controller: controller,
-            colors: colors,
-            surah: surah,
-          );
+    return resolveWordColor(
+      ayah: ayah,
+      wordIndex: wordIndex,
+      controller: controller,
+      colors: colors,
+      surah: surah,
+    );
   }
 
   /// Builds the complete list of [InlineSpan]s representing an Ayah's text.

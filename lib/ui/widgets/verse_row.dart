@@ -43,8 +43,16 @@ class VerseRow extends StatefulWidget {
     this.onActiveWordPositioned,
   });
 
+  static final List<String> _arabicDigitsCache = List<String>.generate(650, (i) {
+    const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    return i.toString().split('').map((e) => digits[int.parse(e)]).join('');
+  });
+
   /// Converts an integer to Eastern Arabic numeral glyphs (e.g. 1 -> '١').
   static String toArabicDigits(int number) {
+    if (number >= 0 && number < _arabicDigitsCache.length) {
+      return _arabicDigitsCache[number];
+    }
     const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
     return number.toString().split('').map((e) => digits[int.parse(e)]).join('');
   }

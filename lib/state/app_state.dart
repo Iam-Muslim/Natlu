@@ -147,6 +147,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> saveMushafPage(int page) async {
+    if (page < 1 || page > 604) return;
+    currentMushafPage.value = page;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_mushaf_page', page);
+    } catch (_) {}
+  }
+
 
   // ── Last Recitation Position ──────────────────────────────────────────────
 
@@ -592,6 +601,10 @@ class AppState extends ChangeNotifier {
 
       lastSurah = (prefs.getInt('last_surah') ?? 1).clamp(1, 114);
       lastAyah = (prefs.getInt('last_ayah') ?? 1).clamp(1, 286);
+      final savedPage = prefs.getInt('last_mushaf_page');
+      if (savedPage != null && savedPage >= 1 && savedPage <= 604) {
+        currentMushafPage.value = savedPage;
+      }
 
       notifyListeners();
     } catch (e) {

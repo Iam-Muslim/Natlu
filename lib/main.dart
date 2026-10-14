@@ -345,6 +345,7 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
       _voiceSearchCtrl.repository = _repo;
 
       _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background
+      MushafView.preloadData(); // Fire-and-forget in background Isolate
 
       _ctrl = HighlightingController(
         engine: _engine,
