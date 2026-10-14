@@ -2,8 +2,6 @@
 
 ### بفضل الله وبرحمته
 ## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
-
-*“And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”*  
 <br/>
 <img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/9083e1a1-6c33-4ddb-b77a-f8f84873c9da" />
 

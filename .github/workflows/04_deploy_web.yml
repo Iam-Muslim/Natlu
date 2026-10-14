@@ -45,6 +45,12 @@ jobs:
       - name: Build Flutter Web
         run: flutter build web --release --base-href "/recite/" --pwa-strategy=none --no-web-resources-cdn
 
+      - name: Build Landing Page (React + Vite)
+        run: |
+          cd landing_page
+          npm ci
+          npm run build
+
       - name: Prepare Landing Page with Flutter Web App
         env:
           SUBHAN_ALLAH: ${{ secrets.SUBHAN_ALLAH }}
@@ -52,6 +58,9 @@ jobs:
           rm -rf landing_page/recite/*
           mkdir -p landing_page/recite
           cp -R build/web/* landing_page/recite/
+          rm -rf landing_page/dist/recite
+          mkdir -p landing_page/dist/recite
+          cp -R build/web/* landing_page/dist/recite/
           mkdir -p functions landing_page/functions
           cp web/download-model.js functions/download-model.js
           cp web/download-model.js landing_page/functions/download-model.js
@@ -60,17 +69,21 @@ jobs:
             sed -i "s/INJECT_TOKEN_HERE/${SUBHAN_ALLAH}/g" landing_page/functions/download-model.js 2>/dev/null || true
           fi
           echo "// Neutralized to protect custom sw.js" > landing_page/recite/flutter_service_worker.js
-          node -e "const fs = require('fs'); const p = 'landing_page/recite/flutter_bootstrap.js'; if (fs.existsSync(p)) { let s = fs.readFileSync(p, 'utf8'); s = s.replace(/serviceWorkerSettings:\s*\{[\s\S]*?\}\s*,?/g, ''); s = s.replace('if (!window._flutter) {\n  window._flutter = {};\n}\n_flutter.buildConfig', 'var _flutter = window._flutter = window._flutter || {};\n_flutter.buildConfig'); s = s.replace(/\"builds\":/, '\"useLocalCanvasKit\":true,\"builds\":'); s = s.replace(/_flutter\.loader\.load\(\);?/, '_flutter.loader.load({config:{canvasKitBaseUrl:\"canvaskit/\"}});'); fs.writeFileSync(p, s, 'utf8'); }"
+          echo "// Neutralized to protect custom sw.js" > landing_page/dist/recite/flutter_service_worker.js
+          node -e "const fs = require('fs'); for (const p of ['landing_page/recite/flutter_bootstrap.js', 'landing_page/dist/recite/flutter_bootstrap.js']) { if (fs.existsSync(p)) { let s = fs.readFileSync(p, 'utf8'); s = s.replace(/serviceWorkerSettings:\s*\{[\s\S]*?\}\s*,?/g, ''); s = s.replace('if (!window._flutter) {\n  window._flutter = {};\n}\n_flutter.buildConfig', 'var _flutter = window._flutter = window._flutter || {};\n_flutter.buildConfig'); s = s.replace(/\"builds\":/, '\"useLocalCanvasKit\":true,\"builds\":'); s = s.replace(/_flutter\.loader\.load\(\);?/, '_flutter.loader.load({config:{canvasKitBaseUrl:\"canvaskit/\"}});'); fs.writeFileSync(p, s, 'utf8'); } }"
           npx --yes esbuild "landing_page/recite/flutter_bootstrap.js" --target=es2018 --outfile="landing_page/recite/flutter_bootstrap.js" --allow-overwrite
+          npx --yes esbuild "landing_page/dist/recite/flutter_bootstrap.js" --target=es2018 --outfile="landing_page/dist/recite/flutter_bootstrap.js" --allow-overwrite
           npx --yes esbuild "landing_page/recite/flutter.js" --target=es2018 --outfile="landing_page/recite/flutter.js" --allow-overwrite
+          npx --yes esbuild "landing_page/dist/recite/flutter.js" --target=es2018 --outfile="landing_page/dist/recite/flutter.js" --allow-overwrite
           npx --yes esbuild "landing_page/recite/sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page/recite/sherpa-onnx-wasm-main-asr.js" --allow-overwrite
+          npx --yes esbuild "landing_page/dist/recite/sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page/dist/recite/sherpa-onnx-wasm-main-asr.js" --allow-overwrite
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy landing_page --project-name=recitequran
+          command: pages deploy landing_page/dist --project-name=recitequran
         if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
