@@ -78,12 +78,7 @@ class VerseSpanBuilder {
 
     final InlineSpan spaceSpan = TextSpan(
       text: ' ',
-      style: TextStyle(
-        fontFamily: 'HafsSmart',
-        fontSize: app.fontSize,
-        height: 2.6,
-        wordSpacing: 5.0,
-      ),
+      style: defaultStyle,
     );
 
     for (int i = 0; i < words.length; i++) {

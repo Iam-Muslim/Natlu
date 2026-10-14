@@ -194,16 +194,21 @@ class VerseAudioPlayer {
   /// Backward-compatible URL helper.
   static String getSurahAudioUrl(int surah) => getAyahAudioUrl(surah, 1);
 
+  static String? _cachedAudioDirPath;
+
   /// Resolves the local disk cache file for an Ayah.
   static Future<File> getLocalAyahFile(int surah, int ayah) async {
-    final dir = await getApplicationSupportDirectory();
+    if (_cachedAudioDirPath == null) {
+      final dir = await getApplicationSupportDirectory();
+      final audioDir = Directory('${dir.path}/quran_audio/Husary_64kbps');
+      if (!audioDir.existsSync()) {
+        audioDir.createSync(recursive: true);
+      }
+      _cachedAudioDirPath = audioDir.path;
+    }
     final s = surah.toString().padLeft(3, '0');
     final a = ayah.toString().padLeft(3, '0');
-    final audioDir = Directory('${dir.path}/quran_audio/Husary_64kbps');
-    if (!audioDir.existsSync()) {
-      audioDir.createSync(recursive: true);
-    }
-    return File('${audioDir.path}/$s$a.mp3');
+    return File('$_cachedAudioDirPath/$s$a.mp3');
   }
 
   /// Creates an AudioSource for an Ayah, utilizing local cached file if present,

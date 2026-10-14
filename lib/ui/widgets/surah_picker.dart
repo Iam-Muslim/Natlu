@@ -284,6 +284,14 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                         physics: const BouncingScrollPhysics(),
                         padding: const EdgeInsets.only(bottom: 24, top: 4),
                         itemCount: items.length,
+                        prototypeItem: _surahs.isNotEmpty
+                            ? SurahListTile(
+                                surahNumber: 1,
+                                surahMeta: _surahs.first,
+                                isSelected: false,
+                                onTap: () {},
+                              )
+                            : null,
                         itemBuilder: (_, i) {
                           final int idx = items[i];
                           final int sNum = idx + 1;

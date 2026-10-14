@@ -277,6 +277,10 @@ class _VerseRowState extends State<VerseRow> {
   bool _isListeningToController = false;
   bool _wasAudioActive = false;
 
+  /// Fast O(1) word colors hash cache for idle/unrecited verses.
+  int? _cachedWordColorsHash;
+  int? _cachedWordColorsRevision;
+
   final List<TapGestureRecognizer> _recognizers = [];
   final GlobalKey _textKey = GlobalKey();
   bool _positionCheckScheduled = false;
@@ -419,6 +423,8 @@ class _VerseRowState extends State<VerseRow> {
   void _invalidate() {
     _lastFingerprint = -1;
     _cachedSpans = null;
+    _cachedWordColorsHash = null;
+    _cachedWordColorsRevision = null;
     _cachedRectTargetIndex = null;
     _cachedRectMaxWidth = null;
     _cachedWordRect = null;
@@ -625,18 +631,35 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + (app.activeAudioWordIndex.value ?? -1);
     hash = hash * 31 + _getActiveTargetIndex();
 
-    final wordCount = widget.verse.uthmaniWords.length;
-    for (int i = 0; i < wordCount; i++) {
-      if (ctrl.isWordGreen(ayah, i, surah: widget.verse.surah)) {
-        hash = hash * 31 + (i + 1) * 7;
-      } else if (ctrl.isWordRed(ayah, i, surah: widget.verse.surah)) {
-        hash = hash * 31 + (i + 1) * 13;
-      } else if (ctrl.isWordYellow(ayah, i, surah: widget.verse.surah)) {
-        hash = hash * 31 + (i + 1) * 17;
-      } else if (ctrl.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
-        hash = hash * 31 + (i + 1) * 23;
+    final int currentRevision = ctrl.globalRevision.value;
+    final bool needsWordScan = isActive ||
+        isAudioActive ||
+        _wasAudioActive ||
+        _cachedWordColorsRevision != currentRevision ||
+        _cachedWordColorsHash == null;
+
+    final int wordColorsHash;
+    if (needsWordScan) {
+      int wHash = 17;
+      final wordCount = widget.verse.uthmaniWords.length;
+      for (int i = 0; i < wordCount; i++) {
+        if (ctrl.isWordGreen(ayah, i, surah: widget.verse.surah)) {
+          wHash = wHash * 31 + (i + 1) * 7;
+        } else if (ctrl.isWordRed(ayah, i, surah: widget.verse.surah)) {
+          wHash = wHash * 31 + (i + 1) * 13;
+        } else if (ctrl.isWordYellow(ayah, i, surah: widget.verse.surah)) {
+          wHash = wHash * 31 + (i + 1) * 17;
+        } else if (ctrl.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
+          wHash = wHash * 31 + (i + 1) * 23;
+        }
       }
+      _cachedWordColorsHash = wHash;
+      _cachedWordColorsRevision = currentRevision;
+      wordColorsHash = wHash;
+    } else {
+      wordColorsHash = _cachedWordColorsHash!;
     }
+    hash = hash * 31 + wordColorsHash;
 
     hash = hash * 31 + (app.isBlurMode ? 1 : 0);
     hash = hash * 31 + (app.isBlurMode && widget.isAutoScrolling ? 1 : 0);

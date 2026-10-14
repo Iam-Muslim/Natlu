@@ -63,6 +63,12 @@ class AppState extends ChangeNotifier {
   /// Singleton instance — accessed everywhere as `AppState.instance`.
   static final AppState instance = AppState._();
 
+  SharedPreferences? _prefs;
+
+  Future<SharedPreferences> _getPrefs() async {
+    return _prefs ??= await SharedPreferences.getInstance();
+  }
+
   // ── Language ───────────────────────────────────────────────────────────────
 
   late AppLanguage _lang;
@@ -72,7 +78,7 @@ class AppState extends ChangeNotifier {
   void toggleLanguage() async {
     _lang = _lang == AppLanguage.ar ? AppLanguage.en : AppLanguage.ar;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setString('lang', _lang.name);
   }
 
@@ -93,7 +99,7 @@ class AppState extends ChangeNotifier {
     if (tajweedClickCount < 10) {
       tajweedClickCount++;
       notifyListeners();
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setInt('tajweed_click_count', tajweedClickCount);
     }
   }
@@ -111,7 +117,7 @@ class AppState extends ChangeNotifier {
   void setTheme(AppTheme t) async {
     _theme = t;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setString('theme', _theme.name);
   }
 
@@ -122,7 +128,7 @@ class AppState extends ChangeNotifier {
   void toggleBlurMode() async {
     isBlurMode = !isBlurMode;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setBool('blurMode', isBlurMode);
   }
 
@@ -142,7 +148,7 @@ class AppState extends ChangeNotifier {
     if (isMushafMode != value) {
       isMushafMode = value;
       notifyListeners();
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setBool('mushafMode', isMushafMode);
     }
   }
@@ -151,7 +157,7 @@ class AppState extends ChangeNotifier {
     if (page < 1 || page > 604) return;
     currentMushafPage.value = page;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setInt('last_mushaf_page', page);
     } catch (_) {}
   }
@@ -168,7 +174,7 @@ class AppState extends ChangeNotifier {
     lastSurah = surah;
     lastAyah = ayah;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setInt('last_surah', surah);
       await prefs.setInt('last_ayah', ayah);
     } catch (_) {}
@@ -185,13 +191,13 @@ class AppState extends ChangeNotifier {
   void setAutoScrollSpeed(int speed) async {
     autoScrollSpeed = speed;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setInt('autoScrollSpeed', autoScrollSpeed);
   }
 
   void setHasChosenAutoScrollSpeed(bool chosen) async {
     hasChosenAutoScrollSpeed = chosen;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setBool('has_chosen_speed', chosen);
   }
 
@@ -207,7 +213,7 @@ class AppState extends ChangeNotifier {
   void setFontSize(double size) async {
     fontSize = size;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setDouble('fontSize', fontSize);
   }
 
@@ -272,7 +278,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveSeenBanners() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setStringList('seen_banner_ids', _seenBannerIds.toList());
     } catch (_) {}
   }
@@ -558,7 +564,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
 
       if (prefs.containsKey('lang')) {
         _lang = prefs.getString('lang') == 'en'

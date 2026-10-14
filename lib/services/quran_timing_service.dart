@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' show log;
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -154,15 +155,20 @@ class QuranTimingService {
     return _inMemorySurahs[surah]?.getAyah(ayah);
   }
 
+  static String? _cachedTimingsDirPath;
+
   Future<File?> _getDiskCacheFile(int surah) async {
     if (kIsWeb) return null;
     try {
-      final dir = await getApplicationSupportDirectory();
-      final timingsDir = Directory('${dir.path}/quran_segments/husary');
-      if (!await timingsDir.exists()) {
-        await timingsDir.create(recursive: true);
+      if (_cachedTimingsDirPath == null) {
+        final dir = await getApplicationSupportDirectory();
+        final timingsDir = Directory('${dir.path}/quran_segments/husary');
+        if (!timingsDir.existsSync()) {
+          timingsDir.createSync(recursive: true);
+        }
+        _cachedTimingsDirPath = timingsDir.path;
       }
-      return File('${timingsDir.path}/surah_$surah.json');
+      return File('$_cachedTimingsDirPath/surah_$surah.json');
     } catch (_) {
       return null;
     }
@@ -189,7 +195,7 @@ class QuranTimingService {
           try {
             final content = await cacheFile.readAsString();
             if (content.length > 50) {
-              final parsed = _parseQuranComJson(surah, content);
+              final parsed = await _parseJsonAuto(surah, content);
               if (parsed != null) {
                 _inMemorySurahs[surah] = parsed;
                 completer.complete(parsed);
@@ -245,7 +251,7 @@ class QuranTimingService {
           if (file != null) file.writeAsString(body).catchError((_) => file);
         }).catchError((_) {});
 
-        return _parseQuranComJson(surah, body);
+        return await _parseJsonAuto(surah, body);
       }
 
       lastFailureReason = response.statusCode >= 500
@@ -260,8 +266,20 @@ class QuranTimingService {
     }
   }
 
+  /// Automatically parses in background Isolate when payload > 25KB to guarantee zero UI frame drops.
+  static Future<SurahTiming?> _parseJsonAuto(int surah, String content) async {
+    if (content.length > 25000 && !kIsWeb) {
+      try {
+        return await Isolate.run(() => _parseQuranComJson(surah, content));
+      } catch (_) {
+        return _parseQuranComJson(surah, content);
+      }
+    }
+    return _parseQuranComJson(surah, content);
+  }
+
   /// Parses Quran.com's chapter recitations response into normalized 0ms-based AyahTimings.
-  SurahTiming? _parseQuranComJson(int surah, String jsonString) {
+  static SurahTiming? _parseQuranComJson(int surah, String jsonString) {
     try {
       final Map<String, dynamic> root = jsonDecode(jsonString);
       final dynamic audioFile = root['audio_file'];
