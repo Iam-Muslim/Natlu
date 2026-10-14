@@ -942,12 +942,11 @@ class _MushafPageState extends State<_MushafPage> {
 
           final bool isLandscape = maxWidth > maxHeight;
 
-          // Bottom clearance: ensures the last ayah reaches right above the bottom action bar dock
-          // and is NEVER trapped or obscured behind the bottom buttons
           final double bottomReserved = isLandscape ? 48.0 : 64.0;
+          final double rawH = maxHeight - bottomReserved;
           final double availableHeight =
-              (maxHeight - bottomReserved).clamp(100.0, maxHeight);
-          final double availableWidth = maxWidth;
+              math.max(40.0, math.min(rawH, maxHeight));
+          final double availableWidth = math.max(40.0, maxWidth);
 
           final double lineWidth;
           final double linesContainerHeight;
@@ -956,24 +955,33 @@ class _MushafPageState extends State<_MushafPage> {
             const double mushafAspectRatio = 0.65;
             double h = availableHeight;
             double w = h * mushafAspectRatio;
-            if (w > availableWidth - 24.0) {
-              w = availableWidth - 24.0;
+            final double maxAllowedW = math.max(40.0, availableWidth - 24.0);
+            if (w > maxAllowedW) {
+              w = maxAllowedW;
               h = w / mushafAspectRatio;
             }
-            lineWidth = w;
-            linesContainerHeight = h;
+            lineWidth = math.max(40.0, w);
+            linesContainerHeight = math.max(40.0, h);
           } else {
-            // Portrait: Ayahs expand to fill full height right down to the bottom bar
-            lineWidth =
-                (availableWidth - 16.0).clamp(280.0, availableHeight * 0.72);
+            // Portrait: Ayahs expand to fill full height right down to the bottom bar.
+            // On wide screens (tablets/foldables), constrain width to standard Mushaf proportions (~0.72).
+            // On phone screens, expand to fit availableWidth - 16.0 with zero overflow.
+            final double maxW = math.max(40.0, availableWidth - 16.0);
+            final double idealW = math.max(40.0, availableHeight * 0.72);
+            lineWidth = math.min(maxW, idealW);
             linesContainerHeight = availableHeight;
           }
 
           // Pages 1 & 2 special centered layout (Al-Fatihah and start of Al-Baqarah)
           if (widget.pageNumber <= 2) {
+            final double idealLineHeight =
+                linesContainerHeight / (lines.length + 3);
+            final double maxH = math.max(16.0, idealLineHeight);
             final double lineHeight =
-                (linesContainerHeight / (lines.length + 3)).clamp(44.0, 72.0);
-            final double fontSize = (lineHeight * 0.46).clamp(16.0, 23.0);
+                idealLineHeight.clamp(math.min(24.0, maxH), 72.0);
+            final double maxP1Font = math.max(8.0, lineHeight * 0.50);
+            final double fontSize =
+                (lineHeight * 0.46).clamp(math.min(10.0, maxP1Font), 23.0);
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -1038,7 +1046,9 @@ class _MushafPageState extends State<_MushafPage> {
           // Standard 15-line  Mushaf pages:
           // Unified typography: all 15 lines share the exact same scale and baseline.
           final double lineHeight = linesContainerHeight / lines.length;
-          final double fontSize = (lineHeight * 0.52).clamp(16.0, 26.0);
+          final double maxStandardFont = math.max(8.0, lineHeight * 0.58);
+          final double fontSize =
+              (lineHeight * 0.52).clamp(math.min(10.0, maxStandardFont), 26.0);
 
           return Directionality(
             textDirection: TextDirection.rtl,
@@ -1174,7 +1184,7 @@ class _MushafPageState extends State<_MushafPage> {
                       style: TextStyle(
                         fontFamily:
                             usesUthmani ? widget.wordFontFamily : 'cairo',
-                        fontSize: (fontSize * 0.95).clamp(17.0, 25.0),
+                        fontSize: (fontSize * 0.95).clamp(12.0, 25.0),
                         fontWeight: FontWeight.normal,
                         color: c.text,
                       ),
@@ -1401,6 +1411,7 @@ class _MushafPageState extends State<_MushafPage> {
   /// - Minimalist flat card container styled strictly with app theme tokens.
   /// - Zero traditional decorative clipart or complex floral arabesque.
   /// - Pure centered Surah title in authentic Quranic typography.
+  /// - Well-proportioned compact height that never overflows on small screens.
   Widget _buildSurahHeaderBanner({
     required int surahNum,
     required String surahName,
@@ -1411,7 +1422,16 @@ class _MushafPageState extends State<_MushafPage> {
     required AppState app,
   }) {
     final bool isDark = app.isDarkMode;
-    final double bannerHeight = (lineHeight * 0.86).clamp(34.0, 44.0);
+    // Sleek, compact banner height: smaller and proportionate with zero line overlap
+    final double maxBannerH = math.max(16.0, lineHeight * 0.75);
+    final double bannerHeight =
+        (lineHeight * 0.65).clamp(math.min(22.0, maxBannerH), 33.0);
+
+    // In modern UI typography (Cairo font), Surah titles on card banners are displayed
+    // clean without dense Quranic vocalization marks to prevent glyph-bounding collision
+    // while keeping authentic, crisp modern Arabic aesthetics.
+    final String displayName =
+        surahName.replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '');
 
     return SizedBox(
       width: lineWidth,
@@ -1433,11 +1453,11 @@ class _MushafPageState extends State<_MushafPage> {
             child: Container(
               width: lineWidth,
               height: bannerHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: c.surfaceHigh,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: c.border.withValues(alpha: isDark ? 0.70 : 0.85),
                   width: 0.85,
@@ -1445,23 +1465,25 @@ class _MushafPageState extends State<_MushafPage> {
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    blurRadius: 6,
+                    offset: const Offset(0, 1.5),
                   ),
                 ],
               ),
               child: Text(
-                surahName,
+                displayName,
                 textAlign: TextAlign.center,
                 textDirection: TextDirection.rtl,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'cairo',
-                  fontSize: (fontSize * 0.82).clamp(16.0, 21.0),
+                  fontSize: (bannerHeight * 0.50).clamp(12.0, 16.5),
                   fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
                   color: c.text,
-                  height: 1.2,
+                  height: 1.25,
+                  leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
             ),
@@ -1490,19 +1512,21 @@ class _MushafPageState extends State<_MushafPage> {
     final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
 
     // Standard uniform 1:1 box size across all ayahs on the page (matches line height proportions)
-    final double boxSize = (fontSize * 1.02).clamp(22.0, 26.5);
+    final double maxBox = math.max(14.0, fontSize * 1.02);
+    final double boxSize =
+        (fontSize * 1.02).clamp(math.min(16.0, maxBox), 26.5);
 
     // Calibrated standard typography so 1, 2, and 3 digits maintain standard optical height and weight
     final double numFontSize;
     final double letterSpacing;
     if (ayah < 10) {
-      numFontSize = (boxSize * 0.52).clamp(11.5, 13.5);
+      numFontSize = (boxSize * 0.52).clamp(8.0, 13.5);
       letterSpacing = 0.0;
     } else if (ayah < 100) {
-      numFontSize = (boxSize * 0.48).clamp(10.5, 12.2);
+      numFontSize = (boxSize * 0.48).clamp(7.5, 12.2);
       letterSpacing = -0.2;
     } else {
-      numFontSize = (boxSize * 0.43).clamp(9.5, 11.0);
+      numFontSize = (boxSize * 0.43).clamp(7.0, 11.0);
       letterSpacing = -0.4;
     }
 
