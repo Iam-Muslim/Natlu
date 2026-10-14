@@ -46,7 +46,7 @@ Map<int, Set<String>>? _pageAyahsCache;
 /// Fast O(1) lookup: pageNumber -> Set of all surahs appearing on this page
 Map<int, Set<int>>? _pageSurahsCache;
 
-/// Fast typed word reference within a Medina Mushaf page
+/// Fast typed word reference within a  Mushaf page
 class MushafWordRef {
   final int surah;
   final int ayah;
@@ -55,8 +55,8 @@ class MushafWordRef {
   const MushafWordRef(this.surah, this.ayah, this.wordIndex1, this.wordIndex0);
 }
 
-/// High-Performance Authentic 15-line Medina Mushaf Layout View.
-/// - Exact 15-line Medina Mushaf structure with Surah headers, Basmalas, and bottom page numbers.
+/// High-Performance Authentic 15-line  Mushaf Layout View.
+/// - Exact 15-line  Mushaf structure with Surah headers, Basmalas, and bottom page numbers.
 /// - Single-layer rendering: only ONE RepaintBoundary per page (95% GPU layer reduction).
 /// - Instantaneous flex-based line justification via native C++ flex distribution (0ms CPU blocking).
 /// - Scoped per-page state listening: only the currently active page rebuilds during recitation/playback.
@@ -130,7 +130,8 @@ class MushafView extends StatefulWidget {
   static Future<void> _loadMushafPagesJson() async {
     if (_mushafPagesCache != null) return;
     try {
-      final jsonStr = await rootBundle.loadString('assets/data/mushaf_pages.json');
+      final jsonStr =
+          await rootBundle.loadString('assets/data/mushaf_pages.json');
       final Map<String, dynamic> rawMap = json.decode(jsonStr);
 
       final Map<int, List<Map<String, dynamic>>> pages = {};
@@ -243,6 +244,7 @@ class _MushafViewState extends State<MushafView> {
   bool _isLoading = true;
   final Set<int> _loadedSurahs = {};
   final FocusNode _focusNode = FocusNode();
+  (int surah, int ayah)? _navigationTargetAyah;
 
   @override
   void initState() {
@@ -288,7 +290,8 @@ class _MushafViewState extends State<MushafView> {
     final surah = widget.controller.targetSurah != 0
         ? widget.controller.targetSurah
         : AppState.instance.lastSurah;
-    final ayah = widget.controller.activeAyah.value ?? AppState.instance.lastAyah;
+    final ayah =
+        widget.controller.activeAyah.value ?? AppState.instance.lastAyah;
     if (_ayahToPageCache != null) {
       final key = '$surah:$ayah';
       return _ayahToPageCache![key] ?? _ayahToPageCache!['$surah:1'] ?? 1;
@@ -352,8 +355,10 @@ class _MushafViewState extends State<MushafView> {
     if (lastWord == null) return;
 
     // Check if the last word on the currently visible page was finished
-    final bool isLastWordFinished = ctrl.isWordGreen(lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
-        ctrl.isWordNeutral(lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
+    final bool isLastWordFinished = ctrl.isWordGreen(
+            lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
+        ctrl.isWordNeutral(lastWord.ayah, lastWord.wordIndex0,
+            surah: lastWord.surah) ||
         ctrl.completedAyahsFor(lastWord.surah).contains(lastWord.ayah);
 
     if (!isLastWordFinished) return;
@@ -373,6 +378,7 @@ class _MushafViewState extends State<MushafView> {
       try {
         if (nextSurah != ctrl.targetSurah) {
           // The next page begins with a NEW SURAH!
+          _navigationTargetAyah = (nextSurah, nextAyah);
           _goToPage(nextPage);
 
           await ctrl.setTargetSurah(
@@ -391,6 +397,7 @@ class _MushafViewState extends State<MushafView> {
             ctrl.setManualAyah(nextSurah, nextAyah);
             AppState.instance.saveLastPosition(nextSurah, nextAyah);
           }
+          _navigationTargetAyah = (nextSurah, nextAyah);
           _goToPage(nextPage);
         }
       } catch (e) {
@@ -411,10 +418,12 @@ class _MushafViewState extends State<MushafView> {
         surah: surah,
         ayah: active,
       )) {
+        _navigationTargetAyah = null;
         return;
       }
       final targetPage = _ayahToPageCache!['$surah:$active'];
       if (targetPage != null && targetPage != _currentPage) {
+        _navigationTargetAyah = (surah, active);
         _goToPage(targetPage);
       }
     }
@@ -433,12 +442,14 @@ class _MushafViewState extends State<MushafView> {
         surah: surah,
         ayah: active,
       )) {
+        _navigationTargetAyah = null;
         return;
       }
 
       if (_ayahToPageCache != null) {
         final targetPage = _ayahToPageCache!['$surah:$active'];
         if (targetPage != null && targetPage != _currentPage) {
+          _navigationTargetAyah = (surah, active);
           _goToPage(targetPage);
         }
       }
@@ -446,6 +457,55 @@ class _MushafViewState extends State<MushafView> {
   }
 
   Future<void> _syncPageSelection(int pageNum) async {
+    // 1. If explicit navigation was requested to a specific Ayah (e.g. search, auto-reanchor, audio):
+    if (_navigationTargetAyah != null) {
+      final target = _navigationTargetAyah!;
+      if (MushafView.isAyahOnPage(
+        pageNumber: pageNum,
+        surah: target.$1,
+        ayah: target.$2,
+      )) {
+        _navigationTargetAyah = null;
+        if (widget.isRecording) {
+          AppState.instance.saveLastPosition(target.$1, target.$2);
+          return;
+        }
+        MushafView.isSyncingSurah = true;
+        try {
+          if (widget.controller.targetSurah != target.$1) {
+            await widget.controller.setTargetSurah(
+              target.$1,
+              preserveOtherSurahStates: true,
+              clearTargetSurah: false,
+            );
+          }
+          if (!mounted || _currentPage != pageNum) return;
+          widget.controller.setManualAyah(target.$1, target.$2);
+          AppState.instance.saveLastPosition(target.$1, target.$2);
+        } finally {
+          MushafView.isSyncingSurah = false;
+        }
+        return;
+      } else {
+        // Intermediate page during navigation; do not alter selection!
+        return;
+      }
+    }
+
+    // 2. If the current active Ayah is already on this page (e.g. user selected it, or same-page transition):
+    final int? currentActive = widget.controller.activeAyah.value;
+    final int currentSurah = widget.controller.targetSurah;
+    if (currentActive != null &&
+        MushafView.isAyahOnPage(
+          pageNumber: pageNum,
+          surah: currentSurah,
+          ayah: currentActive,
+        )) {
+      return;
+    }
+
+    // 3. Manual page change (e.g. user swiped or tapped next/prev):
+    // Select the first Ayah on the new page.
     final first = MushafView.getFirstAyahOnPage(pageNum);
     if (first == null) return;
 
@@ -457,15 +517,6 @@ class _MushafViewState extends State<MushafView> {
       return;
     }
 
-    final int? currentActive = widget.controller.activeAyah.value;
-    final int currentSurah = widget.controller.targetSurah;
-    final bool isAlreadyOnPage = currentActive != null &&
-        MushafView.isAyahOnPage(
-          pageNumber: pageNum,
-          surah: currentSurah,
-          ayah: currentActive,
-        );
-
     MushafView.isSyncingSurah = true;
     try {
       if (widget.controller.targetSurah != surah) {
@@ -476,10 +527,8 @@ class _MushafViewState extends State<MushafView> {
         );
       }
       if (!mounted || _currentPage != pageNum) return;
-      if (!isAlreadyOnPage) {
-        widget.controller.setManualAyah(surah, ayah);
-        AppState.instance.saveLastPosition(surah, ayah);
-      }
+      widget.controller.setManualAyah(surah, ayah);
+      AppState.instance.saveLastPosition(surah, ayah);
     } finally {
       MushafView.isSyncingSurah = false;
     }
@@ -488,14 +537,19 @@ class _MushafViewState extends State<MushafView> {
   void _goToPage(int page) {
     final clamped = page.clamp(1, 604);
     if (clamped == _currentPage) return;
+    final pageDiff = (clamped - _currentPage).abs();
     _currentPage = clamped;
     AppState.instance.currentMushafPage.value = clamped;
     if (_pageController.hasClients) {
-      _pageController.animateToPage(
-        clamped - 1,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      );
+      if (pageDiff > 1) {
+        _pageController.jumpToPage(clamped - 1);
+      } else {
+        _pageController.animateToPage(
+          clamped - 1,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
     _ensurePageSurahsLoaded(clamped);
     _syncPageSelection(clamped);
@@ -503,12 +557,14 @@ class _MushafViewState extends State<MushafView> {
 
   void _nextPage() {
     if (_currentPage < 604) {
+      _navigationTargetAyah = null;
       _goToPage(_currentPage + 1);
     }
   }
 
   void _prevPage() {
     if (_currentPage > 1) {
+      _navigationTargetAyah = null;
       _goToPage(_currentPage - 1);
     }
   }
@@ -556,7 +612,8 @@ class _MushafViewState extends State<MushafView> {
     final media = MediaQuery.of(context);
     final safeTop = math.max(media.padding.top, media.viewPadding.top);
     final safeBottom = math.max(media.padding.bottom, media.viewPadding.bottom);
-    final isLandscape = media.orientation == Orientation.landscape || media.size.width > media.size.height;
+    final isLandscape = media.orientation == Orientation.landscape ||
+        media.size.width > media.size.height;
 
     final bool isFullscreenMode = widget.isRecording || widget.isAutoScrolling;
     final double topPadding;
@@ -590,38 +647,47 @@ class _MushafViewState extends State<MushafView> {
           padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
           child: ScrollConfiguration(
             behavior: const _MushafScrollBehavior(),
-            child: PageView.builder(
-              key: const ValueKey('mushaf_single_page_view'),
-              controller: _pageController,
-              itemCount: 604,
-              physics: const PageScrollPhysics(),
-              onPageChanged: (index) {
-                final newPage = index + 1;
-                if (_currentPage == newPage) return;
-                _currentPage = newPage;
-                AppState.instance.currentMushafPage.value = newPage;
-                _ensurePageSurahsLoaded(newPage);
-                if (newPage < 604) _ensurePageSurahsLoaded(newPage + 1);
-                if (newPage > 1) _ensurePageSurahsLoaded(newPage - 1);
-                _syncPageSelection(newPage);
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is UserScrollNotification &&
+                    notification.direction != ScrollDirection.idle) {
+                  _navigationTargetAyah = null;
+                }
+                return false;
               },
-              itemBuilder: (context, index) {
-                final pageNumber = index + 1;
-                return _MushafPage(
-                  key: ValueKey('mushaf_page_$pageNumber'),
-                  pageNumber: pageNumber,
-                  controller: widget.controller,
-                  isRecording: widget.isRecording,
-                  isAutoScrolling: widget.isAutoScrolling,
-                  wordFontFamily: widget.wordFontFamily,
-                  ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
-                  ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
-                  ayahMarkerTextColor: widget.ayahMarkerTextColor,
-                  ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
-                  showAyahMarkerCircle: widget.showAyahMarkerCircle,
-                  showBottomPageNumber: widget.showBottomPageNumber,
-                );
-              },
+              child: PageView.builder(
+                key: const ValueKey('mushaf_single_page_view'),
+                controller: _pageController,
+                itemCount: 604,
+                physics: const PageScrollPhysics(),
+                onPageChanged: (index) {
+                  final newPage = index + 1;
+                  if (_currentPage == newPage) return;
+                  _currentPage = newPage;
+                  AppState.instance.currentMushafPage.value = newPage;
+                  _ensurePageSurahsLoaded(newPage);
+                  if (newPage < 604) _ensurePageSurahsLoaded(newPage + 1);
+                  if (newPage > 1) _ensurePageSurahsLoaded(newPage - 1);
+                  _syncPageSelection(newPage);
+                },
+                itemBuilder: (context, index) {
+                  final pageNumber = index + 1;
+                  return _MushafPage(
+                    key: ValueKey('mushaf_page_$pageNumber'),
+                    pageNumber: pageNumber,
+                    controller: widget.controller,
+                    isRecording: widget.isRecording,
+                    isAutoScrolling: widget.isAutoScrolling,
+                    wordFontFamily: widget.wordFontFamily,
+                    ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
+                    ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
+                    ayahMarkerTextColor: widget.ayahMarkerTextColor,
+                    ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
+                    showAyahMarkerCircle: widget.showAyahMarkerCircle,
+                    showBottomPageNumber: widget.showBottomPageNumber,
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -630,7 +696,7 @@ class _MushafViewState extends State<MushafView> {
   }
 }
 
-/// Authentic Medina Mushaf Page Layout:
+/// Authentic  Mushaf Page Layout:
 /// - Single RepaintBoundary per page (eliminates 48 offscreen GPU layer allocations).
 /// - Scoped State: Only subscribes to and rebuilds on events affecting THIS specific page.
 /// - Instant native flex justification via Row + MainAxisAlignment.spaceBetween.
@@ -757,17 +823,24 @@ class _MushafPageState extends State<_MushafPage> {
     final app = AppState.instance;
 
     final int? activeAyah = ctrl.activeAyah.value;
-    final int targetSurah = ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
+    final int targetSurah =
+        ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
     final int? audioAyah = app.activeAudioAyah.value;
     final int? audioSurah = app.activeAudioSurah.value;
 
     final bool reciterOnThisPage = activeAyah != null &&
         (_pageAyahs.contains('$targetSurah:$activeAyah') ||
-            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: targetSurah, ayah: activeAyah));
+            MushafView.isAyahOnPage(
+                pageNumber: widget.pageNumber,
+                surah: targetSurah,
+                ayah: activeAyah));
     final bool audioOnThisPage = audioAyah != null &&
         audioSurah != null &&
         (_pageAyahs.contains('$audioSurah:$audioAyah') ||
-            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: audioSurah, ayah: audioAyah));
+            MushafView.isAyahOnPage(
+                pageNumber: widget.pageNumber,
+                surah: audioSurah,
+                ayah: audioAyah));
 
     if (!reciterOnThisPage && !audioOnThisPage) {
       return (_hadActiveReciter || _hadActiveAudio) ? 1 : 0;
@@ -784,7 +857,8 @@ class _MushafPageState extends State<_MushafPage> {
     hash = hash * 31 + (widget.isRecording ? 1 : 0);
     hash = hash * 31 + (widget.isAutoScrolling ? 1 : 0);
 
-    final int currentAyahToCheck = reciterOnThisPage ? activeAyah : (audioAyah ?? 0);
+    final int currentAyahToCheck =
+        reciterOnThisPage ? activeAyah : (audioAyah ?? 0);
     final verse = ctrl.repository.getVerse(
       reciterOnThisPage ? targetSurah : (audioSurah ?? targetSurah),
       currentAyahToCheck,
@@ -819,14 +893,23 @@ class _MushafPageState extends State<_MushafPage> {
 
     final bool reciterOnThisPage = activeAyah != null &&
         (_pageAyahs.contains('$targetSurah:$activeAyah') ||
-            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: targetSurah, ayah: activeAyah));
+            MushafView.isAyahOnPage(
+                pageNumber: widget.pageNumber,
+                surah: targetSurah,
+                ayah: activeAyah));
     final bool audioOnThisPage = audioAyah != null &&
         audioSurah != null &&
         (_pageAyahs.contains('$audioSurah:$audioAyah') ||
-            MushafView.isAyahOnPage(pageNumber: widget.pageNumber, surah: audioSurah, ayah: audioAyah));
+            MushafView.isAyahOnPage(
+                pageNumber: widget.pageNumber,
+                surah: audioSurah,
+                ayah: audioAyah));
 
     // Exit immediately if this page is completely idle
-    if (!reciterOnThisPage && !audioOnThisPage && !_hadActiveReciter && !_hadActiveAudio) {
+    if (!reciterOnThisPage &&
+        !audioOnThisPage &&
+        !_hadActiveReciter &&
+        !_hadActiveAudio) {
       return;
     }
 
@@ -858,7 +941,8 @@ class _MushafPageState extends State<_MushafPage> {
           // Bottom clearance: ensures the last ayah reaches right above the bottom action bar dock
           // and is NEVER trapped or obscured behind the bottom buttons
           final double bottomReserved = isLandscape ? 48.0 : 64.0;
-          final double availableHeight = (maxHeight - bottomReserved).clamp(100.0, maxHeight);
+          final double availableHeight =
+              (maxHeight - bottomReserved).clamp(100.0, maxHeight);
           final double availableWidth = maxWidth;
 
           final double lineWidth;
@@ -876,13 +960,15 @@ class _MushafPageState extends State<_MushafPage> {
             linesContainerHeight = h;
           } else {
             // Portrait: Ayahs expand to fill full height right down to the bottom bar
-            lineWidth = (availableWidth - 16.0).clamp(280.0, availableHeight * 0.72);
+            lineWidth =
+                (availableWidth - 16.0).clamp(280.0, availableHeight * 0.72);
             linesContainerHeight = availableHeight;
           }
 
           // Pages 1 & 2 special centered layout (Al-Fatihah and start of Al-Baqarah)
           if (widget.pageNumber <= 2) {
-            final double lineHeight = (linesContainerHeight / (lines.length + 3)).clamp(44.0, 72.0);
+            final double lineHeight =
+                (linesContainerHeight / (lines.length + 3)).clamp(44.0, 72.0);
             final double fontSize = (lineHeight * 0.46).clamp(16.0, 23.0);
 
             return Directionality(
@@ -905,8 +991,11 @@ class _MushafPageState extends State<_MushafPage> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               mainAxisSize: MainAxisSize.min,
-                              children: List.generate(lines.length, (lineIndex) {
-                                final nextLine = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+                              children:
+                                  List.generate(lines.length, (lineIndex) {
+                                final nextLine = lineIndex + 1 < lines.length
+                                    ? lines[lineIndex + 1]
+                                    : null;
                                 return SizedBox(
                                   width: lineWidth,
                                   height: lineHeight,
@@ -932,7 +1021,8 @@ class _MushafPageState extends State<_MushafPage> {
                         Positioned(
                           left: 2,
                           bottom: 0,
-                          child: _buildBottomPageNumber(widget.pageNumber, c, app),
+                          child:
+                              _buildBottomPageNumber(widget.pageNumber, c, app),
                         ),
                     ],
                   ),
@@ -941,7 +1031,7 @@ class _MushafPageState extends State<_MushafPage> {
             );
           }
 
-          // Standard 15-line Medina Mushaf pages:
+          // Standard 15-line  Mushaf pages:
           // Unified typography: all 15 lines share the exact same scale and baseline.
           final double lineHeight = linesContainerHeight / lines.length;
           final double fontSize = (lineHeight * 0.52).clamp(16.0, 26.0);
@@ -966,7 +1056,9 @@ class _MushafPageState extends State<_MushafPage> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: List.generate(lines.length, (lineIndex) {
-                              final nextLine = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+                              final nextLine = lineIndex + 1 < lines.length
+                                  ? lines[lineIndex + 1]
+                                  : null;
                               return SizedBox(
                                 width: lineWidth,
                                 height: lineHeight,
@@ -992,7 +1084,8 @@ class _MushafPageState extends State<_MushafPage> {
                       Positioned(
                         left: 2,
                         bottom: 0,
-                        child: _buildBottomPageNumber(widget.pageNumber, c, app),
+                        child:
+                            _buildBottomPageNumber(widget.pageNumber, c, app),
                       ),
                   ],
                 ),
@@ -1022,7 +1115,8 @@ class _MushafPageState extends State<_MushafPage> {
     if (type == 'header') {
       final surahNum = lineData['s'] as int? ?? 1;
       String surahName = lineData['name'] as String? ?? 'سورة $surahNum';
-      if (surahNum >= 1 && surahNum <= widget.controller.repository.surahMetadata.length) {
+      if (surahNum >= 1 &&
+          surahNum <= widget.controller.repository.surahMetadata.length) {
         final meta = widget.controller.repository.surahMetadata[surahNum - 1];
         if (meta.surahName.isNotEmpty) {
           final rawName = meta.surahName;
@@ -1043,13 +1137,15 @@ class _MushafPageState extends State<_MushafPage> {
       );
     }
 
-    // 2. Basmala Line (Authentic Medina Mushaf Calligraphy)
+    // 2. Basmala Line (Authentic  Mushaf Calligraphy)
     if (type == 'basmala') {
       final basmalaVerse = widget.controller.repository.getVerse(1, 1);
-      final List<String> words = (basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4)
-          ? basmalaVerse.uthmaniWords.sublist(0, 4)
-          : const ['بِسْمِ', 'ٱللَّهِ', 'ٱلرَّحْمَـٰنِ', 'ٱلرَّحِيمِ'];
-      final bool usesUthmani = basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4;
+      final List<String> words =
+          (basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4)
+              ? basmalaVerse.uthmaniWords.sublist(0, 4)
+              : const ['بِسْمِ', 'ٱللَّهِ', 'ٱلرَّحْمَـٰنِ', 'ٱلرَّحِيمِ'];
+      final bool usesUthmani =
+          basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4;
 
       return SizedBox(
         width: lineWidth,
@@ -1065,13 +1161,15 @@ class _MushafPageState extends State<_MushafPage> {
                 textDirection: TextDirection.rtl,
                 children: [
                   for (int i = 0; i < words.length; i++) ...[
-                    if (i > 0) SizedBox(width: (fontSize * 0.35).clamp(6.0, 10.0)),
+                    if (i > 0)
+                      SizedBox(width: (fontSize * 0.35).clamp(6.0, 10.0)),
                     Text(
                       words[i],
                       textDirection: TextDirection.rtl,
                       textScaler: TextScaler.noScaling,
                       style: TextStyle(
-                        fontFamily: usesUthmani ? widget.wordFontFamily : 'cairo',
+                        fontFamily:
+                            usesUthmani ? widget.wordFontFamily : 'cairo',
                         fontSize: (fontSize * 0.95).clamp(17.0, 25.0),
                         fontWeight: FontWeight.normal,
                         color: c.text,
@@ -1087,10 +1185,12 @@ class _MushafPageState extends State<_MushafPage> {
     }
 
     // 3. Text Line with Words and Circular Ayah End Numbers
-    final parsedWords = lineData['parsed_words'] as List<MushafWordRef>? ?? const [];
+    final parsedWords =
+        lineData['parsed_words'] as List<MushafWordRef>? ?? const [];
     if (parsedWords.isEmpty) return const SizedBox.shrink();
 
-    final bool nextLineIsHeader = nextLineData != null && nextLineData['t'] == 'header';
+    final bool nextLineIsHeader =
+        nextLineData != null && nextLineData['t'] == 'header';
     final bool isLastLineOfPage = lineIndex == totalLines - 1;
     // Exactly like mushaf-svelte: short end-lines are centered so words never drift apart with awkward voids.
     final bool shouldJustify = pageNumber > 2 &&
@@ -1209,7 +1309,8 @@ class _MushafPageState extends State<_MushafPage> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: c.wordHighlight.withValues(alpha: isDark ? 0.22 : 0.12),
+                  color:
+                      c.wordHighlight.withValues(alpha: isDark ? 0.22 : 0.12),
                   blurRadius: 6,
                   spreadRadius: 0.5,
                 ),
@@ -1381,7 +1482,7 @@ class _MushafPageState extends State<_MushafPage> {
     );
   }
 
-  /// Standard Medina Mushaf Ayah Marker:
+  /// Standard  Mushaf Ayah Marker:
   /// - Uniform 1:1 square/squircle dimensions across ALL ayahs (never stretching into rectangles).
   /// - Calibrated standard typographic scale: 1, 2, and 3 digits maintain harmonious optical size and weight.
   /// - Optically centered vertically and horizontally inside the box.
@@ -1445,7 +1546,8 @@ class _MushafPageState extends State<_MushafPage> {
           : const Color(0xFF475569); // Slate 600
     }
 
-    final Color effectiveBorder = widget.ayahMarkerBorderColor ?? boxBorderColor;
+    final Color effectiveBorder =
+        widget.ayahMarkerBorderColor ?? boxBorderColor;
     final Color effectiveText = widget.ayahMarkerTextColor ?? numTextColor;
 
     final String markerFont = widget.ayahMarkerFontFamily ?? 'cairo';
@@ -1482,10 +1584,13 @@ class _MushafPageState extends State<_MushafPage> {
         decoration: widget.showAyahMarkerCircle
             ? BoxDecoration(
                 color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
-                borderRadius: BorderRadius.circular(boxSize * 0.28), // Sleek flat squircle
+                borderRadius: BorderRadius.circular(
+                    boxSize * 0.28), // Sleek flat squircle
                 border: Border.all(
                   color: effectiveBorder,
-                  width: widget.ayahMarkerBorderWidth > 0 ? widget.ayahMarkerBorderWidth : 1.0,
+                  width: widget.ayahMarkerBorderWidth > 0
+                      ? widget.ayahMarkerBorderWidth
+                      : 1.0,
                 ),
               )
             : null,
@@ -1698,13 +1803,17 @@ class _RenderMushafHighlightFlex extends RenderFlex {
       if (minX != null && maxX != null && minY != null && maxY != null) {
         // Expand horizontally and vertically slightly for a comfortable breathing room
         final clampLeft = (minX - 3.0).clamp(offset.dx, offset.dx + size.width);
-        final clampRight = (maxX + 3.0).clamp(offset.dx, offset.dx + size.width);
+        final clampRight =
+            (maxX + 3.0).clamp(offset.dx, offset.dx + size.width);
         final clampTop = (minY - 2.0).clamp(offset.dy, offset.dy + size.height);
-        final clampBottom = (maxY + 2.0).clamp(offset.dy, offset.dy + size.height);
+        final clampBottom =
+            (maxY + 2.0).clamp(offset.dy, offset.dy + size.height);
 
         if (clampRight > clampLeft && clampBottom > clampTop) {
-          final rect = Rect.fromLTRB(clampLeft, clampTop, clampRight, clampBottom);
-          final rrect = RRect.fromRectAndRadius(rect, Radius.circular(_highlightRadius));
+          final rect =
+              Rect.fromLTRB(clampLeft, clampTop, clampRight, clampBottom);
+          final rrect =
+              RRect.fromRectAndRadius(rect, Radius.circular(_highlightRadius));
 
           final fillPaint = Paint()
             ..color = _highlightColor!

@@ -1,119 +1,187 @@
 <div align="center">
 
-# وما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
+### بفضل الله وبرحمته
 
+## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
+
+*“And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”*  
+
+<br/>
 
 # Natlu — نتلو
+### On-Device Quran Recitation AI
+**The official open-source Tarteel AI Alternative**  
+**[`package:recite_quran`](https://pub.dev/packages/recite_quran)**
 
-
+<br/>
 
 <p align="center">
-  <img height="280" src="docs/screenshots/5-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/3-ar.png" alt="ReciteQuran Preview" /><img height="280" src="docs/screenshots/4-ar.png" alt="ReciteQuran Preview" />
+  <img height="200" src="docs/screenshots/5-ar.png" alt="Natlu Preview 1" />&nbsp;
+  <img height="200" src="docs/screenshots/1-ar.png" alt="Natlu Preview 2" />&nbsp;
+  <img height="200" src="docs/screenshots/2-ar.png" alt="Natlu Preview 3" />&nbsp;
+  <img height="200" src="docs/screenshots/3-ar.png" alt="Natlu Preview 4" />&nbsp;
+  <img height="200" src="docs/screenshots/4-ar.png" alt="Natlu Preview 5" />
+</p>
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank">
+    <img src="docs/badges/google_play.svg" height="34" alt="Get it on Google Play" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://apps.apple.com/app/id6806614841" target="_blank">
+    <img src="docs/badges/app_store.svg" height="34" alt="Download on the App Store" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://recitequran.pages.dev/recite" target="_blank">
+    <img src="docs/badges/web_app.svg" height="34" alt="Web App" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://recitequran.pages.dev/" target="_blank">
+    <img src="docs/badges/official_site.svg" height="34" alt="Official Website" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://pub.dev/packages/recite_quran" target="_blank">
+    <img src="https://img.shields.io/badge/pub.dev-recite__quran%20^1.0.5-0175C2?logo=dart&logoColor=white" height="20" alt="recite_quran on pub.dev" />
+  </a>
+  &nbsp;
+  <a href="https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3" target="_blank">
+    <img src="https://img.shields.io/badge/Hugging%20Face-Zipformer%20v3%20Model-FFD21E?logo=huggingface&logoColor=black" height="20" alt="Zipformer v3 Model on Hugging Face" />
+  </a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/Dedicated-For%20Allah%20Alone-059669" height="20" alt="For Allah Alone" />
 </p>
 
 </div>
 
 ---
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank">
-    <img src="docs/badges/google_play.svg" height="45" alt="Get it on Google Play" />
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://apps.apple.com/app/id6806614841" target="_blank">
-    <img src="docs/badges/app_store.svg" height="45" alt="Download on the App Store" />
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://recitequran.pages.dev/recite" target="_blank">
-    <img src="docs/badges/web_app.svg" height="45" alt="Web App" />
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://recitequran.pages.dev/" target="_blank">
-    <img src="docs/badges/official_site.svg" height="45" alt="Official Website" />
-  </a>
-</p>
-<br>
 
 ## Overview
 
-**Natlu** is an open-source, on-device AI assistant designed to listen to your Quran recitation in real time, guide your pronunciation word-by-word, and verify acoustic Tajweed durations with millisecond precision.
+**Natlu (نتلو)** is an open-source, on-device AI Quran application for Flutter. It listens to your recitation in real time, guides your pronunciation word-by-word with instant visual feedback, checks acoustic Tajweed rules with millisecond precision, and allows hands-free navigation across an authentic 15-line  Mus'haf.
 
-You can download the model from hugging face repo of my Brother Mustafa : https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3 
+Natlu is the flagship reference application built upon [`recite_quran`](https://pub.dev/packages/recite_quran). All neural ASR inference, phoneme alignment, Myers phonetic search, and Tajweed duration grading are handled directly by the `recite_quran` engine package.
+
+- **100% On-Device**: Speech recognition runs entirely offline via quantized ONNX models (`zipformer_p_arabic_v3.int8.onnx`).
+- **Complete Privacy**: Zero audio is transmitted over the network, zero accounts required, and zero telemetry collected.
+- **Purely for the Sake of Allah**: 100% free forever with no ads, no subscriptions, and no monetization.
 
 ---
 
-## Platforms
+## Key Features
 
--  Android
--  Web Browser
--  iOS (iPhone & iPad)
--  Windows (Desktop)
--  Linux - Insha'a Allah
-
-
-
-## Features
-
-### 1. Real-Time Word Tracking
-- High-speed acoustic tracking follows your speech word by word.
-- **Visual Feedback**:
-  - **Green**: Correct recitation (Consonants and Harakat match).
+### 1. Real-Time Word Tracking (تتبع الكلمات المباشر)
+- Sub-frame acoustic alignment follows speech word-by-word as you recite.
+- **Live Color Feedback**:
+  - **Green**: Correct recitation (consonants and Harakat match the Quranic text).
+  - **Yellow**: Tajweed observation (e.g. insufficient Madd holding or premature release).
   - **Red**: Word skipped, substituted, or mispronounced.
-  - **Yellow**: Tajweed Mistake . 
+- Smooth automatic page scrolling and turning as recitation advances.
+
+### 2. Acoustic Tajweed Checking (فحص وتدقيق أحكام التجويد)
+- Evaluates acoustic vowel holding durations against authentic Quranic *Tadweer* timing standards:
+  - **Madd Elongation (المدود)**: Differentiates 2-harakah Madd Asli, 4–5 harakat Madd Munfasil/Muttasil, and 6-harakat Madd Lazim.
+  - **Mushaddad Ghunnah (غنة النون والميم المشددتين)**: Confirms complete 2-harakah nasalization duration.
+  - **Shaddah Holding (الشدة)**: Confirms consonant doubling pressure.
+- Tap any highlighted word to inspect expected vs. recited duration in milliseconds.
+
+### 3. "Recite to Navigate" Instant Voice Search (البحث الصوتي الفوري)
+- Recite any phrase from any Ayah in the Great Quran (القرآن العظيم) to jump directly to its exact page in under 15ms.
+- Powered by Myers bit-parallel approximate string matching across all 6,236 verses.
+
+### 4. 15-Line  Mus'haf (مصحف   15 سطرًا)
+- Rendered using the official King Fahd Complex font standard (`HafsSmart`).
+- True-to-print 15-line layout with accurate word spacing, surah headers, and ayah end markers.
+
+### 5. Hifz Revision & Memorization Mode (وضع تثبيت الحفظ)
+- Words stay concealed until recited correctly from memory, providing an interactive self-testing tool for Huffaz.
+- Employs Best-Drop LCS omission detection to flag skipped words or line jumps.
+
+### 6. Reference Audio Playback (الاستماع المرجعي المتقن)
+- Unified audio playback for words and full Ayahs by Sheikh Mahmoud Khalil Al-Husary via MP3Quran API.
+- Sample-accurate timestamp seeking with a single unified audio session.
+
+### 7. Multi-Riwayah Architecture (الروايات المتواترة ومذاهب العد)
+- Architecture designed to support the 10 Mutawatir Qira'at and canonical counting schools.
 
 ---
 
-### 2. Acoustic Tajweed & Madd Engine
-- Evaluates acoustic vowel holding durations against Quranic Tadweer timing standards:
-  - **Madd Elongation (المدود)**
-  - **Mushaddad Ghunnah (غنة النون والميم المشددتين)**
-  - **Shaddah (الشدة)**
-- Tap any highlighted word to inspect expected versus recited duration in milliseconds.
+## Modern Architecture
+
+Natlu is structured into a clean presentation and application layer, delegating all acoustic and alignment engineering to `package:recite_quran`:
+
+```
+┌────────────────────────────────────────────────────────┐
+│                       Natlu App                        │
+│   (UI / 15-Line Mushaf / AppState / AudioSession)      │
+└───────────────────────────┬────────────────────────────┘
+                            │ imports
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│             package:recite_quran (^1.0.5)              │
+│ ├── SherpaEngine (Streaming Zipformer ONNX Isolate)    │
+│ ├── AudioProcessor (16 kHz PCM chunk capture)          │
+│ ├── HighlightingController (DP phoneme alignment & UI) │
+│ ├── TajweedValidator (Acoustic duration verification)  │
+│ └── QuranData (6,236 Ayahs, Myers phonetic search)     │
+└────────────────────────────────────────────────────────┘
+```
+
+### Clean Directory Structure (`lib/`)
+
+```
+lib/
+├── main.dart                      # App entry point, AudioSession, engine orchestration
+├── services/                      # Audio streaming & verse timing services
+│   ├── audio/verse_audio_player.dart
+│   ├── quran_audio_service.dart   # Sheikh Al-Husary playback facade
+│   └── quran_timing_service.dart
+├── state/                         # Global state & settings (AppState ChangeNotifier)
+│   └── app_state.dart
+└── ui/                            # Presentation layer & widgets
+    ├── tracking_screen.dart       # Main recitation tracker screen
+    └── widgets/
+        ├── mushaf/mushaf_view.dart    # 15-line Madani Mus'haf layout
+        ├── mic_bar.dart               # Waveform mic button & state controls
+        ├── verse_row.dart             # Word-level verse rendering
+        ├── surah_picker.dart          # Surah & Ayah selection drawer
+        ├── tajweed_tutorial_word.dart # Interactive Tajweed rule cards
+        └── dialogs/                   # Model download, voice search, permissions, themes
+```
 
 ---
-
-### 3. Instant Voice Ayah Search
-- The offline phonetic matcher locates the verse and jumps directly to it .
----
-
-### 4. Hifz Revision & Hide Mode
-- Words reveal themselves as you recite them correctly.
----
-
 
 ## Developer Guide
 
-### Repository Setup
+### Prerequisites
+- **Flutter SDK**: `>= 3.24.0` (Dart `>= 3.5.0 < 4.0.0`)
+- **Git**
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Iam-Muslim/Natlu.git
-   cd Natlu
-   ```
+### 1. Clone & Fetch Dependencies
+```bash
+git clone https://github.com/Iam-Muslim/Natlu.git
+cd Natlu
+flutter pub get
+```
 
-2. Fetch Flutter packages:
-   ```bash
-   flutter pub get
-   ```
+### 2. Neural ASR Model
+On first launch, Natlu automatically displays an in-app download dialog to fetch the neural model. Alternatively, you can pre-download it manually into `assets/model/`:
 
-3. Download the quantized ONNX neural model:
-   ```bash
-   pip install -U "huggingface_hub[cli]"
-   hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model
-   ```
+```bash
+pip install -U "huggingface_hub[cli]"
+hf download Quran-Lab/zipformer_p-arabic-v3 zipformer_p_arabic_v3.int8.onnx --local-dir assets/model
+```
 
----
+### 3. Run Across Platforms
 
-### Running on Android
-
+#### Android
 ```bash
 flutter run -d android
 flutter build apk --release --split-per-abi
 ```
 
----
-
-### Running on iOS
-
+#### iOS
 ```bash
 cd ios
 pod install
@@ -121,83 +189,86 @@ cd ..
 flutter run -d ios
 ```
 
----
+> **iOS Note**: In `pubspec.yaml`, `sherpa_onnx` is pinned to `1.13.5` (along with `dependency_overrides: sherpa_onnx_ios: 1.13.5`) to ensure clean linking of `SherpaOnnxC.xcframework`.
 
-### Running on Windows
+#### Web
+```bash
+flutter run -d chrome
+```
 
+#### Windows
 ```bash
 flutter run -d windows
 ```
 
 ---
 
-### Running on Web
+## Using `recite_quran` in Your Flutter App
 
-```bash
-flutter run -d chrome
+To integrate real-time Quran tracking into any Flutter application, add `recite_quran` to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  recite_quran: ^1.0.5
+```
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:recite_quran/recite_quran.dart';
+
+// Initialize the engine and controller
+final engine = SherpaEngine();
+final audio = AudioProcessor();
+
+final controller = HighlightingController(
+  engine: engine,
+  audioProcessor: audio,
+  onWordMatched: (wordIndex, status, tajweedError) {
+    // Live update UI as words are recited
+  },
+);
+
+await engine.initialize(modelPath: 'assets/model/zipformer_p_arabic_v3.int8.onnx');
 ```
 
 ---
 
-### Architecture
+## Supported Platforms
 
-```
-lib/
-├── audio/                     # 16 kHz PCM chunk capture and buffering
-│   └── audio_processor.dart
-├── data/                      # Quranic text dataset and rule definitions
-│   └── quran_data.dart
-├── engine/                    # Streaming Zipformer inference in background Isolate
-│   ├── models/                # Inter-isolate communication protocols
-│   └── sherpa_engine.dart
-├── state/                     # Global settings and theme management
-│   └── app_state.dart
-├── tracking/
-│   ├── ayah_search/           # Offline phonetic verse search
-│   ├── tajweed/               # Tajweed duration validator and explainer
-│   │   ├── error_explainer.dart
-│   │   └── tajweed_rules.dart
-│   └── word/                  # Real-time phoneme alignment and highlight sequencing
-│       ├── dictation_matcher.dart
-│       ├── dictation_sequencer.dart
-│       ├── highlighting_controller.dart
-│       └── phoneme_alignment_isolate.dart
-├── ui/                        # UI screens, dialogs, and Mushaf view
-│   ├── tracking_screen.dart
-│   └── widgets/
-└── utils/                     # Logging and debug helpers
-    └── debug_logger.dart
-```
+| Platform | Status | Audio & Inference Backend |
+| :--- | :---: | :--- |
+| **Android** | Supported | Sherpa-ONNX C++ via JNI (ARM64, ARMv7, x86_64) |
+| **iOS** | Supported | Sherpa-ONNX XCFramework (iPhone & iPad) |
+| **Web** | Supported | WebAssembly (Wasm) + Web Audio API |
+| **Windows** | Supported | Sherpa-ONNX Windows x64 + `just_audio_media_kit` |
+| **Linux** | In Progress | Planned native binary target |
 
 ---
 
-## (لوجه الله تعالى)
+## For the Sake of Allah Alone (في سبيل الله سبحانه وتعالى وحده)
 
-### **ما أسألكم عليه من أجر إن أجري إلا على رب العالمين**
+### **وَمَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ**
+> *“And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”*  
+> — **[Surah Ash-Shu'ara: 109]**
 
-> **THIS APPLICATION AND SOURCE CODE ARE FOR THE SAKE OF ALLAH ALONE.**
+This project and its source code are dedicated solely for the sake of Allah alone:
 
-Before viewing, using, distributing, or modifying any part of this repository, you explicitly agree to the following sacred covenants:
-
-1. **100% Free to End Users**:
-   You may use, study, and redistribute this software or its logic **ONLY** in applications and services that are completely free of charge to all end users forever.
-2. **Strict Prohibition on Commercialization & Profit**:
-   You are **STRICTLY FORBIDDEN** from selling this application, placing it behind paywalls, subscription models, in-app purchases, charging download fees, monetizing it with advertisements (AdMob, Unity Ads, etc.), or extracting any financial revenue from this codebase, models, or outputs.
-3. **Perpetual Waqf Pass-Through**:
-   These terms are immutable and strictly pass on to any fork, derivative work, or redistributed component.
-
----
-
-*Alhamdulillah (الحمد لله رب العالمين)* — This project builds on research and work from the following open-source projects:
-
-- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother - Mustafa 
-- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother - Abdullah Aml
-- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother - Ahmad Ibrahim
+1. **100% Free for All Users**:  
+   This software is freely available to all Muslims and developers worldwide without charge.
+2. **Strict Non-Commercialization**:  
+   It is strictly forbidden to sell this application, place it behind paid subscriptions, paywalls, or in-app ads, or extract financial revenue from it.
+3. **Educational Practice Aid**:  
+   This engine is an algorithmic revision assistant for personal practice and self-testing. It does not replace direct recitation and verification before qualified teachers and scholars.
 
 ---
+
+*Alhamdulillah (الحمد لله والشكر لله تعالى)*
 
 <div align="center">
 
-**هذا من فضل ربي — ربنا تقبل منا إنك أنت السميع العليم**
+
+**هذا من فضل ربي - ربنا تقبل منا انك انت السميع العليم**
 
 </div>

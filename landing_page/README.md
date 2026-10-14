@@ -12,7 +12,7 @@ All screenshots displayed on the landing page are located in the `public/screens
 ```
 public/screenshots/
 ├── fatiha.png       # Screenshot 1: Real-Time Word Tracking (1080 x 2340)
-├── qamar.png        # Screenshot 2: 15-Line Madani Mus'haf Layout (1080 x 2340)
+├── qamar.png        # Screenshot 2: 15-Line  Mus'haf Layout (1080 x 2340)
 ├── search.png       # Screenshot 3: "Recite to Navigate" Voice Search (1080 x 2340)
 ├── yusuf.png        # Screenshot 4: Surah View & Navigation (1080 x 2340)
 └── og-preview.png   # Social Share Card for WhatsApp, X/Twitter, Discord (1200 x 630)

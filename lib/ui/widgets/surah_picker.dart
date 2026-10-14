@@ -4,7 +4,7 @@ import 'package:recite_quran/recite_quran.dart';
 import '../../state/app_state.dart';
 import 'surah/surah_list_tile.dart';
 
-/// 2026 Surah Navigator Sheet with segmented categories (All, Meccan, Medinan),
+/// 2026 Surah Navigator Sheet with segmented categories (All, Meccan, n),
 /// instant Arabic/English search, voice search trigger, and frosted glassmorphism.
 class SurahPickerSheet extends StatefulWidget {
   final int current;
@@ -42,9 +42,11 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
   void initState() {
     super.initState();
     _surahs = widget.controller.repository.surahMetadata;
-    _normalizedNames = _surahs.map((s) => _normalizeArabic(s.surahName)).toList();
+    _normalizedNames =
+        _surahs.map((s) => _normalizeArabic(s.surahName)).toList();
     _lowerEnNames = _surahs.map((s) => s.surahNameEn.toLowerCase()).toList();
-    final double initialOffset = ((widget.current - 1) * 78.0).clamp(0.0, 114 * 78.0);
+    final double initialOffset =
+        ((widget.current - 1) * 78.0).clamp(0.0, 114 * 78.0);
     _scrollCtrl = ScrollController(initialScrollOffset: initialOffset);
   }
 
@@ -109,198 +111,200 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
             ],
           ),
           child: Column(
-          children: [
-            const SizedBox(height: 12),
+            children: [
+              const SizedBox(height: 12),
 
-            // ── Drag Handle ──
-            Container(
-              width: 44,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.border.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(2),
+              // ── Drag Handle ──
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.border.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // ── Search Bar & 2026 Popping Voice Search Action ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  // 1. Search Bar Field
-                  Expanded(
-                    child: Container(
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: c.surfaceHigh,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: c.border.withValues(alpha: 0.5),
-                          width: 0.8,
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        onChanged: (v) => setState(() => _query = v),
-                        style: TextStyle(
-                          color: c.text,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: isAr
-                              ? 'ابحث باسم السورة أو رقمها...'
-                              : 'Search by name or number...',
-                          hintStyle: TextStyle(
-                            color: c.textSecondary,
-                            fontSize: 13,
+              // ── Search Bar & 2026 Popping Voice Search Action ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    // 1. Search Bar Field
+                    Expanded(
+                      child: Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: c.surfaceHigh,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: c.border.withValues(alpha: 0.5),
+                            width: 0.8,
                           ),
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: c.primary,
-                            size: 20,
+                        ),
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: (v) => setState(() => _query = v),
+                          style: TextStyle(
+                            color: c.text,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
                           ),
-                          suffixIcon: _query.isNotEmpty
-                              ? IconButton(
-                                  icon:
-                                      const Icon(Icons.close_rounded, size: 18),
-                                  color: c.textSecondary,
-                                  onPressed: () {
-                                    _searchCtrl.clear();
-                                    setState(() => _query = '');
-                                  },
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 14,
+                          decoration: InputDecoration(
+                            hintText: isAr
+                                ? 'ابحث باسم السورة أو رقمها...'
+                                : 'Search by name or number...',
+                            hintStyle: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 13,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: c.primary,
+                              size: 20,
+                            ),
+                            suffixIcon: _query.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.close_rounded,
+                                        size: 18),
+                                    color: c.textSecondary,
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 14,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(width: 10),
+                    const SizedBox(width: 10),
 
-                  // 2. 2026 Popping Voice Search Action Button
-                  _TactileScaleButton(
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      if (Navigator.of(context).canPop()) {
-                        Navigator.pop(context);
-                      }
-                      widget.onVoiceSearchToggle();
-                    },
-                    child: Container(
-                      height: 50,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            c.primary,
-                            c.secondary,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          width: 0.8,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                c.primary.withValues(alpha: isDark ? 0.35 : 0.22),
-                            blurRadius: 18,
-                            spreadRadius: 1,
-                            offset: const Offset(0, 4),
+                    // 2. 2026 Popping Voice Search Action Button
+                    _TactileScaleButton(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.pop(context);
+                        }
+                        widget.onVoiceSearchToggle();
+                      },
+                      child: Container(
+                        height: 50,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              c.primary,
+                              c.secondary,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                        ],
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.35),
+                            width: 0.8,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: c.primary
+                                  .withValues(alpha: isDark ? 0.35 : 0.22),
+                              blurRadius: 18,
+                              spreadRadius: 1,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.graphic_eq_rounded,
+                                color: Colors.white,
+                                size: 19,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                isAr ? 'بحث صوتي' : 'Voice Search',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: isAr ? 13 : 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // ── Surah List ──
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
-                              Icons.graphic_eq_rounded,
-                              color: Colors.white,
-                              size: 19,
+                            Icon(
+                              Icons.search_off_rounded,
+                              size: 44,
+                              color: c.textSecondary.withValues(alpha: 0.5),
                             ),
-                            const SizedBox(width: 5),
+                            const SizedBox(height: 10),
                             Text(
-                              isAr ? 'بحث صوتي' : 'Voice Search',
+                              isAr
+                                  ? 'لم يتم العثور على سور'
+                                  : 'No Surahs found',
                               style: TextStyle(
-                                color: Colors.white,
-                                fontSize: isAr ? 13 : 11,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.2,
+                                color: c.textSecondary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollCtrl,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.only(bottom: 24, top: 4),
+                        itemCount: items.length,
+                        itemBuilder: (_, i) {
+                          final int idx = items[i];
+                          final int sNum = idx + 1;
+                          final bool isSel = widget.current == sNum;
+                          final QuranVerse surahMeta = _surahs[idx];
+
+                          return SurahListTile(
+                            surahNumber: sNum,
+                            surahMeta: surahMeta,
+                            isSelected: isSel,
+                            onTap: () => widget.onPick(sNum),
+                          );
+                        },
                       ),
-                    ),
-                  ),
-                ],
               ),
-            ),
-
-            const SizedBox(height: 8),
-
-            // ── Surah List ──
-            Expanded(
-              child: items.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.search_off_rounded,
-                            size: 44,
-                            color: c.textSecondary.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            isAr ? 'لم يتم العثور على سور' : 'No Surahs found',
-                            style: TextStyle(
-                              color: c.textSecondary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollCtrl,
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 24, top: 4),
-                      itemCount: items.length,
-                      itemBuilder: (_, i) {
-                        final int idx = items[i];
-                        final int sNum = idx + 1;
-                        final bool isSel = widget.current == sNum;
-                        final QuranVerse surahMeta = _surahs[idx];
-
-                        return SurahListTile(
-                          surahNumber: sNum,
-                          surahMeta: surahMeta,
-                          isSelected: isSel,
-                          onTap: () => widget.onPick(sNum),
-                        );
-                      },
-                    ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 /// 2026 Spring-scale tactile feedback button wrapper.
