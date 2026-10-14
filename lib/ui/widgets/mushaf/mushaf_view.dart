@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -263,7 +264,9 @@ class MushafView extends StatefulWidget {
     try {
       final jsonStr =
           await rootBundle.loadString('assets/data/mushaf_pages.json');
-      final data = await Isolate.run(() => _parseMushafJson(jsonStr));
+      final data = kIsWeb
+          ? _parseMushafJson(jsonStr)
+          : await Isolate.run(() => _parseMushafJson(jsonStr));
 
       _mushafPagesCache = data.pages;
       _ayahToPageCache = data.ayahMap;
