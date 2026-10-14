@@ -47,6 +47,9 @@ Map<int, Set<String>>? _pageAyahsCache;
 /// Fast O(1) lookup: pageNumber -> Set of all surahs appearing on this page
 Map<int, Set<int>>? _pageSurahsCache;
 
+/// Fast O(1) lookup: pageNumber -> dominant Surah on this page (by word count majority)
+Map<int, int>? _pageDominantSurahCache;
+
 /// Fast typed word reference within a Mushaf page
 class MushafWordRef {
   final int surah;
@@ -63,6 +66,7 @@ class _MushafParsedData {
   final Map<int, MushafWordRef> lastWordMap;
   final Map<int, Set<String>> pageAyahsMap;
   final Map<int, Set<int>> pageSurahsMap;
+  final Map<int, int> dominantSurahMap;
 
   _MushafParsedData({
     required this.pages,
@@ -71,6 +75,7 @@ class _MushafParsedData {
     required this.lastWordMap,
     required this.pageAyahsMap,
     required this.pageSurahsMap,
+    required this.dominantSurahMap,
   });
 }
 
@@ -83,6 +88,7 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
   final Map<int, MushafWordRef> lastWordMap = {};
   final Map<int, Set<String>> pageAyahsMap = {};
   final Map<int, Set<int>> pageSurahsMap = {};
+  final Map<int, int> dominantSurahMap = {};
 
   rawMap.forEach((key, val) {
     final pageNum = int.tryParse(key);
@@ -90,6 +96,7 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
       final List<Map<String, dynamic>> lines = [];
       final Set<String> pageAyahs = {};
       final Set<int> pageSurahs = {};
+      final Map<int, int> surahWordCounts = {};
       (int, int)? firstAyah;
       MushafWordRef? lastWord;
 
@@ -97,7 +104,8 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
         if (line is Map) {
           final castedLine = Map<String, dynamic>.from(line);
           if (castedLine['t'] == 'header' && castedLine['s'] is int) {
-            pageSurahs.add(castedLine['s'] as int);
+            final s = castedLine['s'] as int;
+            pageSurahs.add(s);
           } else if (castedLine['t'] == 'text' && castedLine['w'] is List) {
             final List<MushafWordRef> parsedWords = [];
             for (final loc in castedLine['w']) {
@@ -114,6 +122,7 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
                 ayahMap.putIfAbsent(ayahKey, () => pageNum);
                 pageAyahs.add(ayahKey);
                 pageSurahs.add(s);
+                surahWordCounts[s] = (surahWordCounts[s] ?? 0) + 1;
                 firstAyah ??= (s, a);
                 lastWord = ref;
               }
@@ -128,6 +137,21 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
       pageSurahsMap[pageNum] = pageSurahs;
       if (firstAyah != null) firstAyahMap[pageNum] = firstAyah;
       if (lastWord != null) lastWordMap[pageNum] = lastWord;
+
+      // Determine the dominant Surah on this page (the Surah with majority of words):
+      int? dominantSurah;
+      int maxWords = -1;
+      surahWordCounts.forEach((s, count) {
+        if (count > maxWords) {
+          maxWords = count;
+          dominantSurah = s;
+        }
+      });
+      if (dominantSurah != null) {
+        dominantSurahMap[pageNum] = dominantSurah!;
+      } else if (firstAyah != null) {
+        dominantSurahMap[pageNum] = firstAyah.$1;
+      }
     }
   });
 
@@ -138,6 +162,7 @@ _MushafParsedData _parseMushafJson(String jsonStr) {
     lastWordMap: lastWordMap,
     pageAyahsMap: pageAyahsMap,
     pageSurahsMap: pageSurahsMap,
+    dominantSurahMap: dominantSurahMap,
   );
 }
 
@@ -207,6 +232,11 @@ class MushafView extends StatefulWidget {
     return _pageFirstAyahCache?[pageNumber];
   }
 
+  /// Returns the dominant Surah on [pageNumber] (the Surah with the majority of words on this page) in O(1) time.
+  static int? getDominantSurahOnPage(int pageNumber) {
+    return _pageDominantSurahCache?[pageNumber] ?? _pageFirstAyahCache?[pageNumber]?.$1;
+  }
+
   /// Checks if the given Ayah is located on [pageNumber] in O(1) time.
   static bool isAyahOnPage({
     required int pageNumber,
@@ -241,6 +271,7 @@ class MushafView extends StatefulWidget {
       _pageLastWordCache = data.lastWordMap;
       _pageAyahsCache = data.pageAyahsMap;
       _pageSurahsCache = data.pageSurahsMap;
+      _pageDominantSurahCache = data.dominantSurahMap;
     } catch (e) {
       debugPrint('Error loading mushaf_pages.json: $e');
     } finally {
@@ -341,6 +372,8 @@ class _MushafViewState extends State<MushafView> {
           pageNumber: _currentPage,
         );
       }
+    } else if (oldWidget.isRecording && !widget.isRecording) {
+      _lastAutoAdvancedFromPage = null;
     }
   }
 
@@ -404,6 +437,7 @@ class _MushafViewState extends State<MushafView> {
     super.dispose();
   }
 
+  int? _lastAutoAdvancedFromPage;
   bool _isAutoAdvancingPage = false;
 
   void _onControllerProgress() {
@@ -414,6 +448,24 @@ class _MushafViewState extends State<MushafView> {
     final lastWord = MushafView.getLastWordOnPage(_currentPage);
     if (lastWord == null) return;
 
+    final int? activeAyah = ctrl.activeAyah.value;
+    final int activeSurah = ctrl.targetSurah != 0
+        ? ctrl.targetSurah
+        : AppState.instance.lastSurah;
+
+    // Check if the user has navigated/selected an earlier Ayah on this page:
+    // in that case, clear the auto-advanced flag so that when they recite to the end of the page again,
+    // it will naturally advance to the next page.
+    if (activeAyah != null &&
+        activeAyah != lastWord.ayah &&
+        MushafView.isAyahOnPage(
+          pageNumber: _currentPage,
+          surah: activeSurah,
+          ayah: activeAyah,
+        )) {
+      _lastAutoAdvancedFromPage = null;
+    }
+
     // Check if the last word on the currently visible page was finished
     final bool isLastWordFinished = ctrl.isWordGreen(
             lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
@@ -421,7 +473,20 @@ class _MushafViewState extends State<MushafView> {
             surah: lastWord.surah) ||
         ctrl.completedAyahsFor(lastWord.surah).contains(lastWord.ayah);
 
-    if (!isLastWordFinished) return;
+    if (!isLastWordFinished) {
+      if (_lastAutoAdvancedFromPage == _currentPage) {
+        _lastAutoAdvancedFromPage = null;
+      }
+      return;
+    }
+
+    // Guard 1: Never auto-advance if we already auto-advanced from this page
+    if (_lastAutoAdvancedFromPage == _currentPage) return;
+
+    // Guard 2: Only auto-advance if the active reciting Ayah is actually the last Ayah of this page
+    if (activeAyah != lastWord.ayah || activeSurah != lastWord.surah) {
+      return;
+    }
 
     final int nextPage = _currentPage + 1;
     if (nextPage > 604) return;
@@ -432,6 +497,7 @@ class _MushafViewState extends State<MushafView> {
     final int nextSurah = nextFirst.$1;
     final int nextAyah = nextFirst.$2;
 
+    _lastAutoAdvancedFromPage = _currentPage;
     _isAutoAdvancingPage = true;
 
     () async {
@@ -1055,8 +1121,8 @@ class _MushafPageState extends State<_MushafPage>
                       ),
                       if (widget.showBottomPageNumber)
                         Positioned(
-                          left: 2,
-                          bottom: 0,
+                          left: 14,
+                          bottom: 8,
                           child:
                               _buildBottomPageNumber(widget.pageNumber, c, app),
                         ),
@@ -1151,8 +1217,8 @@ class _MushafPageState extends State<_MushafPage>
                     ),
                     if (widget.showBottomPageNumber)
                       Positioned(
-                        left: 2,
-                        bottom: 0,
+                        left: 14,
+                        bottom: 8,
                         child:
                             _buildBottomPageNumber(widget.pageNumber, c, app),
                       ),
@@ -1420,27 +1486,13 @@ class _MushafPageState extends State<_MushafPage>
         );
       }
 
-      // Modern, eye-comfortable active word focus pill:
-      // Distinct, soothing luminous oceanic teal with soft ambient glow,
-      // creating an elegant contrast against the neutral white-grey Ayah ribbon.
+      // Active word focus pill: tuned for optimal contrast against the Ayah ribbon without eye strain
       final BoxDecoration? wordDecoration = isWordActive
           ? BoxDecoration(
               color: c.wordHighlight.withValues(
-                alpha: isDark ? 0.25 : 0.18,
+                alpha: isDark ? 0.14 : 0.18,
               ),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: c.wordHighlight.withValues(alpha: isDark ? 0.70 : 0.50),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color:
-                      c.wordHighlight.withValues(alpha: isDark ? 0.22 : 0.12),
-                  blurRadius: 6,
-                  spreadRadius: 0.5,
-                ),
-              ],
             )
           : null;
 
@@ -1466,17 +1518,11 @@ class _MushafPageState extends State<_MushafPage>
             _lastWordTapTime = DateTime.now();
           },
           onTap: handleWordTap,
-          child: wordDecoration != null
-              ? Container(
-                  margin: EdgeInsets.symmetric(horizontal: shouldJustify ? 0.0 : 2.5),
-                  padding: const EdgeInsets.symmetric(horizontal: 1.0, vertical: 1.0),
-                  decoration: wordDecoration,
-                  child: wordTextWidget,
-                )
-              : Padding(
-                  padding: wordPadding,
-                  child: wordTextWidget,
-                ),
+          child: Container(
+            padding: wordPadding,
+            decoration: wordDecoration,
+            child: wordTextWidget,
+          ),
         ),
       );
       childAyahRefs.add((surah: surah, ayah: ayah));
@@ -1825,19 +1871,16 @@ class _MushafPageState extends State<_MushafPage>
   }
 
   Widget _buildBottomPageNumber(int pageNumber, ThemeColors c, AppState app) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 2),
-      child: Text(
-        VerseRow.toArabicDigits(pageNumber),
-        textDirection: TextDirection.rtl,
-        textScaler: TextScaler.noScaling,
-        style: TextStyle(
-          fontFamily: 'cairo',
-          fontSize: 11.5,
-          color: c.textSecondary,
-          fontWeight: FontWeight.w600,
-          height: 1.0,
-        ),
+    return Text(
+      VerseRow.toArabicDigits(pageNumber),
+      textDirection: TextDirection.rtl,
+      textScaler: TextScaler.noScaling,
+      style: TextStyle(
+        fontFamily: 'cairo',
+        fontSize: 11.5,
+        color: c.textSecondary,
+        fontWeight: FontWeight.w600,
+        height: 1.0,
       ),
     );
   }

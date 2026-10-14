@@ -45,9 +45,19 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
     _normalizedNames =
         _surahs.map((s) => _normalizeArabic(s.surahName)).toList();
     _lowerEnNames = _surahs.map((s) => s.surahNameEn.toLowerCase()).toList();
+    // Each SurahListTile is exactly 76.0px (44px badge + 24px container padding + 8px tile margin)
     final double initialOffset =
-        ((widget.current - 1) * 78.0).clamp(0.0, 114 * 78.0);
+        ((widget.current - 1) * 76.0).clamp(0.0, double.infinity);
     _scrollCtrl = ScrollController(initialScrollOffset: initialOffset);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollCtrl.hasClients && _query.isEmpty) {
+        final double max = _scrollCtrl.position.maxScrollExtent;
+        if (_scrollCtrl.offset > max) {
+          _scrollCtrl.jumpTo(max);
+        }
+      }
+    });
   }
 
   @override

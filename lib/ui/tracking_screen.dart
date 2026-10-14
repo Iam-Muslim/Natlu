@@ -77,9 +77,11 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _cachedTargetSurah;
 
   List<QuranVerse> get _displayVerses {
-    if (_cachedDisplayVerses == null || _cachedTargetSurah != widget.controller.targetSurah) {
+    if (_cachedDisplayVerses == null ||
+        _cachedTargetSurah != widget.controller.targetSurah) {
       _cachedTargetSurah = widget.controller.targetSurah;
-      _cachedDisplayVerses = widget.controller.repository.getSurah(widget.controller.targetSurah);
+      _cachedDisplayVerses =
+          widget.controller.repository.getSurah(widget.controller.targetSurah);
     }
     return _cachedDisplayVerses!;
   }
@@ -100,9 +102,11 @@ class _TrackingScreenState extends State<TrackingScreen>
     AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
 
     // Warm up Surah timings and Ayah 1 audio in memory/disk in the background for zero-latency instant play
-    unawaited(QuranTimingService.instance.ensureSurahLoaded(widget.controller.targetSurah));
+    unawaited(QuranTimingService.instance
+        .ensureSurahLoaded(widget.controller.targetSurah));
     if (!kIsWeb) {
-      unawaited(QuranAudioService.ensureAyahDownloaded(widget.controller.targetSurah, 1));
+      unawaited(QuranAudioService.ensureAyahDownloaded(
+          widget.controller.targetSurah, 1));
     }
 
     // Auto-scroll to saved last Ayah on startup
@@ -110,7 +114,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _lastAyah = AppState.instance.lastAyah;
-          _ensureAyahVisibleSmart(AppState.instance.lastAyah, isManualTap: false);
+          _ensureAyahVisibleSmart(AppState.instance.lastAyah,
+              isManualTap: false);
         }
       });
     }
@@ -118,8 +123,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   void _syncScreenWakeLock() {
     if (kIsWeb) return;
-    final bool shouldStayAwake =
-        widget.isRecording ||
+    final bool shouldStayAwake = widget.isRecording ||
         widget.isVoiceSearching ||
         _isAutoScrolling ||
         AppState.instance.isAudioPlaying.value;
@@ -154,7 +158,9 @@ class _TrackingScreenState extends State<TrackingScreen>
           _ensureAyahVisibleSmart(ayah);
         }
       });
-    } else if (!isPlaying && _wasAudioPlaying && !QuranAudioService.instance.isPaused) {
+    } else if (!isPlaying &&
+        _wasAudioPlaying &&
+        !QuranAudioService.instance.isPaused) {
       _wasAudioPlaying = false;
     }
   }
@@ -213,9 +219,10 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
     if (widget.isRecording && !oldWidget.isRecording) {
       AppState.instance.dismissBanner();
-      final int targetAyah = widget.controller.currentMatchedVerse?.verse.ayah ??
-          widget.controller.activeAyah.value ??
-          1;
+      final int targetAyah =
+          widget.controller.currentMatchedVerse?.verse.ayah ??
+              widget.controller.activeAyah.value ??
+              1;
       _lastAyah = targetAyah;
       _ensureAyahVisibleSmart(targetAyah);
     }
@@ -284,7 +291,8 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   /// Calculates the safe, unobstructed reading boundaries between top and bottom chrome.
-  ({double upperSafeY, double lowerSafeY, double screenHeight}) _getSafeViewportBounds() {
+  ({double upperSafeY, double lowerSafeY, double screenHeight})
+      _getSafeViewportBounds() {
     final mediaQuery = MediaQuery.of(context);
     final double screenHeight = mediaQuery.size.height;
     final double topPadding = mediaQuery.padding.top;
@@ -377,13 +385,16 @@ class _TrackingScreenState extends State<TrackingScreen>
       // 3. MANUAL TAP RULE:
       // If the user tapped this Ayah with their finger and its start is already visible:
       // ZERO SCROLLING! Never yank the screen away from the user's touch.
-      if (isManualTap && ayahTop >= upperSafeY && ayahTop <= (lowerSafeY - 24.0)) {
+      if (isManualTap &&
+          ayahTop >= upperSafeY &&
+          ayahTop <= (lowerSafeY - 24.0)) {
         return;
       }
 
       // 4. CHECK IF AYAH IS MOSTLY VISIBLE:
       // How much of this Ayah is visible before the bottom dock?
-      final double visibleHeight = (lowerSafeY - ayahTop).clamp(0.0, ayahHeight);
+      final double visibleHeight =
+          (lowerSafeY - ayahTop).clamp(0.0, ayahHeight);
       final double visibleRatio =
           ayahHeight > 0 ? (visibleHeight / ayahHeight) : 1.0;
 
@@ -445,7 +456,8 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     final bool isAudio = AppState.instance.isAudioPlaying.value;
     final int? activeAyah = isAudio
-        ? (AppState.instance.activeAudioAyah.value ?? widget.controller.activeAyah.value)
+        ? (AppState.instance.activeAudioAyah.value ??
+            widget.controller.activeAyah.value)
         : widget.controller.activeAyah.value;
     if (activeAyah == null || ayah != activeAyah) {
       return;
@@ -600,13 +612,39 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
   }
 
+  int get _effectiveSurah {
+    final app = AppState.instance;
+    if (app.isMushafMode) {
+      final page = app.currentMushafPage.value;
+      final activeAyah = widget.controller.activeAyah.value;
+      final activeSurah = widget.controller.targetSurah;
+      if (activeAyah != null &&
+          MushafView.isAyahOnPage(
+            pageNumber: page,
+            surah: activeSurah,
+            ayah: activeAyah,
+          )) {
+        return activeSurah;
+      }
+      final dominant = MushafView.getDominantSurahOnPage(page);
+      if (dominant != null) {
+        return dominant;
+      }
+      final first = MushafView.getFirstAyahOnPage(page);
+      if (first != null) {
+        return first.$1;
+      }
+    }
+    return widget.controller.targetSurah;
+  }
+
   void _showSurahPicker() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SurahPickerSheet(
-        current: widget.controller.targetSurah,
+        current: _effectiveSurah,
         controller: widget.controller,
         isRecording: widget.isRecording,
         isVoiceSearching: widget.isVoiceSearching,
@@ -677,8 +715,6 @@ class _TrackingScreenState extends State<TrackingScreen>
               children: [
                 // Main Verse Content
                 Positioned.fill(child: _buildVerseContent(c, app, top)),
-
-
 
                 // Top Floating Header
                 Positioned(
@@ -798,8 +834,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         bottom: 8,
       ),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: c.surface,
           borderRadius: BorderRadius.circular(28),
@@ -811,160 +846,165 @@ class _TrackingScreenState extends State<TrackingScreen>
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black
-                  .withValues(alpha: app.isDarkMode ? 0.35 : 0.06),
+              color:
+                  Colors.black.withValues(alpha: app.isDarkMode ? 0.35 : 0.06),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
           ],
         ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    // ── 1. 2026 Surah Selector — Clean Frosted Capsule ──
-                    Expanded(
-                      child: _TactileScaleButton(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _showSurahPicker();
-                        },
-                        child: Container(
-                          height: 44,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            color: app.isDarkMode
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : c.surfaceHigh.withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: app.isDarkMode
-                                  ? Colors.white.withValues(alpha: 0.10)
-                                  : c.border.withValues(alpha: 0.55),
-                              width: 0.8,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              // Mini emerald icon badge
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: c.primary.withValues(alpha: app.isDarkMode ? 0.18 : 0.10),
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.menu_book_rounded,
-                                  color: c.primary,
-                                  size: 15,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Builder(
-                                  builder: (context) {
-                                    final verse1 =
-                                        widget.controller.repository.getVerse(
-                                            widget.controller.targetSurah, 1);
-                                    final name = app.isArabic
-                                        ? (verse1?.surahName ?? '')
-                                        : (verse1?.surahNameEn ?? '');
-                                    return Text(
-                                      name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: c.text,
-                                        fontSize: app.isArabic ? 16 : 14.5,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: c.textSecondary.withValues(alpha: 0.65),
-                                size: 18,
-                              ),
-                            ],
-                          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            // ── 1. 2026 Surah Selector — Clean Frosted Capsule ──
+            Expanded(
+              child: _TactileScaleButton(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _showSurahPicker();
+                },
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: app.isDarkMode
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : c.surfaceHigh.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: app.isDarkMode
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : c.border.withValues(alpha: 0.55),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Mini emerald icon badge
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: c.primary
+                              .withValues(alpha: app.isDarkMode ? 0.18 : 0.10),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.menu_book_rounded,
+                          color: c.primary,
+                          size: 15,
                         ),
                       ),
-                    ),
-
-                    const SizedBox(width: 6),
-
-                    // ── 2. Voice Search Action Button (Small Toolbar Icon) ──
-                    _buildIconActionButton(
-                      icon: Icons.graphic_eq_rounded,
-                      isActive: widget.isVoiceSearching,
-                      c: c,
-                      tooltip: app.isArabic ? 'بحث صوتي' : 'Voice Search',
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        app.dismissBanner();
-                        AppState.instance.stopVerseAudio();
-                        widget.onVoiceSearchToggle();
-                      },
-                    ),
-
-                    const SizedBox(width: 4),
-
-                    // ── 3. Read (Auto-Scroll) / Fullscreen Action Button ──
-                    _buildIconActionButton(
-                      icon: app.isMushafMode
-                          ? Icons.auto_stories_rounded
-                          : Icons.keyboard_double_arrow_down_rounded,
-                      isActive: _isAutoScrolling,
-                      c: c,
-                      tooltip: app.isMushafMode
-                          ? (app.isArabic
-                              ? (_isAutoScrolling
-                                  ? 'إيقاف ملء الشاشة'
-                                  : 'ملء الشاشة')
-                              : (_isAutoScrolling
-                                  ? 'Exit Full Screen'
-                                  : 'Full Screen'))
-                          : (app.isArabic
-                              ? (_isAutoScrolling
-                                  ? 'إيقاف التمرير'
-                                  : 'قراءة تلقائية')
-                              : (_isAutoScrolling
-                                  ? 'Pause Reading'
-                                  : 'Auto-scroll Read')),
-                      onTap: () {
-                        HapticFeedback.mediumImpact();
-                        app.dismissBanner();
-                        AppState.instance.stopVerseAudio();
-                        _toggleAutoScroll();
-                      },
-                    ),
-
-                    const SizedBox(width: 4),
-
-                    // ── 4. Settings Action ──
-                    _buildIconActionButton(
-                      icon: Icons.settings_rounded,
-                      isActive: false,
-                      c: c,
-                      tooltip: app.isArabic ? 'الإعدادات' : 'Settings',
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        _showSettingsDialog();
-                      },
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: AnimatedBuilder(
+                          animation: Listenable.merge([
+                            app.currentMushafPage,
+                            widget.controller.activeAyah,
+                            widget.controller,
+                          ]),
+                          builder: (context, _) {
+                            final effectiveSurah = _effectiveSurah;
+                            final metadata =
+                                widget.controller.repository.surahMetadata;
+                            final String name;
+                            if (effectiveSurah >= 1 &&
+                                effectiveSurah <= metadata.length) {
+                              final s = metadata[effectiveSurah - 1];
+                              name = app.isArabic ? s.surahName : s.surahNameEn;
+                            } else {
+                              final verse1 = widget.controller.repository
+                                  .getVerse(effectiveSurah, 1);
+                              name = app.isArabic
+                                  ? (verse1?.surahName ?? '')
+                                  : (verse1?.surahNameEn ?? '');
+                            }
+                            return Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: c.text,
+                                fontSize: app.isArabic ? 16 : 14.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: c.textSecondary.withValues(alpha: 0.65),
+                        size: 18,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            );
-          }
+            ),
 
+            const SizedBox(width: 6),
 
+            // ── 2. Voice Search Action Button (Small Toolbar Icon) ──
+            _buildIconActionButton(
+              icon: Icons.graphic_eq_rounded,
+              isActive: widget.isVoiceSearching,
+              c: c,
+              tooltip: app.isArabic ? 'بحث صوتي' : 'Voice Search',
+              onTap: () {
+                HapticFeedback.lightImpact();
+                app.dismissBanner();
+                AppState.instance.stopVerseAudio();
+                widget.onVoiceSearchToggle();
+              },
+            ),
 
+            const SizedBox(width: 4),
 
+            // ── 3. Read (Auto-Scroll) / Fullscreen Action Button ──
+            _buildIconActionButton(
+              icon: app.isMushafMode
+                  ? Icons.auto_stories_rounded
+                  : Icons.keyboard_double_arrow_down_rounded,
+              isActive: _isAutoScrolling,
+              c: c,
+              tooltip: app.isMushafMode
+                  ? (app.isArabic
+                      ? (_isAutoScrolling ? 'إيقاف ملء الشاشة' : 'ملء الشاشة')
+                      : (_isAutoScrolling ? 'Exit Full Screen' : 'Full Screen'))
+                  : (app.isArabic
+                      ? (_isAutoScrolling ? 'إيقاف التمرير' : 'قراءة تلقائية')
+                      : (_isAutoScrolling
+                          ? 'Pause Reading'
+                          : 'Auto-scroll Read')),
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                app.dismissBanner();
+                AppState.instance.stopVerseAudio();
+                _toggleAutoScroll();
+              },
+            ),
+
+            const SizedBox(width: 4),
+
+            // ── 4. Settings Action ──
+            _buildIconActionButton(
+              icon: Icons.settings_rounded,
+              isActive: false,
+              c: c,
+              tooltip: app.isArabic ? 'الإعدادات' : 'Settings',
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _showSettingsDialog();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
   // Modern Floating Slide-Up Banner (Slides UP from bottom toolbar for all notices)
@@ -991,9 +1031,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       accentColor = c.primary;
     }
 
-    final Color iconColor = (banner.isWarning && isDark)
-        ? const Color(0xFFFBBF24)
-        : accentColor;
+    final Color iconColor =
+        (banner.isWarning && isDark) ? const Color(0xFFFBBF24) : accentColor;
     final String message = isAr ? banner.messageAr : banner.messageEn;
 
     return AnimatedPositioned(
@@ -1014,7 +1053,8 @@ class _TrackingScreenState extends State<TrackingScreen>
               },
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 460),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: isDark ? c.surfaceHigh : c.surface,
                   borderRadius: BorderRadius.circular(20),
@@ -1024,56 +1064,60 @@ class _TrackingScreenState extends State<TrackingScreen>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                      color:
+                          Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
                       blurRadius: 14,
                       offset: const Offset(0, -3),
                     ),
                   ],
                 ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: isDark ? 0.20 : 0.12),
-                            borderRadius: BorderRadius.circular(9),
-                            border: Border.all(
-                              color: accentColor.withValues(alpha: isDark ? 0.42 : 0.32),
-                              width: 0.8,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            banner.icon,
-                            color: iconColor,
-                            size: 16,
-                          ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color:
+                            accentColor.withValues(alpha: isDark ? 0.20 : 0.12),
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: accentColor.withValues(
+                              alpha: isDark ? 0.42 : 0.32),
+                          width: 0.8,
                         ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            message,
-                            style: TextStyle(
-                              color: c.text,
-                              height: 1.35,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12.5,
-                            ),
-                            textAlign: isAr ? TextAlign.right : TextAlign.left,
-                            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                          ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        banner.icon,
+                        color: iconColor,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        message,
+                        style: TextStyle(
+                          color: c.text,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
                         ),
-                      ],
-                  ),
+                        textAlign: isAr ? TextAlign.right : TextAlign.left,
+                        textDirection:
+                            isAr ? TextDirection.rtl : TextDirection.ltr,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
   Widget _buildIconActionButton({
     required IconData icon,
@@ -1293,81 +1337,80 @@ class _TrackingScreenState extends State<TrackingScreen>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black
-                      .withValues(alpha: isDark ? 0.35 : 0.06),
+                  color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.06),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
-                child: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Row(
-                    children: [
-                      // Visual Left: Next Surah (التالية / Next)
-                      // Advances deeper in Quran (Surah + 1), chevron points left (←)
-                      Expanded(
-                        child: _buildSurahNavButton(
-                          icon: Icons.chevron_left_rounded,
-                          label: isAr ? 'التالية' : 'Next',
-                          isEnabled: hasNext,
-                          iconOnLeft: true,
-                          c: c,
-                          isDark: isDark,
-                          onTap: () => _navigateToSurah(currentSurah + 1),
-                        ),
-                      ),
-
-                      // Subtle Vertical Divider
-                      Container(
-                        width: 1,
-                        height: 14,
-                        color: (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: isDark ? 0.14 : 0.08),
-                      ),
-
-                      // Visual Center: Scroll to Top (للأعلى / Top)
-                      Expanded(
-                        child: _buildSurahNavButton(
-                          icon: Icons.arrow_upward_rounded,
-                          label: isAr ? 'للأعلى' : 'Top',
-                          isEnabled: true,
-                          iconOnLeft: true,
-                          c: c,
-                          isDark: isDark,
-                          onTap: _scrollToTop,
-                        ),
-                      ),
-
-                      // Subtle Vertical Divider
-                      Container(
-                        width: 1,
-                        height: 14,
-                        color: (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: isDark ? 0.14 : 0.08),
-                      ),
-
-                      // Visual Right: Previous Surah (السابقة / Previous)
-                      // Returns to previous surah (Surah - 1), chevron points right (→)
-                      Expanded(
-                        child: _buildSurahNavButton(
-                          icon: Icons.chevron_right_rounded,
-                          label: isAr ? 'السابقة' : 'Previous',
-                          isEnabled: hasPrev,
-                          iconOnLeft: false,
-                          c: c,
-                          isDark: isDark,
-                          onTap: () => _navigateToSurah(currentSurah - 1),
-                        ),
-                      ),
-                    ],
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Row(
+                children: [
+                  // Visual Left: Next Surah (التالية / Next)
+                  // Advances deeper in Quran (Surah + 1), chevron points left (←)
+                  Expanded(
+                    child: _buildSurahNavButton(
+                      icon: Icons.chevron_left_rounded,
+                      label: isAr ? 'التالية' : 'Next',
+                      isEnabled: hasNext,
+                      iconOnLeft: true,
+                      c: c,
+                      isDark: isDark,
+                      onTap: () => _navigateToSurah(currentSurah + 1),
+                    ),
                   ),
-                ),
+
+                  // Subtle Vertical Divider
+                  Container(
+                    width: 1,
+                    height: 14,
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: isDark ? 0.14 : 0.08),
+                  ),
+
+                  // Visual Center: Scroll to Top (للأعلى / Top)
+                  Expanded(
+                    child: _buildSurahNavButton(
+                      icon: Icons.arrow_upward_rounded,
+                      label: isAr ? 'للأعلى' : 'Top',
+                      isEnabled: true,
+                      iconOnLeft: true,
+                      c: c,
+                      isDark: isDark,
+                      onTap: _scrollToTop,
+                    ),
+                  ),
+
+                  // Subtle Vertical Divider
+                  Container(
+                    width: 1,
+                    height: 14,
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: isDark ? 0.14 : 0.08),
+                  ),
+
+                  // Visual Right: Previous Surah (السابقة / Previous)
+                  // Returns to previous surah (Surah - 1), chevron points right (→)
+                  Expanded(
+                    child: _buildSurahNavButton(
+                      icon: Icons.chevron_right_rounded,
+                      label: isAr ? 'السابقة' : 'Previous',
+                      isEnabled: hasPrev,
+                      iconOnLeft: false,
+                      c: c,
+                      isDark: isDark,
+                      onTap: () => _navigateToSurah(currentSurah - 1),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        );
-      }
+        ),
+      ),
+    );
+  }
 
   Widget _buildSurahNavButton({
     required IconData icon,
