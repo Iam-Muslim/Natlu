@@ -46,7 +46,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'تتبع الكلمات المباشر أثناء التلاوة',
     tagline: 'Instant green/yellow/red highlight as you recite',
     taglineAr: 'تمييز فوري للكلمات بالألوان مع صوتك: الأخضر للإتقان، والأصفر للتنبيه، والأحمر للخطأ',
-    image: '/screenshots/1.png',
+    image: './screenshots/1.png',
     featureKey: 'Word Tracking & ASR',
     highlights: [
       'Zero-latency acoustic phoneme alignment via Zipformer ONNX',
@@ -65,7 +65,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'مصحف المدينة المنورة 15 سطرًا',
     tagline: 'Faithful typography matching printed King Fahd Mus\'haf',
     taglineAr: 'رسم عثماني مطابق لمصحف مجمع الملك فهد لراحة العين والقراءة المطولة',
-    image: '/screenshots/2.png',
+    image: './screenshots/2.png',
     featureKey: 'Mus\'haf Layout Engine',
     highlights: [
       'Pixel-perfect 15-line verse justification with ligature support',
@@ -84,7 +84,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'البحث الصوتي المباشر بالتلاوة',
     tagline: 'Speak any ayah segment to instantly jump to page & surah',
     taglineAr: 'اتلُ أي مقطع من أي سورة للانتقال المباشر لصفحتها وموضعها في المصحف',
-    image: '/screenshots/3.png',
+    image: './screenshots/3.png',
     featureKey: 'Myers Bit-Parallel Search',
     highlights: [
       '6,236 Ayah instant lookup within 15 milliseconds',
@@ -103,7 +103,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'وضع اختبار وتثبيت الحفظ (تسميع ومراجعة)',
     tagline: 'Conceal upcoming words until you recite them correctly',
     taglineAr: 'إخفاء الكلمات والآيات التالية واختبار استحضارها غيباً مع التلاوة',
-    image: '/screenshots/4.png',
+    image: './screenshots/4.png',
     featureKey: 'LCS Omission Detector',
     highlights: [
       'Uncovers text only when your pronunciation matches',

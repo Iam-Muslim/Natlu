@@ -66,6 +66,10 @@ npm run dev
 
 Visit `http://localhost:3000` in your browser.
 
+> [!NOTE]
+> **Do not open `index.html` directly with VS Code Live Server or static file servers.**
+> The source `index.html` references `src/main.tsx`. Browsers cannot run TypeScript `.tsx` files directly and will reject them with `MIME type "application/octet-stream"`. Always use `npm run dev` for development, or serve the compiled `dist/` directory after running `npm run build`.
+
 ---
 
 ## 📦 Production Build
