@@ -71,12 +71,12 @@ jobs:
           echo "// Neutralized to protect custom sw.js" > landing_page/recite/flutter_service_worker.js
           echo "// Neutralized to protect custom sw.js" > landing_page/dist/recite/flutter_service_worker.js
           node -e "const fs = require('fs'); for (const p of ['landing_page/recite/flutter_bootstrap.js', 'landing_page/dist/recite/flutter_bootstrap.js']) { if (fs.existsSync(p)) { let s = fs.readFileSync(p, 'utf8'); s = s.replace(/serviceWorkerSettings:\s*\{[\s\S]*?\}\s*,?/g, ''); s = s.replace('if (!window._flutter) {\n  window._flutter = {};\n}\n_flutter.buildConfig', 'var _flutter = window._flutter = window._flutter || {};\n_flutter.buildConfig'); s = s.replace(/\"builds\":/, '\"useLocalCanvasKit\":true,\"builds\":'); s = s.replace(/_flutter\.loader\.load\(\);?/, '_flutter.loader.load({config:{canvasKitBaseUrl:\"canvaskit/\"}});'); fs.writeFileSync(p, s, 'utf8'); } }"
-          npx --yes esbuild "landing_page/recite/flutter_bootstrap.js" --target=es2018 --outfile="landing_page/recite/flutter_bootstrap.js" --allow-overwrite
-          npx --yes esbuild "landing_page/dist/recite/flutter_bootstrap.js" --target=es2018 --outfile="landing_page/dist/recite/flutter_bootstrap.js" --allow-overwrite
-          npx --yes esbuild "landing_page/recite/flutter.js" --target=es2018 --outfile="landing_page/recite/flutter.js" --allow-overwrite
-          npx --yes esbuild "landing_page/dist/recite/flutter.js" --target=es2018 --outfile="landing_page/dist/recite/flutter.js" --allow-overwrite
-          npx --yes esbuild "landing_page/recite/sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page/recite/sherpa-onnx-wasm-main-asr.js" --allow-overwrite
-          npx --yes esbuild "landing_page/dist/recite/sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page/dist/recite/sherpa-onnx-wasm-main-asr.js" --allow-overwrite
+          for f in "landing_page/recite/flutter_bootstrap.js" "landing_page/dist/recite/flutter_bootstrap.js" "landing_page/recite/flutter.js" "landing_page/dist/recite/flutter.js"; do
+            [ -f "$f" ] && npx --yes esbuild "$f" --target=es2018 --outfile="$f" --allow-overwrite || true
+          done
+          for f in "landing_page/recite/sherpa-onnx-wasm-main-asr.js" "landing_page/dist/recite/sherpa-onnx-wasm-main-asr.js"; do
+            [ -f "$f" ] && npx --yes esbuild "$f" --target=es2020 --outfile="$f" --allow-overwrite || true
+          done
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

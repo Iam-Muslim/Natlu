@@ -37,6 +37,10 @@ const STATIC_PRECACHE = [
   'assets/FontManifest.json',
   'assets/NOTICES',
   'assets/assets/fonts/HafsSmart_08.ttf',
+  'assets/assets/fonts/Cairo-Regular.ttf',
+  'assets/assets/fonts/Cairo-Medium.ttf',
+  'assets/assets/fonts/Cairo-SemiBold.ttf',
+  'assets/assets/fonts/Cairo-Bold.ttf',
   'assets/fonts/MaterialIcons-Regular.otf',
   'assets/assets/icon/app_icon.png',
   'assets/assets/model/tokens.txt',
@@ -91,6 +95,9 @@ self.addEventListener('fetch', (event) => {
 
   // Model download endpoint is saved directly to IndexedDB
   if (url.pathname.includes('/download-model')) return;
+
+  // Stream MP3Quran audio directly through browser native HTTP range request pipeline
+  if (url.hostname.includes('mp3quran.net')) return;
 
   // 1. Navigation requests & entry bootstrap scripts: Network First, fallback to cached
   const isBootstrapOrVersion = url.pathname.endsWith('/flutter_bootstrap.js') ||

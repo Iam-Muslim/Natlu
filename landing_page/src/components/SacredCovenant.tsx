@@ -11,23 +11,11 @@ export const SacredCovenant: React.FC<SacredCovenantProps> = ({ lang }) => {
   return (
     <section id="for-the-sake-of-allah" className="py-20 border-b border-[var(--line)]">
       <div className="max-w-[1248px] mx-auto px-4 sm:px-6">
-        
+
         {/* Ayah Header */}
         <div className="text-center max-w-[720px] mx-auto space-y-3 mb-10">
           <div className="font-quran text-2xl sm:text-3xl lg:text-4xl text-[var(--ink)] leading-relaxed select-none" dir="rtl">
             وَمَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ
-          </div>
-          <div className="flex flex-col items-center justify-center gap-1.5">
-            <p
-              dir="ltr"
-              className="text-xs text-[var(--ink-muted)] italic font-serif text-center inline-block"
-              style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
-            >
-              “And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”
-            </p>
-            <span className="text-[11px] text-[var(--ink-faint)] font-ui-ar" dir="rtl">
-              {isAr ? '﴿سورة الشعراء: 109﴾' : '[Surah Ash-Shu\'ara: 109]'}
-            </span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--ink)] pt-1">
             {isAr ? (
@@ -42,7 +30,7 @@ export const SacredCovenant: React.FC<SacredCovenantProps> = ({ lang }) => {
 
         {/* 3 Core Principles */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
-          
+
           <div className="ql-raised p-6 space-y-2">
             <h3 className="text-sm font-bold text-[var(--ink)]">
               {isAr ? '1. مجاني 100% لجميع المسلمين' : '1. 100% Free for All Users'}
