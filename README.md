@@ -1,9 +1,8 @@
 <div align="center">
-
 ### بفضل الله وبرحمته
 ## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
 <br/>
-<img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/9083e1a1-6c33-4ddb-b77a-f8f84873c9da" />
+<img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/97aeb9d0-ba14-4722-8443-7e6fc87d96cf" />
 
 # Natlu — نتلو
 **The official open-source Tarteel AI Alternative**  
