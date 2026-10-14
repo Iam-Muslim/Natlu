@@ -1,11 +1,11 @@
 <div align="center">
-### بفضل الله وبرحمته
-## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
+  
+**بفضل الله وبرحمته - و ما اسالكم عليه اجرا ان اجري الا على رب العالمين**
+
 <br/>
 <img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/97aeb9d0-ba14-4722-8443-7e6fc87d96cf" />
 
 # Natlu — نتلو
-**The official open-source Tarteel AI Alternative**  
 <br/>
 
 <p align="center">
@@ -38,7 +38,10 @@
   <img src="https://img.shields.io/badge/Dedicated-For%20Allah%20Alone-059669" height="20" alt="For Allah Alone" />
 </p>
 
+**The official open-source Tarteel AI Alternative**  
+
 </div>
+
 
 ---
 
