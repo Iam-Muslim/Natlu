@@ -1,4 +1,3 @@
-<img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/331a4593-6e48-46de-90de-ccd9f7329d4d" /><div align="center">
 
 ### بفضل الله وبرحمته
 ## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
