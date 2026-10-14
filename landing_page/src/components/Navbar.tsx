@@ -54,18 +54,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2.5 group text-decoration-none"
               aria-label="ReciteQuran home"
             >
-              {/* Minimalist modern waveform badge */}
-              <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-[var(--surface)] border border-[var(--line)] shadow-xs group-hover:border-[var(--brand)]/40 transition-colors">
-                <span
-                  className="inline-flex items-center gap-[2px] h-[16px] text-[var(--brand)] shrink-0"
-                  aria-hidden="true"
-                >
-                  <span className="w-[2px] h-[6px] bg-current rounded-full group-hover:h-[9px] transition-all" />
-                  <span className="w-[2px] h-[12px] bg-current rounded-full group-hover:h-[15px] transition-all" />
-                  <span className="w-[2px] h-[16px] bg-current rounded-full group-hover:h-[12px] transition-all" />
-                  <span className="w-[2px] h-[11px] bg-current rounded-full group-hover:h-[7px] transition-all" />
-                  <span className="w-[2px] h-[5px] bg-current rounded-full group-hover:h-[11px] transition-all" />
-                </span>
+              {/* Logo Badge */}
+              <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--surface)] border border-[var(--line)] shadow-xs group-hover:border-[var(--brand)]/40 transition-all overflow-hidden p-0.5">
+                <img
+                  src="./favicon.png"
+                  alt="القرآن"
+                  className="w-full h-full object-contain filter drop-shadow-xs group-hover:scale-105 transition-transform"
+                />
               </div>
 
               <div className="flex items-baseline gap-2">
@@ -74,10 +69,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
                 <span className="font-ui-ar text-xs font-medium text-[var(--ink-muted)]">
                   اتلو القرآن
-                </span>
-                <span className="hidden xl:inline-flex items-center gap-1 text-[10px] font-code font-semibold uppercase px-1.5 py-0.5 rounded-md bg-[var(--brand-tint)] text-[var(--brand)] border border-[var(--brand)]/25">
-                  <span className="w-1 h-1 rounded-full bg-[var(--brand)] animate-pulse" />
-                  v3.0
                 </span>
               </div>
             </a>

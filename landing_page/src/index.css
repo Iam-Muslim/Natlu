@@ -41,15 +41,15 @@
   --rose-500: #ef4444;
 
   /* Light Theme */
-  --paper: #faf8f5;
-  --surface: #f2efe9;
-  --surface-hover: #e9e5dc;
+  --paper: #ffffff;
+  --surface: #f8fafc;
+  --surface-hover: #f1f5f9;
   --raised: #ffffff;
-  --line: #e3ded5;
-  --line-strong: #d0c9be;
-  --ink: #1c1917;
-  --ink-muted: #57534e;
-  --ink-faint: #a8a29e;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --ink: #0f172a;
+  --ink-muted: #475569;
+  --ink-faint: #94a3b8;
 
   --brand: #4338ca;
   --brand-hover: #3730a3;

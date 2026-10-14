@@ -9,7 +9,7 @@ import { SacredCovenant } from './components/SacredCovenant';
 import { Footer } from './components/Footer';
 
 export default function App() {
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<LangMode>('en');
 
   // Sync theme with QuranLab data-theme attribute
