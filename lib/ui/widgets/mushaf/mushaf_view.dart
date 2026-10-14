@@ -859,19 +859,23 @@ class _MushafPageState extends State<_MushafPage> {
 
     final int currentAyahToCheck =
         reciterOnThisPage ? activeAyah : (audioAyah ?? 0);
+    final int currentSurahToCheck =
+        reciterOnThisPage ? targetSurah : (audioSurah ?? targetSurah);
     final verse = ctrl.repository.getVerse(
-      reciterOnThisPage ? targetSurah : (audioSurah ?? targetSurah),
+      currentSurahToCheck,
       currentAyahToCheck,
     );
     if (verse != null) {
       final int wordCount = verse.uthmaniWords.length;
       for (int i = 0; i < wordCount; i++) {
-        if (ctrl.isWordGreen(currentAyahToCheck, i)) {
+        if (ctrl.isWordGreen(currentAyahToCheck, i, surah: currentSurahToCheck)) {
           hash = hash * 31 + (i + 1) * 7;
-        } else if (ctrl.isWordRed(currentAyahToCheck, i)) {
+        } else if (ctrl.isWordRed(currentAyahToCheck, i, surah: currentSurahToCheck)) {
           hash = hash * 31 + (i + 1) * 13;
-        } else if (ctrl.isWordYellow(currentAyahToCheck, i)) {
+        } else if (ctrl.isWordYellow(currentAyahToCheck, i, surah: currentSurahToCheck)) {
           hash = hash * 31 + (i + 1) * 17;
+        } else if (ctrl.isWordNeutral(currentAyahToCheck, i, surah: currentSurahToCheck)) {
+          hash = hash * 31 + (i + 1) * 23;
         }
       }
     }
@@ -1260,38 +1264,23 @@ class _MushafPageState extends State<_MushafPage> {
         app: app,
         colors: c,
         isAutoScrolling: widget.isAutoScrolling,
+        surah: surah,
       );
 
-      void handleWordTap() async {
+      void handleWordTap() {
         if (widget.isAutoScrolling) return;
-        HapticFeedback.lightImpact();
-        if (widget.controller.isWordYellow(ayah, wordIndex0)) {
-          VerseRow.handleWordTap(
-            context: context,
-            surah: surah,
-            ayah: ayah,
-            wordIndex: wordIndex0,
-            wordText: wordText,
-            controller: widget.controller,
-            isAutoScrolling: widget.isAutoScrolling,
-          );
-          return;
-        }
-        if (widget.controller.targetSurah != surah) {
-          MushafView.isSyncingSurah = true;
-          try {
-            await widget.controller.setTargetSurah(
-              surah,
-              preserveOtherSurahStates: true,
-              clearTargetSurah: false,
-            );
-          } finally {
-            MushafView.isSyncingSurah = false;
-          }
-        }
-        widget.controller.setManualAyah(surah, ayah);
-        AppState.instance.saveLastPosition(surah, ayah);
-        if (mounted) setState(() {});
+        VerseRow.handleWordTap(
+          context: context,
+          surah: surah,
+          ayah: ayah,
+          wordIndex: wordIndex0,
+          wordText: wordText,
+          controller: widget.controller,
+          isAutoScrolling: widget.isAutoScrolling,
+          onAyahTap: () {
+            if (mounted) setState(() {});
+          },
+        );
       }
 
       // Modern, eye-comfortable active word focus pill:
@@ -1554,87 +1543,83 @@ class _MushafPageState extends State<_MushafPage> {
     final bool isHafs = markerFont.toLowerCase().contains('hafs');
     final double verticalOffset = isHafs ? -2.0 : -0.4;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () async {
-        HapticFeedback.lightImpact();
-        if (widget.controller.targetSurah != surah) {
-          MushafView.isSyncingSurah = true;
-          try {
-            await widget.controller.setTargetSurah(
-              surah,
-              preserveOtherSurahStates: true,
-              clearTargetSurah: false,
-            );
-          } finally {
-            MushafView.isSyncingSurah = false;
-          }
-        }
-        widget.controller.setManualAyah(surah, ayah);
-        AppState.instance.saveLastPosition(surah, ayah);
-        if (mounted) {
-          setState(() {});
-        }
-      },
-      child: Container(
-        width: widget.showAyahMarkerCircle ? boxSize : null,
-        height: widget.showAyahMarkerCircle ? boxSize : null,
-        margin: const EdgeInsets.symmetric(horizontal: 2.0),
-        alignment: Alignment.center,
-        decoration: widget.showAyahMarkerCircle
-            ? BoxDecoration(
-                color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
-                borderRadius: BorderRadius.circular(
-                    boxSize * 0.28), // Sleek flat squircle
-                border: Border.all(
-                  color: effectiveBorder,
-                  width: widget.ayahMarkerBorderWidth > 0
-                      ? widget.ayahMarkerBorderWidth
-                      : 1.0,
-                ),
-              )
-            : null,
-        child: isBuffering
-            ? SizedBox(
-                width: boxSize * 0.48,
-                height: boxSize * 0.48,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.6,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isPlaying ? c.onPrimary : c.primary,
+    return Semantics(
+      button: true,
+      label: isPlaying ? 'إيقاف مؤقت' : 'تشغيل التلاوة',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (widget.isAutoScrolling) return;
+          VerseRow.toggleAyahAudio(
+            surah: surah,
+            ayah: ayah,
+            controller: widget.controller,
+            isRecording: widget.isRecording,
+            onTap: () {
+              if (mounted) setState(() {});
+            },
+          );
+        },
+        child: Container(
+          width: widget.showAyahMarkerCircle ? boxSize : null,
+          height: widget.showAyahMarkerCircle ? boxSize : null,
+          margin: const EdgeInsets.symmetric(horizontal: 2.0),
+          alignment: Alignment.center,
+          decoration: widget.showAyahMarkerCircle
+              ? BoxDecoration(
+                  color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
+                  borderRadius: BorderRadius.circular(
+                      boxSize * 0.28), // Sleek flat squircle
+                  border: Border.all(
+                    color: effectiveBorder,
+                    width: widget.ayahMarkerBorderWidth > 0
+                        ? widget.ayahMarkerBorderWidth
+                        : 1.0,
                   ),
-                ),
-              )
-            : isPlaying
-                ? Icon(
-                    Icons.pause_rounded,
-                    size: boxSize * 0.60,
-                    color: c.onPrimary,
-                  )
-                : Center(
-                    child: Transform.translate(
-                      offset: Offset(0, verticalOffset),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.center,
-                        child: Text(
-                          VerseRow.toArabicDigits(ayah),
-                          textDirection: TextDirection.rtl,
-                          textScaler: TextScaler.noScaling,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: markerFont,
-                            fontSize: numFontSize,
-                            letterSpacing: letterSpacing,
-                            color: effectiveText,
-                            fontWeight: FontWeight.w700,
-                            height: 1.0,
-                            leadingDistribution: TextLeadingDistribution.even,
+                )
+              : null,
+          child: isBuffering
+              ? SizedBox(
+                  width: boxSize * 0.48,
+                  height: boxSize * 0.48,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isPlaying ? c.onPrimary : c.primary,
+                    ),
+                  ),
+                )
+              : isPlaying
+                  ? Icon(
+                      Icons.stop_rounded,
+                      size: boxSize * 0.52,
+                      color: c.onPrimary,
+                    )
+                  : Center(
+                      child: Transform.translate(
+                        offset: Offset(0, verticalOffset),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: Text(
+                            VerseRow.toArabicDigits(ayah),
+                            textDirection: TextDirection.rtl,
+                            textScaler: TextScaler.noScaling,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: markerFont,
+                              fontSize: numFontSize,
+                              letterSpacing: letterSpacing,
+                              color: effectiveText,
+                              fontWeight: FontWeight.w700,
+                              height: 1.0,
+                              leadingDistribution: TextLeadingDistribution.even,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+        ),
       ),
     );
   }

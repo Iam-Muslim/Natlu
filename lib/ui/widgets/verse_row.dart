@@ -128,10 +128,10 @@ class VerseRow extends StatefulWidget {
 
     if (isActive && isRecording) {
       for (int i = 0; i < words.length; i++) {
-        if (!controller.isWordGreen(ayah, i) &&
-            !controller.isWordRed(ayah, i) &&
-            !controller.isWordYellow(ayah, i) &&
-            !controller.isWordNeutral(ayah, i)) {
+        if (!controller.isWordGreen(ayah, i, surah: surah) &&
+            !controller.isWordRed(ayah, i, surah: surah) &&
+            !controller.isWordYellow(ayah, i, surah: surah) &&
+            !controller.isWordNeutral(ayah, i, surah: surah)) {
           return i;
         }
       }
@@ -167,7 +167,7 @@ class VerseRow extends StatefulWidget {
       onTap: onAyahTap,
     );
 
-    if (controller.isWordYellow(ayah, wordIndex)) {
+    if (controller.isWordYellow(ayah, wordIndex, surah: surah)) {
       AppState.instance.markTajweedWordClicked();
       final errors = controller.getWordErrors(ayah, wordIndex);
       if (errors != null && errors.isNotEmpty) {
@@ -205,6 +205,9 @@ class VerseRow extends StatefulWidget {
       return;
     }
     HapticFeedback.selectionClick();
+    if (controller.targetSurah != surah) {
+      controller.setTargetSurah(surah, preserveOtherSurahStates: true);
+    }
     controller.setManualAyah(surah, ayah);
     AppState.instance.saveLastPosition(surah, ayah);
     onTap?.call();
@@ -462,10 +465,10 @@ class _VerseRowState extends State<VerseRow> {
 
     final words = widget.verse.uthmaniWords;
     for (int i = 0; i < words.length; i++) {
-      if (!widget.controller.isWordGreen(ayah, i) &&
-          !widget.controller.isWordRed(ayah, i) &&
-          !widget.controller.isWordYellow(ayah, i) &&
-          !widget.controller.isWordNeutral(ayah, i)) {
+      if (!widget.controller.isWordGreen(ayah, i, surah: widget.verse.surah) &&
+          !widget.controller.isWordRed(ayah, i, surah: widget.verse.surah) &&
+          !widget.controller.isWordYellow(ayah, i, surah: widget.verse.surah) &&
+          !widget.controller.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
         return i; // First unspoken word: incoming/waited word to be dictated!
       }
     }
@@ -616,13 +619,13 @@ class _VerseRowState extends State<VerseRow> {
 
     final wordCount = widget.verse.uthmaniWords.length;
     for (int i = 0; i < wordCount; i++) {
-      if (ctrl.isWordGreen(ayah, i)) {
+      if (ctrl.isWordGreen(ayah, i, surah: widget.verse.surah)) {
         hash = hash * 31 + (i + 1) * 7;
-      } else if (ctrl.isWordRed(ayah, i)) {
+      } else if (ctrl.isWordRed(ayah, i, surah: widget.verse.surah)) {
         hash = hash * 31 + (i + 1) * 13;
-      } else if (ctrl.isWordYellow(ayah, i)) {
+      } else if (ctrl.isWordYellow(ayah, i, surah: widget.verse.surah)) {
         hash = hash * 31 + (i + 1) * 17;
-      } else if (ctrl.isWordNeutral(ayah, i)) {
+      } else if (ctrl.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
         hash = hash * 31 + (i + 1) * 23;
       }
     }
@@ -661,6 +664,7 @@ class _VerseRowState extends State<VerseRow> {
       _cachedSpans = VerseSpanBuilder.buildSpans(
         words: words,
         ayah: widget.verse.ayah,
+        surah: widget.verse.surah,
         isActive: isActive,
         isAutoScrolling: widget.isAutoScrolling,
         isRecording: widget.isRecording,
@@ -748,6 +752,7 @@ class _VerseRowState extends State<VerseRow> {
                         ? TajweedTooltipPainter(
                             words: words,
                             ayah: widget.verse.ayah,
+                            surah: widget.verse.surah,
                             controller: widget.controller,
                             app: app,
                             cachedSpans: _cachedSpans!,
@@ -964,7 +969,7 @@ class _VerseAudioButton extends StatelessWidget {
                           key: ValueKey(isPlaying),
                           padding: EdgeInsets.only(left: isPlaying ? 0 : 0.8),
                           child: Icon(
-                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
                             size: 13.0,
                             color: iconColor,
                           ),
@@ -1021,10 +1026,10 @@ class _ActiveWordHighlightPainter extends CustomPainter {
       // Recitation matching mode: highlight the coming word to be recited
       int nextUnspoken = -1;
       for (int i = 0; i < words.length; i++) {
-        if (!controller.isWordGreen(ayah, i) &&
-            !controller.isWordRed(ayah, i) &&
-            !controller.isWordYellow(ayah, i) &&
-            !controller.isWordNeutral(ayah, i)) {
+        if (!controller.isWordGreen(ayah, i, surah: surah) &&
+            !controller.isWordRed(ayah, i, surah: surah) &&
+            !controller.isWordYellow(ayah, i, surah: surah) &&
+            !controller.isWordNeutral(ayah, i, surah: surah)) {
           nextUnspoken = i;
           break;
         }

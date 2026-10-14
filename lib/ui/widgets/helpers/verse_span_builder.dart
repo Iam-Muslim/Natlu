@@ -12,11 +12,12 @@ class VerseSpanBuilder {
     required int wordIndex,
     required HighlightingController controller,
     required ThemeColors colors,
+    int? surah,
   }) {
     if (wordIndex < 0) return colors.text;
-    if (controller.isWordGreen(ayah, wordIndex)) return colors.green;
-    if (controller.isWordRed(ayah, wordIndex)) return colors.red;
-    if (controller.isWordYellow(ayah, wordIndex)) return colors.warning;
+    if (controller.isWordGreen(ayah, wordIndex, surah: surah)) return colors.green;
+    if (controller.isWordRed(ayah, wordIndex, surah: surah)) return colors.red;
+    if (controller.isWordYellow(ayah, wordIndex, surah: surah)) return colors.warning;
     return colors.text;
   }
 
@@ -28,12 +29,13 @@ class VerseSpanBuilder {
     required AppState app,
     required ThemeColors colors,
     required bool isAutoScrolling,
+    int? surah,
   }) {
     if (wordIndex < 0) return colors.text;
-    final isRead = controller.isWordGreen(ayah, wordIndex) ||
-        controller.isWordRed(ayah, wordIndex) ||
-        controller.isWordYellow(ayah, wordIndex) ||
-        controller.isWordNeutral(ayah, wordIndex);
+    final isRead = controller.isWordGreen(ayah, wordIndex, surah: surah) ||
+        controller.isWordRed(ayah, wordIndex, surah: surah) ||
+        controller.isWordYellow(ayah, wordIndex, surah: surah) ||
+        controller.isWordNeutral(ayah, wordIndex, surah: surah);
 
     final isHidden = app.isBlurMode && !isRead && !isAutoScrolling;
     return isHidden
@@ -43,6 +45,7 @@ class VerseSpanBuilder {
             wordIndex: wordIndex,
             controller: controller,
             colors: colors,
+            surah: surah,
           );
   }
 
@@ -50,6 +53,7 @@ class VerseSpanBuilder {
   static List<InlineSpan> buildSpans({
     required List<String> words,
     required int ayah,
+    int? surah,
     required bool isActive,
     required bool isAutoScrolling,
     bool isRecording = false,
@@ -90,6 +94,7 @@ class VerseSpanBuilder {
         app: app,
         colors: colors,
         isAutoScrolling: isAutoScrolling,
+        surah: surah,
       );
 
       final word = words[i];
@@ -99,7 +104,7 @@ class VerseSpanBuilder {
       if (enableGestures) {
         recognizer = TapGestureRecognizer()
           ..onTap = () {
-            if (controller.isWordYellow(ayah, wordIdx)) {
+            if (controller.isWordYellow(ayah, wordIdx, surah: surah)) {
               onWordErrorTap(ayah, wordIdx, word);
             } else {
               onWordAudioTap?.call(ayah, wordIdx);

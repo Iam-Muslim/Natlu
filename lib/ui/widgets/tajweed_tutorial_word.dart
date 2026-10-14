@@ -5,6 +5,7 @@ import '../../../state/app_state.dart';
 class TajweedTooltipPainter extends CustomPainter {
   final List<String> words;
   final int ayah;
+  final int? surah;
   final HighlightingController controller;
   final AppState app;
   final List<InlineSpan> cachedSpans;
@@ -12,6 +13,7 @@ class TajweedTooltipPainter extends CustomPainter {
   TajweedTooltipPainter({
     required this.words,
     required this.ayah,
+    this.surah,
     required this.controller,
     required this.app,
     required this.cachedSpans,
@@ -25,7 +27,7 @@ class TajweedTooltipPainter extends CustomPainter {
     // Eliminates 100% of synchronous HarfBuzz layout passes across idle verses during scrolling.
     bool hasYellowWord = false;
     for (int i = 0; i < words.length; i++) {
-      if (controller.isWordYellow(ayah, i)) {
+      if (controller.isWordYellow(ayah, i, surah: surah)) {
         hasYellowWord = true;
         break;
       }
@@ -64,7 +66,7 @@ class TajweedTooltipPainter extends CustomPainter {
     int charOffset = 0;
     for (int i = 0; i < words.length; i++) {
       final word = words[i];
-      if (controller.isWordYellow(ayah, i)) {
+      if (controller.isWordYellow(ayah, i, surah: surah)) {
         final rects = painter.getBoxesForSelection(
           TextSelection(baseOffset: charOffset, extentOffset: charOffset + word.length),
         );
