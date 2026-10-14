@@ -1,18 +1,14 @@
 <div align="center">
 
 ### بفضل الله وبرحمته
-
 ## و ما اسالكم عليه اجرا ان اجري الا على رب العالمين
 
 *“And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”*  
-
 <br/>
+<img width="1500" height="500" alt="ReciteQuran" src="https://github.com/user-attachments/assets/9083e1a1-6c33-4ddb-b77a-f8f84873c9da" />
 
 # Natlu — نتلو
-### On-Device Quran Recitation AI
 **The official open-source Tarteel AI Alternative**  
-**[`package:recite_quran`](https://pub.dev/packages/recite_quran)**
-
 <br/>
 
 <p align="center">
@@ -152,11 +148,7 @@ lib/
 
 ---
 
-## Developer Guide
-
-### Prerequisites
-- **Flutter SDK**: `>= 3.24.0` (Dart `>= 3.5.0 < 4.0.0`)
-- **Git**
+## Guide
 
 ### 1. Clone & Fetch Dependencies
 ```bash
@@ -251,7 +243,6 @@ await engine.initialize(modelPath: 'assets/model/zipformer_p_arabic_v3.int8.onnx
 
 ### **وَمَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ**
 > *“And I do not ask you for it any payment. My payment is only from the Lord of the worlds.”*  
-> — **[Surah Ash-Shu'ara: 109]**
 
 This project and its source code are dedicated solely for the sake of Allah alone:
 
