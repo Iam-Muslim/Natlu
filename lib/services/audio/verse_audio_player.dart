@@ -3,6 +3,7 @@ import 'dart:developer' show log;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -287,10 +288,24 @@ class VerseAudioPlayer {
     _currentIndexSub = null;
   }
 
+  /// Explicitly configures and activates the native media audio session (STREAM_MUSIC)
+  /// so recitation plays through high-fidelity media speakers at full volume.
+  static Future<void> ensureMediaAudioSession() async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        final session = await AudioSession.instance;
+        await session.configure(const AudioSessionConfiguration.music());
+        await session.setActive(true);
+      } catch (_) {}
+    }
+  }
+
   AudioPlayer get _audioPlayer {
     if (_player == null) {
       final p = AudioPlayer(
-        handleInterruptions: false,
+        handleInterruptions: true,
         handleAudioSessionActivation: false,
       );
       _player = p;
@@ -438,6 +453,7 @@ class VerseAudioPlayer {
         }
       }
 
+      await ensureMediaAudioSession();
       final player = _audioPlayer;
 
       // 2. Fetch/resolve cached 64kbps Ayah file AudioSource
@@ -528,6 +544,7 @@ class VerseAudioPlayer {
     unawaited(QuranTimingService.instance.ensureSurahLoaded(surah));
 
     try {
+      await ensureMediaAudioSession();
       final player = _audioPlayer;
       final int maxAyahs =
           (surah >= 1 && surah <= 114) ? surahAyahCounts[surah - 1] : 286;
@@ -588,6 +605,20 @@ class VerseAudioPlayer {
         stop();
       }
       return;
+    }
+
+    // Single-ayah mode (e.g. record mode):
+    // Stop immediately when the reciter finishes the last word (no 1-second trailing silence delay!)
+    if (!_isContinuous) {
+      final ayahTiming =
+          QuranTimingService.instance.getCachedAyahTiming(surah, ayah);
+      if (ayahTiming != null && ayahTiming.words.isNotEmpty) {
+        final lastWordEndMs = ayahTiming.words.last.endMs;
+        if (posMs >= lastWordEndMs + 80) {
+          stop();
+          return;
+        }
+      }
     }
 
     // Continuous recitation mode: lookup active word index
@@ -652,6 +683,7 @@ class VerseAudioPlayer {
   /// Resumes playback from the exact paused position.
   Future<void> resume() async {
     try {
+      await ensureMediaAudioSession();
       _isPaused = false;
       final app = AppState.instance;
       app.isAudioBuffering.value = false;

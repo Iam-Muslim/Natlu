@@ -738,6 +738,12 @@ class _MushafPageState extends State<_MushafPage> {
   final Set<String> _pageAyahs = {}; // "surah:ayah"
   bool _hadActiveReciter = false;
   bool _hadActiveAudio = false;
+  DateTime _lastWordTapTime = DateTime.fromMillisecondsSinceEpoch(0);
+  final Map<int, GlobalKey> _lineKeys = {};
+
+  GlobalKey _getLineKey(int lineIndex) {
+    return _lineKeys.putIfAbsent(lineIndex, () => GlobalKey());
+  }
 
   @override
   void initState() {
@@ -977,11 +983,38 @@ class _MushafPageState extends State<_MushafPage> {
             final double idealLineHeight =
                 linesContainerHeight / (lines.length + 3);
             final double maxH = math.max(16.0, idealLineHeight);
-            final double lineHeight =
+            final double baseLineHeight =
                 idealLineHeight.clamp(math.min(24.0, maxH), 72.0);
-            final double maxP1Font = math.max(8.0, lineHeight * 0.50);
-            final double fontSize =
-                (lineHeight * 0.46).clamp(math.min(10.0, maxP1Font), 23.0);
+
+            int headerCount = 0;
+            int basmalaCount = 0;
+            int textCount = 0;
+            for (final line in lines) {
+              final t = line['t'] as String?;
+              if (t == 'header') {
+                headerCount++;
+              } else if (t == 'basmala') {
+                basmalaCount++;
+              } else {
+                textCount++;
+              }
+            }
+
+            final double headerLineHeight =
+                (baseLineHeight * 0.74).clamp(24.0, 48.0);
+            final double basmalaLineHeight =
+                (baseLineHeight * 0.52).clamp(18.0, 36.0);
+            final double specialTotalH = (headerCount * headerLineHeight) +
+                (basmalaCount * basmalaLineHeight);
+            final double totalContentH = baseLineHeight * lines.length;
+            final double textLineHeight =
+                (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
+                    ? (totalContentH - specialTotalH) / textCount
+                    : baseLineHeight;
+
+            final double maxP1Font = math.max(8.0, textLineHeight * 0.50);
+            final double fontSize = (textLineHeight * 0.46)
+                .clamp(math.min(10.0, maxP1Font), 23.0);
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -1008,17 +1041,24 @@ class _MushafPageState extends State<_MushafPage> {
                                 final nextLine = lineIndex + 1 < lines.length
                                     ? lines[lineIndex + 1]
                                     : null;
+                                final lineData = lines[lineIndex];
+                                final t = lineData['t'] as String?;
+                                final double thisLineHeight = t == 'header'
+                                    ? headerLineHeight
+                                    : t == 'basmala'
+                                        ? basmalaLineHeight
+                                        : textLineHeight;
                                 return SizedBox(
                                   width: lineWidth,
-                                  height: lineHeight,
+                                  height: thisLineHeight,
                                   child: _buildLine(
-                                    lineData: lines[lineIndex],
+                                    lineData: lineData,
                                     nextLineData: nextLine,
                                     lineIndex: lineIndex,
                                     totalLines: lines.length,
                                     pageNumber: widget.pageNumber,
                                     lineWidth: lineWidth,
-                                    lineHeight: lineHeight,
+                                    lineHeight: thisLineHeight,
                                     fontSize: fontSize,
                                     c: c,
                                     app: app,
@@ -1044,11 +1084,39 @@ class _MushafPageState extends State<_MushafPage> {
           }
 
           // Standard 15-line  Mushaf pages:
-          // Unified typography: all 15 lines share the exact same scale and baseline.
-          final double lineHeight = linesContainerHeight / lines.length;
-          final double maxStandardFont = math.max(8.0, lineHeight * 0.58);
-          final double fontSize =
-              (lineHeight * 0.52).clamp(math.min(10.0, maxStandardFont), 26.0);
+          // Unified typography: header and basmala take compact proportional slots so
+          // Bismillah sits snug under the Surah header with zero awkward voids.
+          final double baseLineHeight = linesContainerHeight / lines.length;
+
+          int headerCount = 0;
+          int basmalaCount = 0;
+          int textCount = 0;
+          for (final line in lines) {
+            final t = line['t'] as String?;
+            if (t == 'header') {
+              headerCount++;
+            } else if (t == 'basmala') {
+              basmalaCount++;
+            } else {
+              textCount++;
+            }
+          }
+
+          final double headerLineHeight =
+              (baseLineHeight * 0.74).clamp(24.0, 36.0);
+          final double basmalaLineHeight =
+              (baseLineHeight * 0.52).clamp(18.0, 26.0);
+
+          final double specialTotalH = (headerCount * headerLineHeight) +
+              (basmalaCount * basmalaLineHeight);
+          final double textLineHeight =
+              (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
+                  ? (linesContainerHeight - specialTotalH) / textCount
+                  : baseLineHeight;
+
+          final double maxStandardFont = math.max(8.0, textLineHeight * 0.58);
+          final double fontSize = (textLineHeight * 0.52)
+              .clamp(math.min(10.0, maxStandardFont), 26.0);
 
           return Directionality(
             textDirection: TextDirection.rtl,
@@ -1073,17 +1141,24 @@ class _MushafPageState extends State<_MushafPage> {
                               final nextLine = lineIndex + 1 < lines.length
                                   ? lines[lineIndex + 1]
                                   : null;
+                              final lineData = lines[lineIndex];
+                              final t = lineData['t'] as String?;
+                              final double thisLineHeight = t == 'header'
+                                  ? headerLineHeight
+                                  : t == 'basmala'
+                                      ? basmalaLineHeight
+                                      : textLineHeight;
                               return SizedBox(
                                 width: lineWidth,
-                                height: lineHeight,
+                                height: thisLineHeight,
                                 child: _buildLine(
-                                  lineData: lines[lineIndex],
+                                  lineData: lineData,
                                   nextLineData: nextLine,
                                   lineIndex: lineIndex,
                                   totalLines: lines.length,
                                   pageNumber: widget.pageNumber,
                                   lineWidth: lineWidth,
-                                  lineHeight: lineHeight,
+                                  lineHeight: thisLineHeight,
                                   fontSize: fontSize,
                                   c: c,
                                   app: app,
@@ -1161,36 +1236,61 @@ class _MushafPageState extends State<_MushafPage> {
       final bool usesUthmani =
           basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4;
 
+      int basmalaSurah = 1;
+      if (nextLineData != null && nextLineData['parsed_words'] is List) {
+        final pw = nextLineData['parsed_words'] as List<MushafWordRef>;
+        if (pw.isNotEmpty) {
+          basmalaSurah = pw.first.surah;
+        }
+      }
+
       return SizedBox(
         width: lineWidth,
         height: lineHeight,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                textDirection: TextDirection.rtl,
-                children: [
-                  for (int i = 0; i < words.length; i++) ...[
-                    if (i > 0)
-                      SizedBox(width: (fontSize * 0.35).clamp(6.0, 10.0)),
-                    Text(
-                      words[i],
-                      textDirection: TextDirection.rtl,
-                      textScaler: TextScaler.noScaling,
-                      style: TextStyle(
-                        fontFamily:
-                            usesUthmani ? widget.wordFontFamily : 'cairo',
-                        fontSize: (fontSize * 0.95).clamp(12.0, 25.0),
-                        fontWeight: FontWeight.normal,
-                        color: c.text,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            if (widget.isAutoScrolling) return;
+            HapticFeedback.lightImpact();
+            VerseRow.selectAyah(
+              surah: basmalaSurah,
+              ayah: 1,
+              controller: widget.controller,
+              onTap: () {
+                if (mounted) setState(() {});
+              },
+            );
+            if (mounted) setState(() {});
+          },
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  textDirection: TextDirection.rtl,
+                  children: [
+                    for (int i = 0; i < words.length; i++) ...[
+                      if (i > 0)
+                        SizedBox(width: (fontSize * 0.18).clamp(3.0, 5.0)),
+                      Text(
+                        words[i],
+                        textDirection: TextDirection.rtl,
+                        textScaler: TextScaler.noScaling,
+                        style: TextStyle(
+                          fontFamily:
+                              usesUthmani ? widget.wordFontFamily : 'cairo',
+                          fontSize: (fontSize * 0.52).clamp(9.5, 13.5),
+                          fontWeight: FontWeight.normal,
+                          color: c.text,
+                          height: 1.2,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1214,6 +1314,7 @@ class _MushafPageState extends State<_MushafPage> {
 
     final bool isDark = app.isDarkMode;
     final wordWidgets = <Widget>[];
+    final childAyahRefs = <({int surah, int ayah})>[];
     int? highlightStartIndex;
     int? highlightEndIndex;
 
@@ -1278,6 +1379,7 @@ class _MushafPageState extends State<_MushafPage> {
       );
 
       void handleWordTap() {
+        _lastWordTapTime = DateTime.now();
         if (widget.isAutoScrolling) return;
         VerseRow.handleWordTap(
           context: context,
@@ -1345,6 +1447,7 @@ class _MushafPageState extends State<_MushafPage> {
           ),
         ),
       );
+      childAyahRefs.add((surah: surah, ayah: ayah));
 
       // Ayah number marker at the end of the Ayah
       final bool isLastWordOfAyah = wordIndex1 == verse.uthmaniWords.length;
@@ -1364,6 +1467,44 @@ class _MushafPageState extends State<_MushafPage> {
             app: app,
           ),
         );
+        childAyahRefs.add((surah: surah, ayah: ayah));
+      }
+    }
+
+    final lineKey = _getLineKey(lineIndex);
+
+    void handleLineTap(Offset localPosition) {
+      if (widget.isAutoScrolling) return;
+      if (DateTime.now().difference(_lastWordTapTime).inMilliseconds < 250) {
+        return;
+      }
+      if (childAyahRefs.isEmpty) return;
+
+      int targetIndex = 0;
+      final renderFlex = lineKey.currentContext?.findRenderObject()
+          as _RenderMushafHighlightFlex?;
+      if (renderFlex != null) {
+        targetIndex = renderFlex.findClosestChildIndex(localPosition.dx);
+      } else {
+        final double ratio =
+            (1.0 - (localPosition.dx / lineWidth)).clamp(0.0, 1.0);
+        targetIndex = (ratio * childAyahRefs.length)
+            .floor()
+            .clamp(0, childAyahRefs.length - 1);
+      }
+
+      if (targetIndex >= 0 && targetIndex < childAyahRefs.length) {
+        final target = childAyahRefs[targetIndex];
+        HapticFeedback.lightImpact();
+        VerseRow.selectAyah(
+          surah: target.surah,
+          ayah: target.ayah,
+          controller: widget.controller,
+          onTap: () {
+            if (mounted) setState(() {});
+          },
+        );
+        if (mounted) setState(() {});
       }
     }
 
@@ -1378,28 +1519,33 @@ class _MushafPageState extends State<_MushafPage> {
             minWidth: lineWidth,
             maxHeight: lineHeight,
           ),
-          child: SizedBox(
-            height: lineHeight,
-            child: _MushafHighlightRow(
-              mainAxisSize: MainAxisSize.min,
-              textDirection: TextDirection.rtl,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: shouldJustify
-                  ? MainAxisAlignment.spaceBetween
-                  : MainAxisAlignment.center,
-              highlightStartIndex: highlightStartIndex,
-              highlightEndIndex: highlightEndIndex,
-              highlightColor: highlightStartIndex != null
-                  ? (isDark
-                      ? Colors.white.withValues(alpha: 0.10)
-                      : const Color(0xFF64748B).withValues(alpha: 0.09))
-                  : null,
-              highlightBorderColor: highlightStartIndex != null
-                  ? (isDark
-                      ? Colors.white.withValues(alpha: 0.24)
-                      : const Color(0xFF64748B).withValues(alpha: 0.22))
-                  : null,
-              children: wordWidgets,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) => handleLineTap(details.localPosition),
+            child: SizedBox(
+              height: lineHeight,
+              child: _MushafHighlightRow(
+                key: lineKey,
+                mainAxisSize: MainAxisSize.min,
+                textDirection: TextDirection.rtl,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisAlignment: shouldJustify
+                    ? MainAxisAlignment.spaceBetween
+                    : MainAxisAlignment.center,
+                highlightStartIndex: highlightStartIndex,
+                highlightEndIndex: highlightEndIndex,
+                highlightColor: highlightStartIndex != null
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.10)
+                        : const Color(0xFF64748B).withValues(alpha: 0.09))
+                    : null,
+                highlightBorderColor: highlightStartIndex != null
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.24)
+                        : const Color(0xFF64748B).withValues(alpha: 0.22))
+                    : null,
+                children: wordWidgets,
+              ),
             ),
           ),
         ),
@@ -1422,10 +1568,9 @@ class _MushafPageState extends State<_MushafPage> {
     required AppState app,
   }) {
     final bool isDark = app.isDarkMode;
-    // Sleek, compact banner height: smaller and proportionate with zero line overlap
-    final double maxBannerH = math.max(16.0, lineHeight * 0.75);
+    final double maxBannerH = math.max(16.0, lineHeight * 0.90);
     final double bannerHeight =
-        (lineHeight * 0.65).clamp(math.min(22.0, maxBannerH), 33.0);
+        (lineHeight * 0.82).clamp(math.min(20.0, maxBannerH), 32.0);
 
     // In modern UI typography (Cairo font), Surah titles on card banners are displayed
     // clean without dense Quranic vocalization marks to prevent glyph-bounding collision
@@ -1436,20 +1581,24 @@ class _MushafPageState extends State<_MushafPage> {
     return SizedBox(
       width: lineWidth,
       height: lineHeight,
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          VerseRow.selectAyah(
+            surah: surahNum,
+            ayah: 1,
+            controller: widget.controller,
             onTap: () {
-              HapticFeedback.lightImpact();
-              VerseRow.selectAyah(
-                surah: surahNum,
-                ayah: 1,
-                controller: widget.controller,
-              );
+              if (mounted) setState(() {});
             },
+          );
+          if (mounted) setState(() {});
+        },
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
             child: Container(
               width: lineWidth,
               height: bannerHeight,
@@ -1573,6 +1722,7 @@ class _MushafPageState extends State<_MushafPage> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
+          _lastWordTapTime = DateTime.now();
           if (widget.isAutoScrolling) return;
           VerseRow.toggleAyahAudio(
             surah: surah,
@@ -1677,6 +1827,7 @@ class _MushafHighlightRow extends Flex {
   final Color? highlightBorderColor;
 
   const _MushafHighlightRow({
+    super.key,
     required super.children,
     super.mainAxisAlignment = MainAxisAlignment.spaceBetween,
     super.crossAxisAlignment = CrossAxisAlignment.center,
@@ -1743,6 +1894,39 @@ class _RenderMushafHighlightFlex extends RenderFlex {
         _highlightEndIndex = highlightEndIndex,
         _highlightColor = highlightColor,
         _highlightBorderColor = highlightBorderColor;
+
+  /// Fast horizontal hit calculation to find the closest child word or marker
+  /// to a tap coordinate in O(N) where N <= 15 with zero allocations.
+  int findClosestChildIndex(double x) {
+    RenderBox? child = firstChild;
+    int index = 0;
+    int bestIndex = 0;
+    double minDistance = double.infinity;
+
+    while (child != null) {
+      final parentData = child.parentData as FlexParentData;
+      final childLeft = parentData.offset.dx;
+      final childRight = childLeft + child.size.width;
+
+      final double distance;
+      if (x >= childLeft && x <= childRight) {
+        return index;
+      } else if (x < childLeft) {
+        distance = childLeft - x;
+      } else {
+        distance = x - childRight;
+      }
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        bestIndex = index;
+      }
+
+      child = childAfter(child);
+      index++;
+    }
+    return bestIndex;
+  }
 
   int? get highlightStartIndex => _highlightStartIndex;
   set highlightStartIndex(int? value) {

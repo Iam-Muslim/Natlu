@@ -52,25 +52,23 @@ void main() async {
         } catch (_) {}
       }
 
-      // Initialize audio session for accurate ASR and concurrent play/record routing
+      // Initialize audio session for standard media/recitation playback (STREAM_MUSIC)
       if (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.iOS ||
               defaultTargetPlatform == TargetPlatform.android)) {
         try {
           final session = await AudioSession.instance;
           await session.configure(
-            AudioSessionConfiguration(
-              avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+            const AudioSessionConfiguration(
+              avAudioSessionCategory: AVAudioSessionCategory.playback,
               avAudioSessionCategoryOptions:
-                  AVAudioSessionCategoryOptions.defaultToSpeaker |
-                  AVAudioSessionCategoryOptions.allowBluetooth,
+                  AVAudioSessionCategoryOptions.duckOthers,
               avAudioSessionMode: AVAudioSessionMode.spokenAudio,
-              androidAudioAttributes: const AndroidAudioAttributes(
-                contentType: AndroidAudioContentType.speech,
-                usage: AndroidAudioUsage.voiceCommunication,
+              androidAudioAttributes: AndroidAudioAttributes(
+                contentType: AndroidAudioContentType.music,
+                usage: AndroidAudioUsage.media,
               ),
-              androidAudioFocusGainType:
-                  AndroidAudioFocusGainType.gainTransientMayDuck,
+              androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
             ),
           );
         } catch (e) {

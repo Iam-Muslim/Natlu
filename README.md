@@ -12,14 +12,6 @@
 <br/>
 
 <p align="center">
-  <img height="200" src="docs/screenshots/5-ar.png" alt="Natlu Preview 1" />&nbsp;
-  <img height="200" src="docs/screenshots/1-ar.png" alt="Natlu Preview 2" />&nbsp;
-  <img height="200" src="docs/screenshots/2-ar.png" alt="Natlu Preview 3" />&nbsp;
-  <img height="200" src="docs/screenshots/3-ar.png" alt="Natlu Preview 4" />&nbsp;
-  <img height="200" src="docs/screenshots/4-ar.png" alt="Natlu Preview 5" />
-</p>
-
-<p align="center">
   <a href="https://play.google.com/store/apps/details?id=com.recitequran.app" target="_blank">
     <img src="docs/badges/google_play.svg" height="34" alt="Get it on Google Play" />
   </a>
@@ -61,7 +53,7 @@ Natlu is the flagship reference application built upon [`recite_quran`](https://
 
 - **100% On-Device**: Speech recognition runs entirely offline via quantized ONNX models (`zipformer_p_arabic_v3.int8.onnx`).
 - **Complete Privacy**: Zero audio is transmitted over the network, zero accounts required, and zero telemetry collected.
-- **Purely for the Sake of Allah**: 100% free forever with no ads, no subscriptions, and no monetization.
+- **For the Sake of Allah**: 100% free with no ads, no subscriptions, and no monetization.
 
 ---
 
