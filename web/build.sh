@@ -53,7 +53,11 @@ for f in "landing_page/recite/sherpa-onnx-wasm-main-asr.js" "landing_page/dist/r
   [ -f "$f" ] && npx --yes esbuild "$f" --target=es2020 --outfile="$f" --allow-overwrite || true
 done
 
-# 6. Copy Cloudflare Functions and inject token if SUBHAN_ALLAH is set
+# 6. Automatic Cache Busting for Service Workers
+echo "=== Updating Service Worker Cache Versions ==="
+node web/update_cache_version.js
+
+# 7. Copy Cloudflare Functions and inject token if SUBHAN_ALLAH is set
 echo "=== Setting up Cloudflare Functions ==="
 mkdir -p functions landing_page/functions landing_page/dist/functions
 cp web/download-model.js functions/download-model.js

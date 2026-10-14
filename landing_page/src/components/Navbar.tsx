@@ -42,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       <header className="ql-header">
         <div className="ql-bar">
-          
+
           {/* Left: Brand Lockup */}
           <div className="flex items-center gap-3 shrink-0">
             <a
@@ -115,7 +115,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right: Controls & CTAs */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            
+
             {/* Language Toggle */}
             <button
               onClick={onToggleLang}
@@ -136,7 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* GitHub Repo Button (Text only, no logo as requested) */}
             <a
-              href="https://github.com/Iam-Muslim/ReciteQuran"
+              href="https://github.com/Iam-Muslim/Natlu"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex items-center gap-1.5 h-[32px] px-3 rounded-lg border border-[var(--line)] bg-[var(--surface)]/80 hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--ink)] transition-all active:scale-95"

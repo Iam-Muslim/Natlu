@@ -41,6 +41,9 @@ call npx --yes esbuild "landing_page\recite\flutter_bootstrap.js" --target=es201
 call npx --yes esbuild "landing_page\recite\flutter.js" --target=es2018 --outfile="landing_page\recite\flutter.js" --allow-overwrite
 call npx --yes esbuild "landing_page\recite\sherpa-onnx-wasm-main-asr.js" --target=es2020 --outfile="landing_page\recite\sherpa-onnx-wasm-main-asr.js" --allow-overwrite
 
+echo === [5/5] Updating Service Worker Cache Versions ===
+node web\update_cache_version.js
+
 if not exist "functions" mkdir "functions"
 if not exist "landing_page\functions" mkdir "landing_page\functions"
 if not exist "landing_page\dist\functions" mkdir "landing_page\dist\functions"
