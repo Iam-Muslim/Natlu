@@ -37,6 +37,37 @@ int Scale(int source, double scale_factor) {
   return static_cast<int>(source * scale_factor);
 }
 
+// Dynamically loads |AdjustWindowRectExForDpi| from User32 if available.
+BOOL AdjustWindowRectForDpi(LPRECT lpRect, DWORD dwStyle, BOOL bMenu, DWORD dwExStyle, UINT dpi) {
+  HMODULE user32 = GetModuleHandleW(L"user32.dll");
+  if (user32) {
+    using AdjustWindowRectExForDpiType = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+    auto pAdjustWindowRectExForDpi = reinterpret_cast<AdjustWindowRectExForDpiType>(
+        GetProcAddress(user32, "AdjustWindowRectExForDpi"));
+    if (pAdjustWindowRectExForDpi) {
+      return pAdjustWindowRectExForDpi(lpRect, dwStyle, bMenu, dwExStyle, dpi);
+    }
+  }
+  return AdjustWindowRectEx(lpRect, dwStyle, bMenu, dwExStyle);
+}
+
+// Retrieves window DPI safely across Windows versions.
+UINT GetWindowDpi(HWND hwnd) {
+  HMODULE user32 = GetModuleHandleW(L"user32.dll");
+  if (user32) {
+    using GetDpiForWindowType = UINT(WINAPI*)(HWND);
+    auto pGetDpiForWindow = reinterpret_cast<GetDpiForWindowType>(
+        GetProcAddress(user32, "GetDpiForWindow"));
+    if (pGetDpiForWindow) {
+      return pGetDpiForWindow(hwnd);
+    }
+  }
+  HDC hdc = GetDC(hwnd);
+  UINT dpi = GetDeviceCaps(hdc, LOGPIXELSY);
+  ReleaseDC(hwnd, hdc);
+  return dpi ? dpi : 96;
+}
+
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
 // This API is only needed for PerMonitor V1 awareness mode.
 void EnableFullDpiSupportIfAvailable(HWND hwnd) {
@@ -134,10 +165,63 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
-  HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+  // Modern Android flagship aspect ratio (Samsung Galaxy S24/S25/S26 standard: 412x892 dp, 19.5:9)
+  const double target_aspect_ratio = static_cast<double>(size.width) / static_cast<double>(size.height);
+
+  // Desired client area in physical pixels (Flutter viewport)
+  int desired_client_width = Scale(size.width, scale_factor);
+  int desired_client_height = Scale(size.height, scale_factor);
+
+  // Modern phone window style: Resizable with locked aspect ratio, no maximize button
+  DWORD window_style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME;
+  DWORD window_ex_style = WS_EX_APPWINDOW;
+
+  // Measure window frame decorations (titlebar and borders)
+  RECT test_frame = {0, 0, desired_client_width, desired_client_height};
+  AdjustWindowRectForDpi(&test_frame, window_style, FALSE, window_ex_style, dpi);
+  int frame_extra_w = (test_frame.right - test_frame.left) - desired_client_width;
+  int frame_extra_h = (test_frame.bottom - test_frame.top) - desired_client_height;
+
+  // Query active monitor's working area (excluding Windows taskbar)
+  MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+  int work_x = 0;
+  int work_y = 0;
+  int work_width = desired_client_width + frame_extra_w;
+  int work_height = desired_client_height + frame_extra_h;
+  if (GetMonitorInfo(monitor, &monitor_info)) {
+    work_x = monitor_info.rcWork.left;
+    work_y = monitor_info.rcWork.top;
+    work_width = monitor_info.rcWork.right - monitor_info.rcWork.left;
+    work_height = monitor_info.rcWork.bottom - monitor_info.rcWork.top;
+  }
+
+  // Ensure window fits within the display working area without clipping below taskbar
+  int max_allowed_win_h = work_height - Scale(32, scale_factor);
+  if ((desired_client_height + frame_extra_h) > max_allowed_win_h) {
+    desired_client_height = max_allowed_win_h - frame_extra_h;
+    desired_client_width = static_cast<int>(desired_client_height * target_aspect_ratio + 0.5);
+  }
+
+  // Compute final window rect so that the client area is exactly the desired size
+  RECT window_rect = {0, 0, desired_client_width, desired_client_height};
+  AdjustWindowRectForDpi(&window_rect, window_style, FALSE, window_ex_style, dpi);
+  int final_win_w = window_rect.right - window_rect.left;
+  int final_win_h = window_rect.bottom - window_rect.top;
+
+  // Center on screen if origin is (0,0) or default, otherwise use origin
+  int pos_x;
+  int pos_y;
+  if (origin.x == 0 && origin.y == 0) {
+    pos_x = work_x + (work_width - final_win_w) / 2;
+    pos_y = work_y + (work_height - final_win_h) / 2;
+  } else {
+    pos_x = Scale(origin.x, scale_factor);
+    pos_y = Scale(origin.y, scale_factor);
+  }
+
+  HWND window = CreateWindowEx(
+      window_ex_style, window_class, title.c_str(), window_style,
+      pos_x, pos_y, final_win_w, final_win_h,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {
@@ -196,6 +280,72 @@ Win32Window::MessageHandler(HWND hwnd,
                    newHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
       return 0;
+    }
+    case WM_GETMINMAXINFO: {
+      MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
+      UINT dpi = GetWindowDpi(hwnd);
+      double scale = dpi / 96.0;
+      DWORD style = static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_STYLE));
+      DWORD ex_style = static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_EXSTYLE));
+      // Min phone client width: 300 dp, scaled with locked 19.5:9 aspect ratio
+      RECT min_rect = {0, 0, Scale(300, scale), Scale(static_cast<int>(300 * (892.0 / 412.0)), scale)};
+      AdjustWindowRectForDpi(&min_rect, style, FALSE, ex_style, dpi);
+      mmi->ptMinTrackSize.x = min_rect.right - min_rect.left;
+      mmi->ptMinTrackSize.y = min_rect.bottom - min_rect.top;
+      return 0;
+    }
+
+    case WM_SIZING: {
+      RECT* rect = reinterpret_cast<RECT*>(lparam);
+      RECT client_rect;
+      GetClientRect(hwnd, &client_rect);
+      RECT win_rect;
+      GetWindowRect(hwnd, &win_rect);
+
+      int border_w = (win_rect.right - win_rect.left) - (client_rect.right - client_rect.left);
+      int border_h = (win_rect.bottom - win_rect.top) - (client_rect.bottom - client_rect.top);
+
+      const double aspect_ratio = 412.0 / 892.0;       // width / height
+      const double inv_aspect_ratio = 892.0 / 412.0;   // height / width
+
+      int current_client_w = (rect->right - rect->left) - border_w;
+      int current_client_h = (rect->bottom - rect->top) - border_h;
+
+      switch (wparam) {
+        case WMSZ_LEFT:
+        case WMSZ_RIGHT: {
+          int new_client_h = static_cast<int>(current_client_w * inv_aspect_ratio + 0.5);
+          rect->bottom = rect->top + new_client_h + border_h;
+          break;
+        }
+        case WMSZ_TOP:
+        case WMSZ_BOTTOM: {
+          int new_client_w = static_cast<int>(current_client_h * aspect_ratio + 0.5);
+          rect->right = rect->left + new_client_w + border_w;
+          break;
+        }
+        case WMSZ_TOPLEFT: {
+          int new_client_w = static_cast<int>(current_client_h * aspect_ratio + 0.5);
+          rect->left = rect->right - (new_client_w + border_w);
+          break;
+        }
+        case WMSZ_TOPRIGHT: {
+          int new_client_w = static_cast<int>(current_client_h * aspect_ratio + 0.5);
+          rect->right = rect->left + new_client_w + border_w;
+          break;
+        }
+        case WMSZ_BOTTOMLEFT: {
+          int new_client_w = static_cast<int>(current_client_h * aspect_ratio + 0.5);
+          rect->left = rect->right - (new_client_w + border_w);
+          break;
+        }
+        case WMSZ_BOTTOMRIGHT: {
+          int new_client_w = static_cast<int>(current_client_h * aspect_ratio + 0.5);
+          rect->right = rect->left + new_client_w + border_w;
+          break;
+        }
+      }
+      return TRUE;
     }
     case WM_SIZE: {
       RECT rect = GetClientArea();

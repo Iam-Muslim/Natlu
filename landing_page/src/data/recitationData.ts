@@ -98,22 +98,22 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     ]
   },
   {
-    id: 'yusuf',
-    title: 'Tarteel-Style Hifdh Memorization Mode',
-    titleAr: 'وضع اختبار وتثبيت الحفظ (تسميع ومراجعة)',
-    tagline: 'Conceal upcoming words until you recite them correctly',
-    taglineAr: 'إخفاء الكلمات والآيات التالية واختبار استحضارها غيباً مع التلاوة',
+    id: 'tajweed',
+    title: 'Acoustic Tajweed Checking & Verification',
+    titleAr: 'فحص وتدقيق أحكام التجويد الصوتي',
+    tagline: 'Real-time acoustic analysis of Madd timing, Ghunnah, and Shaddah',
+    taglineAr: 'تحليل صوتي فوري لأزمنة المدود والغنن والشدات مع لوحة إرشادية لتصحيح التلاوة',
     image: './screenshots/4.png',
-    featureKey: 'LCS Omission Detector',
+    featureKey: 'Acoustic Tajweed Matrix',
     highlights: [
-      'Uncovers text only when your pronunciation matches',
-      'Longest Common Subsequence (LCS) Best-Drop omission detection',
-      'Flags repeated refrains, skipped lines, and order mixups'
+      'Millisecond vowel duration grading (2, 4, 6 Harakat) calibrated against reciter Tadweer tempo',
+      'Acoustic envelope detection for Ghunnah, Ikhfa, Qalqalah, and Shaddah hold pressure',
+      'Interactive Tajweed sheet distinguishing Lahun Khafi from Lahun Jali with corrective Sheikh audio replay'
     ],
     highlightsAr: [
-      'ظهور الآيات تباعاً على الشاشة فور نطقها الصحيح من الذاكرة',
-      'كشف فوري ودقيق لأي كلمة منسية أو متروكة عبر خوارزمية Best-Drop LCS',
-      'تنبيه دقيق عند التردد في المتشابهات اللفظية وتكرار الآيات'
+      'قياس صوتي دقيق لأزمنة المدود (حركتان، 4، 6 حركات) بالمللي ثانية وفق سرعة تدوير القارئ',
+      'فحص صوتي لأزمنة الغنة والإخفاء مع التحقق من نبر الشدة وضغط الحروف المشددة والقلقلة',
+      'لوحة تفاعلية فورية تميز اللحن الخفي عن اللحن الجلي مع نصائح تصحيح واستماع مرجعي للشيخ الحصري'
     ]
   }
 ];
