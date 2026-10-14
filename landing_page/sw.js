@@ -1,6 +1,6 @@
 // Service Worker for Natlu / Recite Quran Landing Page
 // Provides instant loading and 100% offline caching to save bandwidth
-const CACHE_NAME = 'natlu-landing-v3';
+const CACHE_NAME = 'natlu-landing-v4';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -8,14 +8,11 @@ const ASSETS_TO_CACHE = [
   'app_icon.png',
   'favicon.png',
   'apple-touch-icon.png',
-  'assets/qamar.png',
-  'assets/fatiha.png',
-  'assets/yusuf.png',
-  'assets/search.png',
-  'assets/ahzab.png',
-  'assets/badges/google_play.svg',
-  'assets/badges/app_store.svg',
-  'assets/badges/web_app.svg'
+  'screenshots/1.png?v=2',
+  'screenshots/2.png?v=2',
+  'screenshots/3.png?v=2',
+  'screenshots/4.png?v=2',
+  'ReciteQuran.png'
 ];
 
 self.addEventListener('install', event => {
@@ -72,20 +69,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // 2. Static Assets: Cache-First with network fallback
+  // 2. Static Assets: Stale-While-Revalidate with network update
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then(cachedResponse => {
-      if (cachedResponse) return cachedResponse;
-      return fetch(event.request).then(networkResponse => {
+    caches.match(event.request).then(cachedResponse => {
+      const fetchPromise = fetch(event.request).then(networkResponse => {
         if (networkResponse && networkResponse.status === 200) {
           const responseClone = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
         }
         return networkResponse;
-      }).catch(async () => {
-        const fallback = await caches.match(url.pathname, { ignoreSearch: true });
-        return fallback || Response.error();
-      });
+      }).catch(() => cachedResponse);
+
+      return cachedResponse || fetchPromise;
     })
   );
 });

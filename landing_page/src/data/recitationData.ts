@@ -46,7 +46,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'تتبع الكلمات المباشر أثناء التلاوة',
     tagline: 'Instant green/yellow/red highlight as you recite',
     taglineAr: 'تمييز فوري للكلمات بالألوان مع صوتك: الأخضر للإتقان، والأصفر للتنبيه، والأحمر للخطأ',
-    image: './screenshots/1.png',
+    image: './screenshots/1.png?v=2',
     featureKey: 'Word Tracking & ASR',
     highlights: [
       'Zero-latency acoustic phoneme alignment via Zipformer ONNX',
@@ -65,7 +65,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'مصحف المدينة المنورة 15 سطرًا',
     tagline: 'Faithful typography matching printed King Fahd Mus\'haf',
     taglineAr: 'رسم عثماني مطابق لمصحف مجمع الملك فهد لراحة العين والقراءة المطولة',
-    image: './screenshots/2.png',
+    image: './screenshots/2.png?v=2',
     featureKey: 'Mus\'haf Layout Engine',
     highlights: [
       'Pixel-perfect 15-line verse justification with ligature support',
@@ -84,7 +84,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'البحث الصوتي المباشر بالتلاوة',
     tagline: 'Speak any ayah segment to instantly jump to page & surah',
     taglineAr: 'اتلُ أي مقطع من أي سورة للانتقال المباشر لصفحتها وموضعها في المصحف',
-    image: './screenshots/3.png',
+    image: './screenshots/3.png?v=2',
     featureKey: 'Myers Bit-Parallel Search',
     highlights: [
       '6,236 Ayah instant lookup within 15 milliseconds',
@@ -103,7 +103,7 @@ export const APP_SCREENSHOTS: AppScreenshot[] = [
     titleAr: 'فحص وتدقيق أحكام التجويد الصوتي',
     tagline: 'Real-time acoustic analysis of Madd timing, Ghunnah, and Shaddah',
     taglineAr: 'تحليل صوتي فوري لأزمنة المدود والغنن والشدات مع لوحة إرشادية لتصحيح التلاوة',
-    image: './screenshots/4.png',
+    image: './screenshots/4.png?v=2',
     featureKey: 'Acoustic Tajweed Matrix',
     highlights: [
       'Millisecond vowel duration grading (2, 4, 6 Harakat) calibrated against reciter Tadweer tempo',

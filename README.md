@@ -44,7 +44,7 @@
 
 ## Overview
 
-**Natlu (نتلو)** is an open-source, on-device AI Quran application for Flutter. It listens to your recitation in real time, guides your pronunciation word-by-word with instant visual feedback, checks acoustic Tajweed rules with millisecond precision, and allows hands-free navigation across an authentic 15-line  Mus'haf.
+**Natlu (نتلو)** is an open-source, on-device Quran Recitation application for Flutter. It listens to your recitation in real time, guides your pronunciation word-by-word with instant visual feedback, checks acoustic Tajweed rules with millisecond precision, and allows hands-free navigation across an authentic 15-line  Mus'haf.
 
 Natlu is the flagship reference application built upon [`recite_quran`](https://pub.dev/packages/recite_quran). All neural ASR inference, phoneme alignment, Myers phonetic search, and Tajweed duration grading are handled directly by the `recite_quran` engine package.
 
