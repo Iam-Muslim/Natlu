@@ -1448,19 +1448,7 @@ class _MushafPageState extends State<_MushafPage>
       final bool isWordActive = (targetIndex == wordIndex0);
 
       final Color textColor;
-      if (cachedIsAyahActive || app.isBlurMode) {
-        textColor = VerseSpanBuilder.resolveWordDisplayColor(
-          ayah: ayah,
-          wordIndex: wordIndex0,
-          controller: widget.controller,
-          app: app,
-          colors: c,
-          isAutoScrolling: widget.isAutoScrolling,
-          surah: surah,
-        );
-      } else if (cachedIsCompleted) {
-        textColor = c.green;
-      } else if (widget.isRecording) {
+      if (widget.isRecording || cachedIsAyahActive || app.isBlurMode || cachedIsCompleted) {
         textColor = VerseSpanBuilder.resolveWordDisplayColor(
           ayah: ayah,
           wordIndex: wordIndex0,
