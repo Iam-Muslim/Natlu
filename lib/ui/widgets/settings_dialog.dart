@@ -129,7 +129,7 @@ class SettingsDialog extends StatelessWidget {
 
                                 // 2. Reading Display Mode (List vs Mushaf)
                                 SettingTile(
-                                  icon: Icons.menu_book_rounded,
+                                  icon: Icons.auto_stories_rounded,
                                   title: isAr ? 'طريقة العرض' : 'Reading View',
                                   c: c,
                                   trailing: PremiumPillSelector(

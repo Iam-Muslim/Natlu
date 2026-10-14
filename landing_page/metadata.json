@@ -1,6 +1,6 @@
 {
-  "name": "Recite Quran",
-  "description": "A landing page for the Recite Quran Android application.",
+  "name": "Natlu & ReciteQuran — On-Device Quran Recitation AI & Developer SDK",
+  "description": "Open-source Tarteel AI alternative. 100% on-device real-time Quran recitation tracking, Tajweed verification, voice navigation, and Flutter/Dart package developer portal.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

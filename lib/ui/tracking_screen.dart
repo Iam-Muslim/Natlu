@@ -486,6 +486,13 @@ class _TrackingScreenState extends State<TrackingScreen>
       _stopAutoScrolling();
     } else {
       AppState.instance.stopVerseAudio();
+      if (AppState.instance.isMushafMode) {
+        widget.controller.clearHighlights();
+        widget.controller.finalize();
+        setState(() => _isAutoScrolling = true);
+        _syncScreenWakeLock();
+        return;
+      }
       if (!AppState.instance.hasChosenAutoScrollSpeed && mounted) {
         showDialog(
           context: context,
@@ -906,18 +913,28 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                     const SizedBox(width: 4),
 
-                    // ── 3. Read (Auto-Scroll) Action Button ──
+                    // ── 3. Read (Auto-Scroll) / Fullscreen Action Button ──
                     _buildIconActionButton(
-                      icon: Icons.keyboard_double_arrow_down_rounded,
+                      icon: app.isMushafMode
+                          ? Icons.auto_stories_rounded
+                          : Icons.keyboard_double_arrow_down_rounded,
                       isActive: _isAutoScrolling,
                       c: c,
-                      tooltip: app.isArabic
-                          ? (_isAutoScrolling
-                              ? 'إيقاف التمرير'
-                              : 'قراءة تلقائية')
-                          : (_isAutoScrolling
-                              ? 'Pause Reading'
-                              : 'Auto-scroll Read'),
+                      tooltip: app.isMushafMode
+                          ? (app.isArabic
+                              ? (_isAutoScrolling
+                                  ? 'إيقاف ملء الشاشة'
+                                  : 'ملء الشاشة')
+                              : (_isAutoScrolling
+                                  ? 'Exit Full Screen'
+                                  : 'Full Screen'))
+                          : (app.isArabic
+                              ? (_isAutoScrolling
+                                  ? 'إيقاف التمرير'
+                                  : 'قراءة تلقائية')
+                              : (_isAutoScrolling
+                                  ? 'Pause Reading'
+                                  : 'Auto-scroll Read')),
                       onTap: () {
                         HapticFeedback.mediumImpact();
                         app.dismissBanner();

@@ -98,7 +98,9 @@ class VerseRow extends StatefulWidget {
     required int ayah,
     required HighlightingController controller,
     required AppState app,
+    bool isAutoScrolling = false,
   }) {
+    if (isAutoScrolling) return false;
     final activeMatch = controller.currentMatchedVerse;
     final bool isRecitingActive = activeMatch != null &&
         activeMatch.verse.surah == surah &&
@@ -593,13 +595,14 @@ class _VerseRowState extends State<VerseRow> {
     final app = AppState.instance;
     final ayah = widget.verse.ayah;
     final surah = widget.verse.surah;
-    final bool isSelected = ctrl.activeAyah.value == ayah;
+    final bool isSelected = !widget.isAutoScrolling && ctrl.activeAyah.value == ayah;
     final bool isAudioActive = VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
     final bool isActive = VerseRow.isAyahActive(
       surah: surah,
       ayah: ayah,
       controller: ctrl,
       app: app,
+      isAutoScrolling: widget.isAutoScrolling,
     );
     final bool isCompleted = ctrl.completedAyahs.contains(ayah);
 
@@ -649,6 +652,7 @@ class _VerseRowState extends State<VerseRow> {
       ayah: ayah,
       controller: widget.controller,
       app: app,
+      isAutoScrolling: widget.isAutoScrolling,
     );
     _wasAudioActive = isAudioActive;
 
