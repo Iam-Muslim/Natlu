@@ -337,7 +337,6 @@ class _MushafViewState extends State<MushafView> {
   void initState() {
     super.initState();
     _currentPage = _findInitialPage();
-    AppState.instance.currentMushafPage.value = _currentPage;
     _pageController = PageController(initialPage: _currentPage - 1);
     _isLoading = _mushafPagesCache == null;
 
@@ -351,6 +350,15 @@ class _MushafViewState extends State<MushafView> {
     } else {
       _initMushafData();
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        AppState.instance.currentMushafPage.value = _currentPage;
+        if (!AppState.instance.hasClickedMushafAudioAyah) {
+          AppState.instance.showMushafAudioBanner();
+        }
+      }
+    });
   }
 
   @override
@@ -681,22 +689,16 @@ class _MushafViewState extends State<MushafView> {
     final media = MediaQuery.of(context);
     final safeTop = math.max(media.padding.top, media.viewPadding.top);
     final safeBottom = math.max(media.padding.bottom, media.viewPadding.bottom);
-    final isLandscape = media.orientation == Orientation.landscape ||
-        media.size.width > media.size.height;
-
     final bool isFullscreenMode = widget.isRecording || widget.isAutoScrolling;
-    final double topPadding;
     // Always keep page bottom padding consistent so the page number is anchored at the exact same position
     final double bottomPadding = safeBottom + 12.0;
-    if (isLandscape) {
-      topPadding = safeTop + (isFullscreenMode ? 6.0 : 8.0);
-    } else {
-      // In fullscreen (record & read mode): zero excess empty space, safely below notch
-      // In normal mode: positioned safely below the floating top header bar with zero overlap
-      topPadding = isFullscreenMode
-          ? (safeTop > 0 ? (safeTop + 6.0) : 10.0)
-          : (safeTop + 84.0);
-    }
+
+    // In fullscreen (record & read mode): zero excess empty space, safely hugs notch/top
+    // In normal mode: sits snugly (~4.2px) below the floating top header bar (which ends at safeTop + 67.8px),
+    // maximizing vertical space for the Mushaf with zero overlap and no awkward void across all screens.
+    final double topPadding = isFullscreenMode
+        ? (safeTop > 0 ? (safeTop + 4.0) : 6.0)
+        : (safeTop + 72.0);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1759,9 +1761,15 @@ class _MushafPageState extends State<_MushafPage>
     final Color numTextColor;
 
     if (isPlaying || isBuffering) {
-      boxBgColor = c.primary;
-      boxBorderColor = c.primary;
-      numTextColor = c.onPrimary;
+      if (isDark) {
+        boxBgColor = c.primary.withValues(alpha: 0.22);
+        boxBorderColor = c.primary.withValues(alpha: 0.60);
+        numTextColor = c.primary;
+      } else {
+        boxBgColor = c.primary.withValues(alpha: 0.12);
+        boxBorderColor = c.primary.withValues(alpha: 0.45);
+        numTextColor = c.primary;
+      }
     } else if (isAyahActive) {
       boxBgColor = isDark
           ? Colors.white.withValues(alpha: 0.15)
@@ -1782,9 +1790,12 @@ class _MushafPageState extends State<_MushafPage>
           : const Color(0xFF475569); // Slate 600
     }
 
-    final Color effectiveBorder =
-        widget.ayahMarkerBorderColor ?? boxBorderColor;
-    final Color effectiveText = widget.ayahMarkerTextColor ?? numTextColor;
+    final Color effectiveBorder = (isPlaying || isBuffering)
+        ? boxBorderColor
+        : (widget.ayahMarkerBorderColor ?? boxBorderColor);
+    final Color effectiveText = (isPlaying || isBuffering)
+        ? numTextColor
+        : (widget.ayahMarkerTextColor ?? numTextColor);
 
     final String markerFont = widget.ayahMarkerFontFamily ?? 'cairo';
     final bool isHafs = markerFont.toLowerCase().contains('hafs');
@@ -1801,6 +1812,7 @@ class _MushafPageState extends State<_MushafPage>
         onTap: () {
           _lastWordTapTime = DateTime.now();
           if (widget.isAutoScrolling) return;
+          app.markMushafAudioAyahClicked();
           VerseRow.toggleAyahAudio(
             surah: surah,
             ayah: ayah,
@@ -1811,14 +1823,18 @@ class _MushafPageState extends State<_MushafPage>
             },
           );
         },
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
           width: widget.showAyahMarkerCircle ? boxSize : null,
           height: widget.showAyahMarkerCircle ? boxSize : null,
           margin: const EdgeInsets.symmetric(horizontal: 2.0),
           alignment: Alignment.center,
           decoration: widget.showAyahMarkerCircle
               ? BoxDecoration(
-                  color: widget.ayahMarkerBorderColor != null ? null : boxBgColor,
+                  color: (isPlaying || isBuffering)
+                      ? boxBgColor
+                      : (widget.ayahMarkerBorderColor != null ? null : boxBgColor),
                   borderRadius: BorderRadius.circular(
                       boxSize * 0.28), // Sleek flat squircle
                   border: Border.all(
@@ -1829,45 +1845,53 @@ class _MushafPageState extends State<_MushafPage>
                   ),
                 )
               : null,
-          child: isBuffering
-              ? SizedBox(
-                  width: boxSize * 0.48,
-                  height: boxSize * 0.48,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.6,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isPlaying ? c.onPrimary : c.primary,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: ScaleTransition(scale: anim, child: child),
+            ),
+            child: isBuffering
+                ? SizedBox(
+                    key: const ValueKey('buffering'),
+                    width: (boxSize * 0.48).clamp(9.5, 12.0),
+                    height: (boxSize * 0.48).clamp(9.5, 12.0),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(c.primary),
                     ),
-                  ),
-                )
-              : isPlaying
-                  ? Icon(
-                      Icons.stop_rounded,
-                      size: boxSize * 0.52,
-                      color: c.onPrimary,
-                    )
-                  : Transform.translate(
-                      offset: Offset(0, verticalOffset),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.center,
-                        child: Text(
-                          VerseRow.toArabicDigits(ayah),
-                          textDirection: TextDirection.rtl,
-                          textScaler: TextScaler.noScaling,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: markerFont,
-                            fontSize: numFontSize,
-                            letterSpacing: letterSpacing,
-                            color: effectiveText,
-                            fontWeight: FontWeight.w700,
-                            height: 1.0,
-                            leadingDistribution: TextLeadingDistribution.even,
+                  )
+                : isPlaying
+                    ? Icon(
+                        key: const ValueKey('playing'),
+                        Icons.stop_rounded,
+                        size: (boxSize * 0.54).clamp(11.0, 14.5),
+                        color: c.primary,
+                      )
+                    : Transform.translate(
+                        key: ValueKey('ayah_$ayah'),
+                        offset: Offset(0, verticalOffset),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: Text(
+                            VerseRow.toArabicDigits(ayah),
+                            textDirection: TextDirection.rtl,
+                            textScaler: TextScaler.noScaling,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: markerFont,
+                              fontSize: numFontSize,
+                              letterSpacing: letterSpacing,
+                              color: effectiveText,
+                              fontWeight: FontWeight.w700,
+                              height: 1.0,
+                              leadingDistribution: TextLeadingDistribution.even,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+          ),
         ),
       ),
     );

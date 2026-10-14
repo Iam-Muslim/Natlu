@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../state/app_state.dart';
 
 /// Thin flush separator line for grouped lists.
@@ -23,6 +24,9 @@ class SettingTile extends StatelessWidget {
   final ThemeColors c;
   final Widget? trailing;
   final Widget? bottom;
+  final Widget? badge;
+
+  final double? trailingWidth;
 
   const SettingTile({
     super.key,
@@ -31,6 +35,8 @@ class SettingTile extends StatelessWidget {
     required this.c,
     this.trailing,
     this.bottom,
+    this.badge,
+    this.trailingWidth,
   });
 
   @override
@@ -57,20 +63,40 @@ class SettingTile extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                flex: trailing != null ? 2 : 1,
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: c.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.2,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: c.text,
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.1,
+                        ),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 6),
+                        badge!,
+                      ],
+                    ],
                   ),
                 ),
               ),
               if (trailing != null) ...[
                 const SizedBox(width: 12),
-                Expanded(flex: 3, child: trailing!),
+                if (trailingWidth != null)
+                  SizedBox(width: trailingWidth, child: trailing!)
+                else if (trailing is PremiumPillSelector)
+                  SizedBox(width: 122, child: trailing!)
+                else if (trailing is Row)
+                  SizedBox(width: 130, child: trailing!)
+                else
+                  trailing!,
               ],
             ],
           ),
@@ -87,23 +113,28 @@ class SettingTile extends StatelessWidget {
 /// Ultra-smooth premium segmented selector with drop shadows.
 class PremiumPillSelector extends StatelessWidget {
   final List<String> labels;
+  final List<IconData>? icons;
   final int selected;
   final ThemeColors c;
   final ValueChanged<int> onSelected;
 
+  final double height;
+
   const PremiumPillSelector({
     super.key,
     required this.labels,
+    this.icons,
     required this.selected,
     required this.c,
     required this.onSelected,
+    this.height = 38.0,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 44,
-      padding: const EdgeInsets.all(4),
+      height: height,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: c.surfaceHigh,
         borderRadius: BorderRadius.circular(12),
@@ -146,23 +177,40 @@ class PremiumPillSelector extends StatelessWidget {
                   ),
                 ),
               ),
-              // Text Labels
+              // Content (Icons + Text Labels)
               Row(
                 children: List.generate(labels.length, (i) {
                   final isSel = i == selected;
                   return Expanded(
                     child: GestureDetector(
-                      onTap: () => onSelected(i),
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        onSelected(i);
+                      },
                       behavior: HitTestBehavior.opaque,
                       child: Center(
-                        child: AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 200),
-                          style: TextStyle(
-                            color: isSel ? c.text : c.textSecondary,
-                            fontSize: 13,
-                            fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                          ),
-                          child: Text(labels[i]),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (icons != null && i < icons!.length) ...[
+                              Icon(
+                                icons![i],
+                                size: 16,
+                                color: isSel ? c.primary : c.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 200),
+                              style: TextStyle(
+                                color: isSel ? c.primary : c.textSecondary,
+                                fontSize: 13,
+                                fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                              child: Text(labels[i]),
+                            ),
+                          ],
                         ),
                       ),
                     ),

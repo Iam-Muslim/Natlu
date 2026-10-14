@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
 import '../../state/app_state.dart';
+import 'settings/setting_tile.dart';
 import 'surah/surah_list_tile.dart';
 
 /// 2026 Surah Navigator Sheet with segmented categories (All, Meccan, n),
@@ -133,7 +134,31 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
+
+              // ── View Mode Selector (List vs Mushaf) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: PremiumPillSelector(
+                  icons: const [
+                    Icons.format_list_bulleted_rounded,
+                    Icons.auto_stories_rounded,
+                  ],
+                  labels: isAr
+                      ? const ['قائمة الآيات', 'مصحف']
+                      : const ['List View', 'Mushaf Layout'],
+                  selected: app.isMushafMode ? 1 : 0,
+                  c: c,
+                  onSelected: (i) {
+                    final enableMushaf = (i == 1);
+                    if (app.isMushafMode != enableMushaf) {
+                      app.setMushafMode(enableMushaf);
+                      setState(() {});
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
 
               // ── Search Bar & 2026 Popping Voice Search Action ──
               Padding(

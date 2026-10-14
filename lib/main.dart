@@ -35,6 +35,7 @@ import 'ui/widgets/dialogs/theme_selection_dialog.dart';
 import 'ui/widgets/dialogs/permission_dialog.dart';
 import 'ui/widgets/dialogs/model_download_dialog.dart';
 import 'ui/widgets/mushaf/mushaf_view.dart';
+import 'ui/widgets/dialogs/whats_new_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -386,14 +387,25 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
               onThemeSelected: () {
                 prefs.setBool('has_chosen_theme', true);
                 Navigator.of(ctx).pop();
+                _checkAndShowWhatsNew();
               },
             ),
           );
+        } else {
+          _checkAndShowWhatsNew();
         }
       });
     } catch (e) {
       DebugLogger.logSimple('INIT', '❌ Error: $e');
       if (mounted) setState(() => _initStatus = 'Error: $e');
+    }
+  }
+
+  Future<void> _checkAndShowWhatsNew() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeen = prefs.getBool('has_seen_mushaf_whats_new') ?? false;
+    if (!hasSeen && mounted) {
+      await WhatsNewDialog.show(context);
     }
   }
 

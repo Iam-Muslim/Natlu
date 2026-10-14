@@ -137,11 +137,26 @@ class AppState extends ChangeNotifier {
   bool isMushafMode = false;
   final ValueNotifier<int> currentMushafPage = ValueNotifier<int>(1);
 
+  int mushafAudioClickCount = 0;
+  bool get hasClickedMushafAudioAyah => mushafAudioClickCount >= 10;
+
+  Future<void> markMushafAudioAyahClicked() async {
+    if (mushafAudioClickCount < 10) {
+      mushafAudioClickCount++;
+      notifyListeners();
+      final prefs = await _getPrefs();
+      await prefs.setInt('mushaf_audio_click_count', mushafAudioClickCount);
+    }
+  }
+
   void toggleMushafMode() async {
     isMushafMode = !isMushafMode;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('mushafMode', isMushafMode);
+    if (isMushafMode && !hasClickedMushafAudioAyah) {
+      showMushafAudioBanner();
+    }
   }
 
   void setMushafMode(bool value) async {
@@ -150,6 +165,9 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       final prefs = await _getPrefs();
       await prefs.setBool('mushafMode', isMushafMode);
+      if (isMushafMode && !hasClickedMushafAudioAyah) {
+        showMushafAudioBanner();
+      }
     }
   }
 
@@ -403,6 +421,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Dispatches the Mushaf Ayah audio hint banner (shows until user clicks ayah audio 10 times).
+  void showMushafAudioBanner() {
+    if (hasClickedMushafAudioAyah) return;
+    showBanner(const AppBannerInfo(
+      id: 'mushaf_audio_hint',
+      messageAr: 'المس رقم أي آية للاستماع إلى التلاوة العطرة',
+      messageEn: 'Tap any Ayah number to listen to recitation',
+      icon: Icons.headphones_rounded,
+      isWarning: false,
+      customDuration: Duration(milliseconds: 4000),
+    ));
+  }
+
+  /// Dismisses the Mushaf Ayah audio hint banner.
+  void dismissMushafAudioBanner() {
+    if (currentBanner?.id == 'mushaf_audio_hint') {
+      dismissBanner();
+    }
+  }
+
   /// Toggles play/pause state for a specific verse.
   /// When [continuous] is true (outside record mode), playback advances to the next Ayah on finish.
   /// When [continuous] is false (in record mode), only this single Ayah is played.
@@ -599,6 +637,8 @@ class AppState extends ChangeNotifier {
       if (tajweedClickCount == 0 && (prefs.getBool('has_clicked_tajweed_word') ?? false)) {
         tajweedClickCount = 10;
       }
+
+      mushafAudioClickCount = prefs.getInt('mushaf_audio_click_count') ?? 0;
 
       final seenBanners = prefs.getStringList('seen_banner_ids');
       if (seenBanners != null) {
