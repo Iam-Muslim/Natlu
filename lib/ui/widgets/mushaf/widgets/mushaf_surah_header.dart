@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
@@ -6,17 +5,16 @@ import 'package:recite_quran/recite_quran.dart';
 import '../../../../state/app_state.dart';
 import '../../verse_row.dart';
 
-/// Modern Flat Surah Header Banner (من غير زخرفة):
-/// - Minimalist flat card container styled strictly with app theme tokens.
-/// - Zero traditional decorative clipart or complex floral arabesque.
+/// Modern Flat Surah Header Banner:
+/// - Clean card container styled strictly with app theme tokens.
 /// - Pure centered Surah title in authentic Arabic typography.
-/// - Well-proportioned compact height that never overflows on small screens.
+/// - Fits effortlessly inside the 15-flex Expanded Column from qcf_quran_plus.
 class MushafSurahHeader extends StatelessWidget {
   final int surahNum;
   final String surahName;
-  final double lineWidth;
-  final double lineHeight;
-  final double fontSize;
+  final double? lineWidth;
+  final double? lineHeight;
+  final double? fontSize;
   final ThemeColors colors;
   final AppState app;
   final HighlightingController controller;
@@ -29,9 +27,9 @@ class MushafSurahHeader extends StatelessWidget {
     super.key,
     required this.surahNum,
     required this.surahName,
-    required this.lineWidth,
-    required this.lineHeight,
-    required this.fontSize,
+    this.lineWidth,
+    this.lineHeight,
+    this.fontSize,
     required this.colors,
     required this.app,
     required this.controller,
@@ -41,20 +39,17 @@ class MushafSurahHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = app.isDarkMode;
-    final double maxBannerH = math.max(16.0, lineHeight * 0.90);
-    final double bannerHeight =
-        (lineHeight * 0.82).clamp(math.min(20.0, maxBannerH), 32.0);
+    final double bannerHeight = lineHeight != null
+        ? (lineHeight! * 0.82).clamp(20.0, 32.0)
+        : 30.0;
 
-    // In modern UI typography (Cairo font), Surah titles on card banners are displayed
-    // clean without dense Quranic vocalization marks to prevent glyph-bounding collision
-    // while keeping authentic, crisp modern Arabic aesthetics.
     final String displayName = _cleanSurahNamesCache.putIfAbsent(
       surahNum,
       () => surahName.replaceAll(_tashkeelRegex, ''),
     );
 
     return SizedBox(
-      width: lineWidth,
+      width: lineWidth ?? double.infinity,
       height: lineHeight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -68,44 +63,40 @@ class MushafSurahHeader extends StatelessWidget {
           );
         },
         child: Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+          child: Container(
+            width: lineWidth ?? double.infinity,
+            height: bannerHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             alignment: Alignment.center,
-            child: Container(
-              width: lineWidth,
-              height: bannerHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: colors.surfaceHigh,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: colors.border.withValues(alpha: isDark ? 0.70 : 0.85),
-                  width: 0.85,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 1.5),
-                  ),
-                ],
+            decoration: BoxDecoration(
+              color: colors.surfaceHigh,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colors.border.withValues(alpha: isDark ? 0.70 : 0.85),
+                width: 0.85,
               ),
-              child: Text(
-                displayName,
-                textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'cairo',
-                  fontSize: (bannerHeight * 0.50).clamp(12.0, 16.5),
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                  color: colors.text,
-                  height: 1.25,
-                  leadingDistribution: TextLeadingDistribution.even,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 1.5),
                 ),
+              ],
+            ),
+            child: Text(
+              displayName,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'cairo',
+                fontSize: (bannerHeight * 0.50).clamp(12.0, 16.5),
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+                color: colors.text,
+                height: 1.25,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
           ),

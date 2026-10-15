@@ -117,8 +117,6 @@ class MushafAyahMarker extends StatelessWidget {
         : (ayahMarkerTextColor ?? numTextColor);
 
     final String markerFont = ayahMarkerFontFamily ?? 'cairo';
-    final bool isHafs = markerFont.toLowerCase().contains('hafs');
-    final double verticalOffset = isHafs ? -2.0 : -0.4;
 
     final boxDecoration = showAyahMarkerCircle
         ? BoxDecoration(
@@ -133,27 +131,19 @@ class MushafAyahMarker extends StatelessWidget {
           )
         : null;
 
-    final staticContent = Transform.translate(
+    final staticContent = Text(
+      VerseRow.toArabicDigits(ayah),
       key: ValueKey('ayah_$ayah'),
-      offset: Offset(0, verticalOffset),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.center,
-        child: Text(
-          VerseRow.toArabicDigits(ayah),
-          textDirection: TextDirection.rtl,
-          textScaler: TextScaler.noScaling,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: markerFont,
-            fontSize: numFontSize,
-            letterSpacing: letterSpacing,
-            color: effectiveText,
-            fontWeight: FontWeight.w700,
-            height: 1.0,
-            leadingDistribution: TextLeadingDistribution.even,
-          ),
-        ),
+      textDirection: TextDirection.rtl,
+      textScaler: TextScaler.noScaling,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: markerFont,
+        fontSize: numFontSize,
+        letterSpacing: letterSpacing,
+        color: effectiveText,
+        fontWeight: FontWeight.w700,
+        height: 1.0,
       ),
     );
 

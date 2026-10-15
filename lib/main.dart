@@ -343,6 +343,10 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
       final initialSurah = AppState.instance.lastSurah;
       final initialAyah = AppState.instance.lastAyah;
       await _repo!.loadSurahAsync(initialSurah);
+      final rawData = service.rawJson;
+      if (rawData != null) {
+        MushafRepository.instance.populateAllVerseWords(rawData);
+      }
       _voiceSearchCtrl.repository = _repo;
 
       _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background

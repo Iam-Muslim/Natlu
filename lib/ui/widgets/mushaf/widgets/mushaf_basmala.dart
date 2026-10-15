@@ -8,9 +8,9 @@ import '../../verse_row.dart';
 /// Authentic Mushaf Calligraphy Basmala Line Widget
 class MushafBasmala extends StatelessWidget {
   final int basmalaSurah;
-  final double lineWidth;
-  final double lineHeight;
-  final double fontSize;
+  final double? lineWidth;
+  final double? lineHeight;
+  final double? fontSize;
   final String wordFontFamily;
   final ThemeColors colors;
   final HighlightingController controller;
@@ -20,9 +20,9 @@ class MushafBasmala extends StatelessWidget {
   const MushafBasmala({
     super.key,
     required this.basmalaSurah,
-    required this.lineWidth,
-    required this.lineHeight,
-    required this.fontSize,
+    this.lineWidth,
+    this.lineHeight,
+    this.fontSize,
     required this.wordFontFamily,
     required this.colors,
     required this.controller,
@@ -33,15 +33,16 @@ class MushafBasmala extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final basmalaVerse = controller.repository.getVerse(1, 1);
-    final List<String> words =
-        (basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4)
-            ? basmalaVerse.uthmaniWords.sublist(0, 4)
-            : const ['بِسْمِ', 'ٱللَّهِ', 'ٱلرَّحْمَـٰنِ', 'ٱلرَّحِيمِ'];
+    final String basmalaText = (basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4)
+        ? basmalaVerse.uthmaniWords.sublist(0, 4).join(' ')
+        : 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ';
     final bool usesUthmani =
         basmalaVerse != null && basmalaVerse.uthmaniWords.length >= 4;
 
+    final double resolvedFontSize = fontSize ?? 16.0;
+
     return SizedBox(
-      width: lineWidth,
+      width: lineWidth ?? double.infinity,
       height: lineHeight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -55,33 +56,23 @@ class MushafBasmala extends StatelessWidget {
             onTap: onAyahSelected,
           );
         },
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: Center(
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Text(
+                basmalaText,
                 textDirection: TextDirection.rtl,
-                children: [
-                  for (int i = 0; i < words.length; i++) ...[
-                    if (i > 0)
-                      SizedBox(width: (fontSize * 0.18).clamp(3.0, 5.0)),
-                    Text(
-                      words[i],
-                      textDirection: TextDirection.rtl,
-                      textScaler: TextScaler.noScaling,
-                      style: TextStyle(
-                        fontFamily: usesUthmani ? wordFontFamily : 'cairo',
-                        fontSize: (fontSize * 0.52).clamp(9.5, 13.5),
-                        fontWeight: FontWeight.normal,
-                        color: colors.text,
-                        height: 1.2,
-                      ),
-                    ),
-                  ],
-                ],
+                textScaler: TextScaler.noScaling,
+                style: TextStyle(
+                  fontFamily: usesUthmani ? wordFontFamily : 'cairo',
+                  fontSize: resolvedFontSize,
+                  fontWeight: FontWeight.normal,
+                  color: colors.text,
+                  height: 1.25,
+                ),
               ),
             ),
           ),

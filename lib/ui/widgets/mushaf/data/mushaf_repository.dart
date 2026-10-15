@@ -175,12 +175,71 @@ class MushafRepository {
       _pageAyahsCache = data.pageAyahsMap;
       _pageSurahsCache = data.pageSurahsMap;
       _pageDominantSurahCache = data.dominantSurahMap;
+
+      _attachWordsToRefs();
+      unawaited(ensureVerseWordsLoaded());
     } catch (e) {
       debugPrint('Error loading mushaf_pages.json: $e');
     } finally {
       _isPreloading = false;
       _loadingCompleter?.complete();
     }
+  }
+
+  /// Ensures that all 6,236 ayah words are loaded into memory for zero-lag rendering.
+  Future<void> ensureVerseWordsLoaded() async {
+    if (verseWordsMemoryCache.length >= 6000) return;
+    try {
+      final phonemeStr = await rootBundle.loadString(
+        'packages/recite_quran/assets/model/ordered_quran_phonemes.json',
+      );
+      final rawJson = json.decode(phonemeStr) as Map<String, dynamic>;
+      populateAllVerseWords(rawJson);
+    } catch (_) {}
+  }
+
+  /// Pre-populates all 6,236 ayah words from the decoded phoneme dataset into
+  /// instant O(1) in-memory word lists, and attaches word text directly to all
+  /// MushafWordRef instances across all 604 pages.
+  void populateAllVerseWords(Map<String, dynamic> rawJson) {
+    final versesMap = (rawJson['verses'] as Map<String, dynamic>?) ?? rawJson;
+    final hizbRegex = RegExp(r'[۞۩]');
+    versesMap.forEach((key, val) {
+      if (val is Map) {
+        final rawUthmani = val['aya_ui'] as String? ??
+            val['uthmani'] as String? ??
+            val['aya_text'] as String? ??
+            '';
+        final rawWords = rawUthmani.trim().split(' ');
+        if (rawWords.length > 1 && val.containsKey('aya_ui')) {
+          rawWords.removeLast();
+        }
+        final uthmaniWords = rawWords
+            .map((w) => w.replaceAll(hizbRegex, ''))
+            .where((s) => s.isNotEmpty)
+            .toList();
+        verseWordsMemoryCache[key] = uthmaniWords;
+      }
+    });
+
+    _attachWordsToRefs();
+  }
+
+  void _attachWordsToRefs() {
+    if (_mushafPagesCache == null || verseWordsMemoryCache.isEmpty) return;
+    _mushafPagesCache!.forEach((pageNum, lines) {
+      for (final line in lines) {
+        if (line['parsed_words'] is List<MushafWordRef>) {
+          final pw = line['parsed_words'] as List<MushafWordRef>;
+          for (final ref in pw) {
+            final words = verseWordsMemoryCache['${ref.surah}:${ref.ayah}'];
+            if (words != null && ref.wordIndex0 < words.length) {
+              ref.text = words[ref.wordIndex0];
+            }
+          }
+        }
+      }
+    });
   }
 
   /// Returns the lines for [pageNumber].

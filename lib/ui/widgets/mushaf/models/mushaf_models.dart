@@ -20,8 +20,9 @@ class MushafWordRef {
   final int ayah;
   final int wordIndex1;
   final int wordIndex0;
+  String? text;
 
-  const MushafWordRef(this.surah, this.ayah, this.wordIndex1, this.wordIndex0);
+  MushafWordRef(this.surah, this.ayah, this.wordIndex1, this.wordIndex0, [this.text]);
 }
 
 /// Lightweight reference for zero-allocation line-level tap dispatch

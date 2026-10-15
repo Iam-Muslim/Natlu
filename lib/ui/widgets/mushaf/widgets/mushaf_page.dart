@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:recite_quran/recite_quran.dart';
 
@@ -6,13 +7,16 @@ import '../../../../state/app_state.dart';
 import '../../verse_row.dart';
 import '../data/mushaf_repository.dart';
 import '../models/mushaf_models.dart';
+import 'mushaf_basmala.dart';
 import 'mushaf_line.dart';
+import 'mushaf_surah_header.dart';
 
 /// Authentic Mushaf Page Layout:
-/// - Single RepaintBoundary per page (eliminates 48 offscreen GPU layer allocations).
-/// - Scoped State: Only subscribes to and rebuilds on events affecting THIS specific page.
-/// - Instant native flex justification via Row + MainAxisAlignment.spaceBetween.
-/// - Zero TextPainter.layout() calls on the UI thread for instant 60-120 FPS swiping.
+/// - Native 15-flex Expanded Column where each line occupies an equal vertical slot.
+/// - Single uniform [baseFontSize] across all standard pages and lines.
+/// - 0ms instantaneous page transitions (no blank deferral during swipe).
+/// - Single RepaintBoundary per page.
+/// - Visited pages remain cached in GPU memory via [AutomaticKeepAliveClientMixin].
 class MushafPage extends StatefulWidget {
   final int pageNumber;
   final HighlightingController controller;
@@ -25,6 +29,7 @@ class MushafPage extends StatefulWidget {
   final double ayahMarkerBorderWidth;
   final bool showAyahMarkerCircle;
   final bool showBottomPageNumber;
+  final ValueListenable<bool>? deferWhile;
 
   const MushafPage({
     super.key,
@@ -39,24 +44,20 @@ class MushafPage extends StatefulWidget {
     required this.ayahMarkerBorderWidth,
     required this.showAyahMarkerCircle,
     required this.showBottomPageNumber,
+    this.deferWhile,
   });
 
   @override
   State<MushafPage> createState() => _MushafPageState();
 }
 
-class _MushafPageState extends State<MushafPage> {
-  final List<GlobalKey> _lineKeys = List.generate(16, (_) => GlobalKey());
+class _MushafPageState extends State<MushafPage>
+    with AutomaticKeepAliveClientMixin<MushafPage> {
+  @override
+  bool get wantKeepAlive => true;
 
   bool _hadActiveReciter = false;
   bool _hadActiveAudio = false;
-  bool _lastBlurMode = false;
-
-  Widget? _cachedIdlePageWidget;
-  double? _cachedMaxWidth;
-  double? _cachedMaxHeight;
-  Color? _cachedTextColor;
-
 
   @override
   void initState() {
@@ -71,24 +72,11 @@ class _MushafPageState extends State<MushafPage> {
       _unsubscribe(oldWidget.controller);
       _subscribe();
     }
-    if (oldWidget.isAutoScrolling != widget.isAutoScrolling ||
-        oldWidget.isRecording != widget.isRecording ||
-        oldWidget.wordFontFamily != widget.wordFontFamily ||
-        oldWidget.ayahMarkerFontFamily != widget.ayahMarkerFontFamily ||
-        oldWidget.showAyahMarkerCircle != widget.showAyahMarkerCircle ||
-        oldWidget.showBottomPageNumber != widget.showBottomPageNumber ||
-        oldWidget.ayahMarkerBorderWidth != widget.ayahMarkerBorderWidth ||
-        oldWidget.ayahMarkerBorderColor != widget.ayahMarkerBorderColor ||
-        oldWidget.ayahMarkerTextColor != widget.ayahMarkerTextColor) {
-      _lastFingerprint = -1;
-      _cachedIdlePageWidget = null;
-      setState(() {});
-    }
   }
 
   void _subscribe() {
     widget.controller.addListener(_onRelevantChange);
-    AppState.instance.blurModeNotifier.addListener(_onBlurModeChanged);
+    AppState.instance.blurModeNotifier.addListener(_onRelevantChange);
     AppState.instance.activeAudioAyah.addListener(_onRelevantChange);
     AppState.instance.activeAudioSurah.addListener(_onRelevantChange);
     AppState.instance.activeAudioWordIndex.addListener(_onRelevantChange);
@@ -98,7 +86,7 @@ class _MushafPageState extends State<MushafPage> {
 
   void _unsubscribe(HighlightingController controller) {
     controller.removeListener(_onRelevantChange);
-    AppState.instance.blurModeNotifier.removeListener(_onBlurModeChanged);
+    AppState.instance.blurModeNotifier.removeListener(_onRelevantChange);
     AppState.instance.activeAudioAyah.removeListener(_onRelevantChange);
     AppState.instance.activeAudioSurah.removeListener(_onRelevantChange);
     AppState.instance.activeAudioWordIndex.removeListener(_onRelevantChange);
@@ -110,84 +98,6 @@ class _MushafPageState extends State<MushafPage> {
   void dispose() {
     _unsubscribe(widget.controller);
     super.dispose();
-  }
-
-  int _lastFingerprint = -1;
-
-  int _computePageFingerprint() {
-    final ctrl = widget.controller;
-    final app = AppState.instance;
-    final repo = MushafRepository.instance;
-
-    final int? activeAyah = ctrl.activeAyah.value;
-    final int targetSurah =
-        ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
-    final int? audioAyah = app.activeAudioAyah.value;
-    final int? audioSurah = app.activeAudioSurah.value;
-
-    final bool reciterOnThisPage = activeAyah != null &&
-        repo.isAyahOnPage(
-            pageNumber: widget.pageNumber,
-            surah: targetSurah,
-            ayah: activeAyah);
-    final bool audioOnThisPage = audioAyah != null &&
-        audioSurah != null &&
-        repo.isAyahOnPage(
-            pageNumber: widget.pageNumber,
-            surah: audioSurah,
-            ayah: audioAyah);
-
-    if (!reciterOnThisPage && !audioOnThisPage) {
-      int idleHash = (_hadActiveReciter || _hadActiveAudio) ? 1 : 0;
-      idleHash = idleHash * 31 + ctrl.globalRevision.value;
-      idleHash = idleHash * 31 + (app.isBlurMode ? 1 : 0);
-      return idleHash;
-    }
-
-    int hash = 17;
-    hash = hash * 31 + (activeAyah ?? 0);
-    hash = hash * 31 + targetSurah;
-    hash = hash * 31 + (audioAyah ?? 0);
-    hash = hash * 31 + (audioSurah ?? 0);
-    hash = hash * 31 + (app.activeAudioWordIndex.value ?? -1);
-    hash = hash * 31 + (app.isAudioPlaying.value ? 1 : 0);
-    hash = hash * 31 + (app.isAudioBuffering.value ? 1 : 0);
-    hash = hash * 31 + (widget.isRecording ? 1 : 0);
-    hash = hash * 31 + (widget.isAutoScrolling ? 1 : 0);
-    hash = hash * 31 + (app.isBlurMode ? 1 : 0);
-    hash = hash * 31 + ctrl.globalRevision.value;
-
-    if (reciterOnThisPage) {
-      final words = MushafRepository.instance.verseWordsMemoryCache['$targetSurah:$activeAyah'];
-      final int wordCount = words?.length ?? 30;
-      for (int i = 0; i < wordCount; i++) {
-        if (ctrl.isWordGreen(activeAyah, i, surah: targetSurah)) {
-          hash = hash * 31 + (i + 1) * 7;
-        } else if (ctrl.isWordRed(activeAyah, i, surah: targetSurah)) {
-          hash = hash * 31 + (i + 1) * 13;
-        } else if (ctrl.isWordYellow(activeAyah, i, surah: targetSurah)) {
-          hash = hash * 31 + (i + 1) * 17;
-        } else if (ctrl.isWordNeutral(activeAyah, i, surah: targetSurah)) {
-          hash = hash * 31 + (i + 1) * 23;
-        }
-      }
-      final matched = ctrl.currentMatchedVerse;
-      if (matched != null) {
-        hash = hash * 31 + matched.verse.ayah;
-      }
-    }
-
-    return hash;
-  }
-
-  void _onBlurModeChanged() {
-    if (!mounted) return;
-    final bool currentBlur = AppState.instance.isBlurMode;
-    if (_lastBlurMode != currentBlur) {
-      _lastBlurMode = currentBlur;
-      _lastFingerprint = -1;
-      setState(() {});
-    }
   }
 
   void _onRelevantChange() {
@@ -213,7 +123,6 @@ class _MushafPageState extends State<MushafPage> {
             surah: audioSurah,
             ayah: audioAyah);
 
-    // Exit immediately if this page is completely idle
     if (!reciterOnThisPage &&
         !audioOnThisPage &&
         !_hadActiveReciter &&
@@ -224,23 +133,13 @@ class _MushafPageState extends State<MushafPage> {
     _hadActiveReciter = reciterOnThisPage;
     _hadActiveAudio = audioOnThisPage;
 
-    // During active recording: every notification represents an ASR word match or progress update!
-    if (reciterOnThisPage && widget.isRecording) {
-      _cachedIdlePageWidget = null;
-      setState(() {});
-      return;
-    }
-
-    final fp = _computePageFingerprint();
-    if (fp != _lastFingerprint) {
-      _lastFingerprint = fp;
-      _cachedIdlePageWidget = null;
-      setState(() {});
-    }
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final app = AppState.instance;
     final c = app.colors;
     final repo = MushafRepository.instance;
@@ -248,328 +147,182 @@ class _MushafPageState extends State<MushafPage> {
 
     if (lines.isEmpty) return const SizedBox.shrink();
 
-    final ctrl = widget.controller;
-    final int? activeAyah = ctrl.activeAyah.value;
-    final int targetSurah =
-        ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
-    final int? audioAyah = app.activeAudioAyah.value;
-    final int? audioSurah = app.activeAudioSurah.value;
-
-    final bool reciterOnThisPage = activeAyah != null &&
-        repo.isAyahOnPage(
-            pageNumber: widget.pageNumber,
-            surah: targetSurah,
-            ayah: activeAyah);
-    final bool audioOnThisPage = audioAyah != null &&
-        audioSurah != null &&
-        repo.isAyahOnPage(
-            pageNumber: widget.pageNumber,
-            surah: audioSurah,
-            ayah: audioAyah);
-
-    final bool isPageIdle = !reciterOnThisPage &&
-        !audioOnThisPage &&
-        !widget.isRecording &&
-        !app.isBlurMode;
-
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
           final double maxWidth = constraints.maxWidth;
           final double maxHeight = constraints.maxHeight;
 
-          if (isPageIdle &&
-              _cachedIdlePageWidget != null &&
-              _cachedMaxWidth == maxWidth &&
-              _cachedMaxHeight == maxHeight &&
-              _cachedTextColor == c.text) {
-            return _cachedIdlePageWidget!;
-          }
+          final double bottomReserved = widget.showBottomPageNumber ? 24.0 : 4.0;
+          final double linesContainerHeight = math.max(40.0, maxHeight - bottomReserved);
+          final double maxMushafW = math.min(maxWidth - 16.0, linesContainerHeight * 0.72);
+          final double lineWidth = math.max(40.0, maxMushafW);
 
-          final bool isLandscape = maxWidth > maxHeight;
+          // Uniform 15-flex Mushaf geometry:
+          // Every page has exactly 15 line slots.
+          final double lineSlotHeight = linesContainerHeight / 15.0;
+          // Base font size is UNIFORM across all lines and pages:
+          final double baseFontSize = (lineSlotHeight * 0.54).clamp(18.0, 27.5);
 
-          final double bottomReserved = isLandscape ? 48.0 : 64.0;
-          final double rawH = maxHeight - bottomReserved;
-          final double availableHeight =
-              math.max(40.0, math.min(rawH, maxHeight));
-          final double availableWidth = math.max(40.0, maxWidth);
+          int flexCount = 0;
+          final List<Widget> flexChildren = [];
 
-          final double lineWidth;
-          final double linesContainerHeight;
+          for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            final lineData = lines[lineIndex];
+            final nextLine =
+                lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+            final t = lineData['t'] as String?;
 
-          if (isLandscape) {
-            const double mushafAspectRatio = 0.65;
-            double h = availableHeight;
-            double w = h * mushafAspectRatio;
-            final double maxAllowedW = math.max(40.0, availableWidth - 24.0);
-            if (w > maxAllowedW) {
-              w = maxAllowedW;
-              h = w / mushafAspectRatio;
+            if (t == 'header') {
+              final surahNum = lineData['s'] as int? ?? 1;
+              String surahName =
+                  lineData['name'] as String? ?? 'سورة $surahNum';
+              if (surahNum >= 1 &&
+                  surahNum <=
+                      widget.controller.repository.surahMetadata.length) {
+                final meta = widget
+                    .controller.repository.surahMetadata[surahNum - 1];
+                if (meta.surahName.isNotEmpty) {
+                  final rawName = meta.surahName;
+                  surahName = rawName.startsWith('سورة') ||
+                          rawName.startsWith('سُورَة')
+                      ? rawName
+                      : 'سورة $rawName';
+                }
+              }
+
+              flexChildren.add(
+                Expanded(
+                  child: Center(
+                    child: MushafSurahHeader(
+                      surahNum: surahNum,
+                      surahName: surahName,
+                      lineWidth: lineWidth,
+                      lineHeight: lineSlotHeight,
+                      fontSize: baseFontSize,
+                      colors: c,
+                      app: app,
+                      controller: widget.controller,
+                      onAyahSelected: () {
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+                ),
+              );
+              flexCount++;
+            } else if (t == 'basmala') {
+              int basmalaSurah = 1;
+              if (nextLine != null && nextLine['parsed_words'] is List) {
+                final pw = nextLine['parsed_words'] as List<MushafWordRef>;
+                if (pw.isNotEmpty) basmalaSurah = pw.first.surah;
+              }
+
+              flexChildren.add(
+                Expanded(
+                  child: Center(
+                    child: MushafBasmala(
+                      basmalaSurah: basmalaSurah,
+                      lineWidth: lineWidth,
+                      lineHeight: lineSlotHeight,
+                      fontSize: baseFontSize,
+                      wordFontFamily: widget.wordFontFamily,
+                      colors: c,
+                      controller: widget.controller,
+                      isAutoScrolling: widget.isAutoScrolling,
+                      onAyahSelected: () {
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+                ),
+              );
+              flexCount++;
+            } else {
+              // Standard justified text line via MushafHighlightRow
+              flexChildren.add(
+                Expanded(
+                  child: Center(
+                    child: MushafLine(
+                      lineData: lineData,
+                      nextLineData: nextLine,
+                      lineIndex: lineIndex,
+                      totalLines: lines.length,
+                      pageNumber: widget.pageNumber,
+                      lineWidth: lineWidth,
+                      lineHeight: lineSlotHeight,
+                      fontSize: baseFontSize,
+                      wordFontFamily: widget.wordFontFamily,
+                      ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
+                      ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
+                      ayahMarkerTextColor: widget.ayahMarkerTextColor,
+                      ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
+                      showAyahMarkerCircle: widget.showAyahMarkerCircle,
+                      controller: widget.controller,
+                      isRecording: widget.isRecording,
+                      isAutoScrolling: widget.isAutoScrolling,
+                      colors: c,
+                      app: app,
+                      onStateChangeRequested: () {
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+                ),
+              );
+              flexCount++;
             }
-            lineWidth = math.max(40.0, w);
-            linesContainerHeight = math.max(40.0, h);
-          } else {
-            // Portrait: Ayahs expand to fill full height right down to the bottom bar.
-            final double maxW = math.max(40.0, availableWidth - 16.0);
-            final double idealW = math.max(40.0, availableHeight * 0.72);
-            lineWidth = math.min(maxW, idealW);
-            linesContainerHeight = availableHeight;
           }
 
-          final Widget pageContent;
+          final List<Widget> columnChildren = [];
 
-          // Pages 1 & 2 special centered layout (Al-Fatihah and start of Al-Baqarah)
+          // Pages 1 & 2 special centering
           if (widget.pageNumber <= 2) {
-            final double idealLineHeight =
-                linesContainerHeight / (lines.length + 3);
-            final double maxH = math.max(16.0, idealLineHeight);
-            final double baseLineHeight =
-                idealLineHeight.clamp(math.min(24.0, maxH), 72.0);
-
-            int headerCount = 0;
-            int basmalaCount = 0;
-            int textCount = 0;
-            int maxWordsOnPage = 0;
-            for (final line in lines) {
-              final t = line['t'] as String?;
-              if (t == 'header') {
-                headerCount++;
-              } else if (t == 'basmala') {
-                basmalaCount++;
-              } else {
-                textCount++;
-                final pw = line['parsed_words'] as List<MushafWordRef>? ?? const [];
-                if (pw.length > maxWordsOnPage) {
-                  maxWordsOnPage = pw.length;
-                }
-              }
-            }
-            if (maxWordsOnPage == 0) maxWordsOnPage = 6;
-
-            final double headerLineHeight =
-                (baseLineHeight * 0.74).clamp(24.0, 48.0);
-            final double basmalaLineHeight =
-                (baseLineHeight * 0.52).clamp(18.0, 36.0);
-            final double specialTotalH = (headerCount * headerLineHeight) +
-                (basmalaCount * basmalaLineHeight);
-            final double totalContentH = baseLineHeight * lines.length;
-            final double textLineHeight =
-                (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
-                    ? (totalContentH - specialTotalH) / textCount
-                    : baseLineHeight;
-
-            final double maxP1FontFromHeight = math.max(8.0, textLineHeight * 0.48);
-            final double maxP1FontFromWidth =
-                (lineWidth - 16.0) / (maxWordsOnPage * 2.05 + 1.2);
-            final double fontSize = math.min(maxP1FontFromHeight, maxP1FontFromWidth)
-                .clamp(11.0, 23.0);
-
-            pageContent = Directionality(
-              textDirection: TextDirection.rtl,
-              child: Center(
-                child: SizedBox(
-                  width: lineWidth,
-                  height: maxHeight,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: lineWidth,
-                          height: linesContainerHeight,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children:
-                                List.generate(lines.length, (lineIndex) {
-                              final nextLine = lineIndex + 1 < lines.length
-                                  ? lines[lineIndex + 1]
-                                  : null;
-                              final lineData = lines[lineIndex];
-                              final t = lineData['t'] as String?;
-                              final double thisLineHeight = t == 'header'
-                                  ? headerLineHeight
-                                  : t == 'basmala'
-                                      ? basmalaLineHeight
-                                      : textLineHeight;
-                              return SizedBox(
-                                width: lineWidth,
-                                height: thisLineHeight,
-                                child: MushafLine(
-                                  lineData: lineData,
-                                  nextLineData: nextLine,
-                                  lineIndex: lineIndex,
-                                  totalLines: lines.length,
-                                  pageNumber: widget.pageNumber,
-                                  lineWidth: lineWidth,
-                                  lineHeight: thisLineHeight,
-                                  fontSize: fontSize,
-                                  colors: c,
-                                  app: app,
-                                  isPageIdle: isPageIdle,
-                                  controller: widget.controller,
-                                  isRecording: widget.isRecording,
-                                  isAutoScrolling: widget.isAutoScrolling,
-                                  wordFontFamily: widget.wordFontFamily,
-                                  ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
-                                  ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
-                                  ayahMarkerTextColor: widget.ayahMarkerTextColor,
-                                  ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
-                                  showAyahMarkerCircle: widget.showAyahMarkerCircle,
-                                  lineKey: _lineKeys[lineIndex < _lineKeys.length ? lineIndex : 0],
-                                  verseWordsMemoryCache: MushafRepository.instance.verseWordsMemoryCache,
-                                  onStateChangeRequested: () {
-                                    if (mounted) setState(() {});
-                                  },
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                      ),
-                      if (widget.showBottomPageNumber)
-                        Positioned(
-                          left: 14,
-                          bottom: 8,
-                          child:
-                              _buildBottomPageNumber(widget.pageNumber, c),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            );
+            final int emptyFlex = (15 - flexCount).clamp(0, 15);
+            final int topEmpty = emptyFlex ~/ 2;
+            final int bottomEmpty = emptyFlex - topEmpty;
+            if (topEmpty > 0) columnChildren.add(Spacer(flex: topEmpty));
+            columnChildren.addAll(flexChildren);
+            if (bottomEmpty > 0) columnChildren.add(Spacer(flex: bottomEmpty));
           } else {
-            // Standard 15-line Mushaf pages
-            final double baseLineHeight = linesContainerHeight / lines.length;
-
-            int headerCount = 0;
-            int basmalaCount = 0;
-            int textCount = 0;
-            int maxWordsOnPage = 0;
-            for (final line in lines) {
-              final t = line['t'] as String?;
-              if (t == 'header') {
-                headerCount++;
-              } else if (t == 'basmala') {
-                basmalaCount++;
-              } else {
-                textCount++;
-                final pw = line['parsed_words'] as List<MushafWordRef>? ?? const [];
-                if (pw.length > maxWordsOnPage) {
-                  maxWordsOnPage = pw.length;
-                }
-              }
+            columnChildren.addAll(flexChildren);
+            if (flexCount < 15) {
+              columnChildren.add(Spacer(flex: 15 - flexCount));
             }
-            if (maxWordsOnPage == 0) maxWordsOnPage = 10;
-
-            final double headerLineHeight =
-                (baseLineHeight * 0.74).clamp(24.0, 36.0);
-            final double basmalaLineHeight =
-                (baseLineHeight * 0.52).clamp(18.0, 26.0);
-
-            final double specialTotalH = (headerCount * headerLineHeight) +
-                (basmalaCount * basmalaLineHeight);
-            final double textLineHeight =
-                (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
-                    ? (linesContainerHeight - specialTotalH) / textCount
-                    : baseLineHeight;
-
-            final double maxStandardFontFromHeight =
-                math.max(8.0, textLineHeight * 0.50);
-            final double maxStandardFontFromWidth =
-                (lineWidth - 14.0) / (maxWordsOnPage * 1.90 + 1.2);
-            final double fontSize =
-                math.min(maxStandardFontFromHeight, maxStandardFontFromWidth)
-                    .clamp(11.0, 24.0);
-
-            pageContent = Directionality(
-              textDirection: TextDirection.rtl,
-              child: Center(
-                child: SizedBox(
-                  width: lineWidth,
-                  height: maxHeight,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: lineWidth,
-                          height: linesContainerHeight,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: List.generate(lines.length, (lineIndex) {
-                              final nextLine = lineIndex + 1 < lines.length
-                                  ? lines[lineIndex + 1]
-                                  : null;
-                              final lineData = lines[lineIndex];
-                              final t = lineData['t'] as String?;
-                              final double thisLineHeight = t == 'header'
-                                  ? headerLineHeight
-                                  : t == 'basmala'
-                                      ? basmalaLineHeight
-                                      : textLineHeight;
-                              return SizedBox(
-                                width: lineWidth,
-                                height: thisLineHeight,
-                                child: MushafLine(
-                                  lineData: lineData,
-                                  nextLineData: nextLine,
-                                  lineIndex: lineIndex,
-                                  totalLines: lines.length,
-                                  pageNumber: widget.pageNumber,
-                                  lineWidth: lineWidth,
-                                  lineHeight: thisLineHeight,
-                                  fontSize: fontSize,
-                                  colors: c,
-                                  app: app,
-                                  isPageIdle: isPageIdle,
-                                  controller: widget.controller,
-                                  isRecording: widget.isRecording,
-                                  isAutoScrolling: widget.isAutoScrolling,
-                                  wordFontFamily: widget.wordFontFamily,
-                                  ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
-                                  ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
-                                  ayahMarkerTextColor: widget.ayahMarkerTextColor,
-                                  ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
-                                  showAyahMarkerCircle: widget.showAyahMarkerCircle,
-                                  lineKey: _lineKeys[lineIndex < _lineKeys.length ? lineIndex : 0],
-                                  verseWordsMemoryCache: MushafRepository.instance.verseWordsMemoryCache,
-                                  onStateChangeRequested: () {
-                                    if (mounted) setState(() {});
-                                  },
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                      ),
-                      if (widget.showBottomPageNumber)
-                        Positioned(
-                          left: 14,
-                          bottom: 8,
-                          child:
-                              _buildBottomPageNumber(widget.pageNumber, c),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            );
           }
 
-          if (isPageIdle) {
-            _cachedIdlePageWidget = pageContent;
-            _cachedMaxWidth = maxWidth;
-            _cachedMaxHeight = maxHeight;
-            _cachedTextColor = c.text;
-          } else {
-            _cachedIdlePageWidget = null;
-          }
-
-          return pageContent;
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: Center(
+              child: SizedBox(
+                width: lineWidth,
+                height: maxHeight,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: lineWidth,
+                        height: linesContainerHeight,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: columnChildren,
+                        ),
+                      ),
+                    ),
+                    if (widget.showBottomPageNumber)
+                      Positioned(
+                        left: 14,
+                        bottom: 6,
+                        child: _buildBottomPageNumber(widget.pageNumber, c),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
         },
       ),
     );

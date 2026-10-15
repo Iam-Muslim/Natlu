@@ -128,6 +128,7 @@ class _MushafViewState extends State<MushafView> {
   final FocusNode _focusNode = FocusNode();
   (int surah, int ayah)? _navigationTargetAyah;
 
+
   @override
   void initState() {
     super.initState();
@@ -450,49 +451,15 @@ class _MushafViewState extends State<MushafView> {
 
   Future<void> _ensurePageSurahsLoaded(int pageNum) async {
     final repo = MushafRepository.instance;
-    final pagesToWarm = [
-      pageNum,
-      math.min(604, pageNum + 1),
-      math.max(1, pageNum - 1)
-    ];
-    for (final p in pagesToWarm) {
-      final surahs = repo.getPageSurahs(p);
-      if (surahs == null || surahs.isEmpty) continue;
+    final surahs = repo.getPageSurahs(pageNum);
+    if (surahs == null || surahs.isEmpty) return;
 
-      for (final s in surahs) {
-        if (!_loadedSurahs.contains(s)) {
-          _loadedSurahs.add(s);
-          unawaited(widget.controller.repository.loadSurahAsync(s).then((_) {
-            _warmUpPageWords(p);
-          }));
-        } else {
-          _warmUpPageWords(p);
-        }
+    for (final s in surahs) {
+      if (!_loadedSurahs.contains(s)) {
+        _loadedSurahs.add(s);
+        unawaited(widget.controller.repository.loadSurahAsync(s));
       }
     }
-  }
-
-  void _warmUpPageWords(int p) {
-    scheduleMicrotask(() {
-      final pageAyahs = MushafRepository.instance.getPageAyahs(p);
-      if (pageAyahs != null) {
-        for (final ayahKey in pageAyahs) {
-          if (!MushafRepository.instance.verseWordsMemoryCache.containsKey(ayahKey)) {
-            final colon = ayahKey.indexOf(':');
-            if (colon > 0) {
-              final s = int.tryParse(ayahKey.substring(0, colon));
-              final a = int.tryParse(ayahKey.substring(colon + 1));
-              if (s != null && a != null) {
-                final v = widget.controller.repository.getVerse(s, a);
-                if (v != null) {
-                  MushafRepository.instance.verseWordsMemoryCache[ayahKey] = v.uthmaniWords;
-                }
-              }
-            }
-          }
-        }
-      }
-    });
   }
 
   @override
@@ -513,11 +480,16 @@ class _MushafViewState extends State<MushafView> {
     final safeTop = math.max(media.padding.top, media.viewPadding.top);
     final safeBottom = math.max(media.padding.bottom, media.viewPadding.bottom);
     final bool isFullscreenMode = widget.isRecording || widget.isAutoScrolling;
-    final double bottomPadding = safeBottom + 12.0;
+    final double bottomPadding = safeBottom + (isFullscreenMode ? 74.0 : 92.0);
 
     final double topPadding = isFullscreenMode
         ? (safeTop > 0 ? (safeTop + 4.0) : 6.0)
         : (safeTop + 72.0);
+
+    // Platform-optimized scroll physics matching qcf_quran_plus
+    final ScrollPhysics physics = Theme.of(context).platform == TargetPlatform.iOS
+        ? const BouncingScrollPhysics()
+        : const ClampingScrollPhysics();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -550,8 +522,8 @@ class _MushafViewState extends State<MushafView> {
                 controller: _pageController,
                 itemCount: 604,
                 padEnds: false,
-                allowImplicitScrolling: true,
-                physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
+                allowImplicitScrolling: false,
+                physics: physics,
                 onPageChanged: (index) {
                   final newPage = index + 1;
                   if (_currentPage == newPage) return;
