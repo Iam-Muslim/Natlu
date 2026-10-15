@@ -607,6 +607,12 @@ class _MushafViewState extends State<MushafView> {
         return;
       }
 
+      // Bug fix: Never auto-navigate away from the current page while recording is active.
+      // The recording session start sets activeAyah to the first unspoken word's ayah,
+      // which can differ from where the user manually navigated. This guard prevents the
+      // "jumps to first ayah on first record press" race condition.
+      if (widget.isRecording) return;
+
       if (_ayahToPageCache != null) {
         final targetPage = _ayahToPageCache!['$surah:$active'];
         if (targetPage != null && targetPage != _currentPage) {
@@ -1633,7 +1639,11 @@ class _MushafPageState extends State<_MushafPage> {
         final bool isWordActive = (targetIndex == wordIndex0);
 
         final Color textColor;
-        if (widget.isRecording || cachedIsAyahActive || app.isBlurMode || cachedIsCompleted) {
+        // Bug fix: also resolve colors when globalRevision > 0, meaning the ASR engine
+        // has matched words in this session. This ensures partially-recited ayahs keep
+        // their colors even after the user deselects them or stops recording.
+        final bool hasSessionHighlights = widget.controller.globalRevision.value > 0;
+        if (widget.isRecording || cachedIsAyahActive || app.isBlurMode || cachedIsCompleted || hasSessionHighlights) {
           textColor = VerseSpanBuilder.resolveWordDisplayColor(
             ayah: ayah,
             wordIndex: wordIndex0,

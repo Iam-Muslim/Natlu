@@ -81,9 +81,13 @@ class VerseSpanBuilder {
       style: defaultStyle,
     );
 
+    // Bug fix: also check globalRevision > 0 — if any words were matched in this session,
+    // keep resolving colors for ALL ayahs so previously-recited ayahs don't lose their color
+    // when the user deselects them or stops recording.
     final bool hasHighlights = isActive ||
         isRecording ||
         app.isBlurMode ||
+        controller.globalRevision.value > 0 ||
         controller.completedAyahsFor(surah ?? controller.targetSurah).contains(ayah);
 
     for (int i = 0; i < words.length; i++) {

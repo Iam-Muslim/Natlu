@@ -632,11 +632,15 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + _getActiveTargetIndex();
 
     final int currentRevision = ctrl.globalRevision.value;
+    // Bug fix: also include globalRevision > 0 so partially-recited ayahs (words colored
+    // but ayah not yet "completed") keep their colors when the user deselects them or
+    // stops recording.
     final bool hasHighlights = isActive ||
         isAudioActive ||
         _wasAudioActive ||
         isCompleted ||
-        widget.isRecording;
+        widget.isRecording ||
+        currentRevision > 0;
 
     final int wordColorsHash;
     if (!hasHighlights) {
