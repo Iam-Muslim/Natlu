@@ -862,7 +862,11 @@ class _MushafPageState extends State<_MushafPage> {
   bool _hadActiveReciter = false;
   bool _hadActiveAudio = false;
   bool _lastBlurMode = false;
-  bool _pendingRebuild = false;
+
+  Widget? _cachedIdlePageWidget;
+  double? _cachedMaxWidth;
+  double? _cachedMaxHeight;
+  Color? _cachedTextColor;
 
   static final RegExp _tashkeelRegex = RegExp(r'[\u064B-\u065F\u0670]');
   static final Map<int, String> _cleanSurahNamesCache = {};
@@ -891,6 +895,7 @@ class _MushafPageState extends State<_MushafPage> {
         oldWidget.ayahMarkerBorderColor != widget.ayahMarkerBorderColor ||
         oldWidget.ayahMarkerTextColor != widget.ayahMarkerTextColor) {
       _lastFingerprint = -1;
+      _cachedIdlePageWidget = null;
       setState(() {});
     }
   }
@@ -1033,23 +1038,17 @@ class _MushafPageState extends State<_MushafPage> {
 
     // During active recording: every notification represents an ASR word match or progress update!
     if (reciterOnThisPage && widget.isRecording) {
+      _cachedIdlePageWidget = null;
       setState(() {});
       return;
     }
 
-    // Coalesce multiple listener notifications within the same frame into a single rebuild.
-    // This prevents 6+ simultaneous ValueNotifier changes from scheduling 6+ redundant setState calls.
-    if (_pendingRebuild) return;
-    _pendingRebuild = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pendingRebuild = false;
-      if (!mounted) return;
-      final fp = _computePageFingerprint();
-      if (fp != _lastFingerprint) {
-        _lastFingerprint = fp;
-        setState(() {});
-      }
-    });
+    final fp = _computePageFingerprint();
+    if (fp != _lastFingerprint) {
+      _lastFingerprint = fp;
+      _cachedIdlePageWidget = null;
+      setState(() {});
+    }
   }
 
   @override
@@ -1090,6 +1089,14 @@ class _MushafPageState extends State<_MushafPage> {
           final double maxWidth = constraints.maxWidth;
           final double maxHeight = constraints.maxHeight;
 
+          if (isPageIdle &&
+              _cachedIdlePageWidget != null &&
+              _cachedMaxWidth == maxWidth &&
+              _cachedMaxHeight == maxHeight &&
+              _cachedTextColor == c.text) {
+            return _cachedIdlePageWidget!;
+          }
+
           final bool isLandscape = maxWidth > maxHeight;
 
           final double bottomReserved = isLandscape ? 48.0 : 64.0;
@@ -1121,6 +1128,8 @@ class _MushafPageState extends State<_MushafPage> {
             lineWidth = math.min(maxW, idealW);
             linesContainerHeight = availableHeight;
           }
+
+          final Widget pageContent;
 
           // Pages 1 & 2 special centered layout (Al-Fatihah and start of Al-Baqarah)
           if (widget.pageNumber <= 2) {
@@ -1160,7 +1169,7 @@ class _MushafPageState extends State<_MushafPage> {
             final double fontSize = (textLineHeight * 0.46)
                 .clamp(math.min(10.0, maxP1Font), 23.0);
 
-            return Directionality(
+            pageContent = Directionality(
               textDirection: TextDirection.rtl,
               child: Center(
                 child: SizedBox(
@@ -1222,103 +1231,114 @@ class _MushafPageState extends State<_MushafPage> {
                 ),
               ),
             );
-          }
+          } else {
+            // Standard 15-line Mushaf pages:
+            // Unified typography: header and basmala take compact proportional slots so
+            // Bismillah sits snug under the Surah header with zero awkward voids.
+            final double baseLineHeight = linesContainerHeight / lines.length;
 
-          // Standard 15-line Mushaf pages:
-          // Unified typography: header and basmala take compact proportional slots so
-          // Bismillah sits snug under the Surah header with zero awkward voids.
-          final double baseLineHeight = linesContainerHeight / lines.length;
-
-          int headerCount = 0;
-          int basmalaCount = 0;
-          int textCount = 0;
-          for (final line in lines) {
-            final t = line['t'] as String?;
-            if (t == 'header') {
-              headerCount++;
-            } else if (t == 'basmala') {
-              basmalaCount++;
-            } else {
-              textCount++;
+            int headerCount = 0;
+            int basmalaCount = 0;
+            int textCount = 0;
+            for (final line in lines) {
+              final t = line['t'] as String?;
+              if (t == 'header') {
+                headerCount++;
+              } else if (t == 'basmala') {
+                basmalaCount++;
+              } else {
+                textCount++;
+              }
             }
-          }
 
-          final double headerLineHeight =
-              (baseLineHeight * 0.74).clamp(24.0, 36.0);
-          final double basmalaLineHeight =
-              (baseLineHeight * 0.52).clamp(18.0, 26.0);
+            final double headerLineHeight =
+                (baseLineHeight * 0.74).clamp(24.0, 36.0);
+            final double basmalaLineHeight =
+                (baseLineHeight * 0.52).clamp(18.0, 26.0);
 
-          final double specialTotalH = (headerCount * headerLineHeight) +
-              (basmalaCount * basmalaLineHeight);
-          final double textLineHeight =
-              (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
-                  ? (linesContainerHeight - specialTotalH) / textCount
-                  : baseLineHeight;
+            final double specialTotalH = (headerCount * headerLineHeight) +
+                (basmalaCount * basmalaLineHeight);
+            final double textLineHeight =
+                (textCount > 0 && (headerCount > 0 || basmalaCount > 0))
+                    ? (linesContainerHeight - specialTotalH) / textCount
+                    : baseLineHeight;
 
-          final double maxStandardFont = math.max(8.0, textLineHeight * 0.58);
-          final double fontSize = (textLineHeight * 0.52)
-              .clamp(math.min(10.0, maxStandardFont), 26.0);
+            final double maxStandardFont = math.max(8.0, textLineHeight * 0.58);
+            final double fontSize = (textLineHeight * 0.52)
+                .clamp(math.min(10.0, maxStandardFont), 26.0);
 
-          return Directionality(
-            textDirection: TextDirection.rtl,
-            child: Center(
-              child: SizedBox(
-                width: lineWidth,
-                height: maxHeight,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Align(
-                      alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        width: lineWidth,
-                        height: linesContainerHeight,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(lines.length, (lineIndex) {
-                            final nextLine = lineIndex + 1 < lines.length
-                                ? lines[lineIndex + 1]
-                                : null;
-                            final lineData = lines[lineIndex];
-                            final t = lineData['t'] as String?;
-                            final double thisLineHeight = t == 'header'
-                                ? headerLineHeight
-                                : t == 'basmala'
-                                    ? basmalaLineHeight
-                                    : textLineHeight;
-                            return SizedBox(
-                              width: lineWidth,
-                              height: thisLineHeight,
-                              child: _buildLine(
-                                lineData: lineData,
-                                nextLineData: nextLine,
-                                lineIndex: lineIndex,
-                                totalLines: lines.length,
-                                pageNumber: widget.pageNumber,
-                                lineWidth: lineWidth,
-                                lineHeight: thisLineHeight,
-                                fontSize: fontSize,
-                                c: c,
-                                app: app,
-                                isPageIdle: isPageIdle,
-                              ),
-                            );
-                          }),
+            pageContent = Directionality(
+              textDirection: TextDirection.rtl,
+              child: Center(
+                child: SizedBox(
+                  width: lineWidth,
+                  height: maxHeight,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: lineWidth,
+                          height: linesContainerHeight,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List.generate(lines.length, (lineIndex) {
+                              final nextLine = lineIndex + 1 < lines.length
+                                  ? lines[lineIndex + 1]
+                                  : null;
+                              final lineData = lines[lineIndex];
+                              final t = lineData['t'] as String?;
+                              final double thisLineHeight = t == 'header'
+                                  ? headerLineHeight
+                                  : t == 'basmala'
+                                      ? basmalaLineHeight
+                                      : textLineHeight;
+                              return SizedBox(
+                                width: lineWidth,
+                                height: thisLineHeight,
+                                child: _buildLine(
+                                  lineData: lineData,
+                                  nextLineData: nextLine,
+                                  lineIndex: lineIndex,
+                                  totalLines: lines.length,
+                                  pageNumber: widget.pageNumber,
+                                  lineWidth: lineWidth,
+                                  lineHeight: thisLineHeight,
+                                  fontSize: fontSize,
+                                  c: c,
+                                  app: app,
+                                  isPageIdle: isPageIdle,
+                                ),
+                              );
+                            }),
+                          ),
                         ),
                       ),
-                    ),
-                    if (widget.showBottomPageNumber)
-                      Positioned(
-                        left: 14,
-                        bottom: 8,
-                        child:
-                            _buildBottomPageNumber(widget.pageNumber, c, app),
-                      ),
-                  ],
+                      if (widget.showBottomPageNumber)
+                        Positioned(
+                          left: 14,
+                          bottom: 8,
+                          child:
+                              _buildBottomPageNumber(widget.pageNumber, c, app),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
+            );
+          }
+
+          if (isPageIdle) {
+            _cachedIdlePageWidget = pageContent;
+            _cachedMaxWidth = maxWidth;
+            _cachedMaxHeight = maxHeight;
+            _cachedTextColor = c.text;
+          } else {
+            _cachedIdlePageWidget = null;
+          }
+
+          return pageContent;
         },
       ),
     );
@@ -1448,8 +1468,7 @@ class _MushafPageState extends State<_MushafPage> {
     // Exactly like mushaf-svelte: short end-lines are centered so words never drift apart with awkward voids.
     final bool shouldJustify = pageNumber > 2 &&
         !nextLineIsHeader &&
-        (!isLastLineOfPage || pageNumber <= 599) &&
-        parsedWords.length >= 5;
+        (!isLastLineOfPage || pageNumber <= 599);
 
     final bool isDark = app.isDarkMode;
     final wordWidgets = <Widget>[];
