@@ -294,7 +294,7 @@ class _VerseRowState extends State<VerseRow> {
     super.initState();
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     widget.controller.globalRevision.addListener(_onStateChanged);
-    AppState.instance.addListener(_onStateChanged);
+    AppState.instance.blurModeNotifier.addListener(_onStateChanged);
     AppState.instance.isAudioPlaying.addListener(_onAudioStateChanged);
     AppState.instance.isAudioBuffering.addListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.addListener(_onAudioStateChanged);
@@ -351,7 +351,7 @@ class _VerseRowState extends State<VerseRow> {
     if (_isListeningToController) {
       widget.controller.removeListener(_onStateChanged);
     }
-    AppState.instance.removeListener(_onStateChanged);
+    AppState.instance.blurModeNotifier.removeListener(_onStateChanged);
     AppState.instance.isAudioPlaying.removeListener(_onAudioStateChanged);
     AppState.instance.isAudioBuffering.removeListener(_onAudioStateChanged);
     AppState.instance.activeAudioAyah.removeListener(_onAudioStateChanged);
@@ -632,32 +632,42 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + _getActiveTargetIndex();
 
     final int currentRevision = ctrl.globalRevision.value;
-    final bool needsWordScan = isActive ||
+    final bool hasHighlights = isActive ||
         isAudioActive ||
         _wasAudioActive ||
-        _cachedWordColorsRevision != currentRevision ||
-        _cachedWordColorsHash == null;
+        isCompleted ||
+        widget.isRecording;
 
     final int wordColorsHash;
-    if (needsWordScan) {
-      int wHash = 17;
-      final wordCount = widget.verse.uthmaniWords.length;
-      for (int i = 0; i < wordCount; i++) {
-        if (ctrl.isWordGreen(ayah, i, surah: widget.verse.surah)) {
-          wHash = wHash * 31 + (i + 1) * 7;
-        } else if (ctrl.isWordRed(ayah, i, surah: widget.verse.surah)) {
-          wHash = wHash * 31 + (i + 1) * 13;
-        } else if (ctrl.isWordYellow(ayah, i, surah: widget.verse.surah)) {
-          wHash = wHash * 31 + (i + 1) * 17;
-        } else if (ctrl.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
-          wHash = wHash * 31 + (i + 1) * 23;
-        }
-      }
-      _cachedWordColorsHash = wHash;
+    if (!hasHighlights) {
+      wordColorsHash = 17;
+      _cachedWordColorsHash = 17;
       _cachedWordColorsRevision = currentRevision;
-      wordColorsHash = wHash;
     } else {
-      wordColorsHash = _cachedWordColorsHash!;
+      final bool needsWordScan =
+          _cachedWordColorsRevision != currentRevision ||
+          _cachedWordColorsHash == null;
+
+      if (needsWordScan) {
+        int wHash = 17;
+        final wordCount = widget.verse.uthmaniWords.length;
+        for (int i = 0; i < wordCount; i++) {
+          if (ctrl.isWordGreen(ayah, i, surah: widget.verse.surah)) {
+            wHash = wHash * 31 + (i + 1) * 7;
+          } else if (ctrl.isWordRed(ayah, i, surah: widget.verse.surah)) {
+            wHash = wHash * 31 + (i + 1) * 13;
+          } else if (ctrl.isWordYellow(ayah, i, surah: widget.verse.surah)) {
+            wHash = wHash * 31 + (i + 1) * 17;
+          } else if (ctrl.isWordNeutral(ayah, i, surah: widget.verse.surah)) {
+            wHash = wHash * 31 + (i + 1) * 23;
+          }
+        }
+        _cachedWordColorsHash = wHash;
+        _cachedWordColorsRevision = currentRevision;
+        wordColorsHash = wHash;
+      } else {
+        wordColorsHash = _cachedWordColorsHash!;
+      }
     }
     hash = hash * 31 + wordColorsHash;
 
@@ -675,6 +685,11 @@ class _VerseRowState extends State<VerseRow> {
 
   @override
   Widget build(BuildContext context) {
+    final int fp = _computeFingerprint();
+    if (fp != _lastFingerprint) {
+      _lastFingerprint = fp;
+      _cachedSpans = null;
+    }
     final AppState app = AppState.instance;
     final ThemeColors c = app.colors;
     final words = widget.verse.uthmaniWords;

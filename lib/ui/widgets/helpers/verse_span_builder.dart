@@ -81,16 +81,23 @@ class VerseSpanBuilder {
       style: defaultStyle,
     );
 
+    final bool hasHighlights = isActive ||
+        isRecording ||
+        app.isBlurMode ||
+        controller.completedAyahsFor(surah ?? controller.targetSurah).contains(ayah);
+
     for (int i = 0; i < words.length; i++) {
-      final Color color = resolveWordDisplayColor(
-        ayah: ayah,
-        wordIndex: i,
-        controller: controller,
-        app: app,
-        colors: colors,
-        isAutoScrolling: isAutoScrolling,
-        surah: surah,
-      );
+      final Color color = hasHighlights
+          ? resolveWordDisplayColor(
+              ayah: ayah,
+              wordIndex: i,
+              controller: controller,
+              app: app,
+              colors: colors,
+              isAutoScrolling: isAutoScrolling,
+              surah: surah,
+            )
+          : colors.text;
 
       final word = words[i];
       final wordIdx = i;

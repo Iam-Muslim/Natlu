@@ -60,6 +60,30 @@ class MushafWordRef {
   const MushafWordRef(this.surah, this.ayah, this.wordIndex1, this.wordIndex0);
 }
 
+/// Lightweight reference for zero-allocation line-level tap dispatch
+class _MushafLineChild {
+  final bool isMarker;
+  final int surah;
+  final int ayah;
+  final int wordIndex0;
+  final String wordText;
+
+  const _MushafLineChild.word({
+    required this.surah,
+    required this.ayah,
+    required this.wordIndex0,
+    required this.wordText,
+  })  : isMarker = false;
+
+  const _MushafLineChild.marker({
+    required this.surah,
+    required this.ayah,
+  })  : isMarker = true,
+        wordIndex0 = -1,
+        wordText = '';
+}
+
+
 class _MushafParsedData {
   final Map<int, List<Map<String, dynamic>>> pages;
   final Map<String, int> ayahMap;
@@ -667,11 +691,39 @@ class _MushafViewState extends State<MushafView> {
       for (final s in surahs) {
         if (!_loadedSurahs.contains(s)) {
           _loadedSurahs.add(s);
-          unawaited(widget.controller.repository.loadSurahAsync(s));
+          unawaited(widget.controller.repository.loadSurahAsync(s).then((_) {
+            _warmUpPageWords(p);
+          }));
+        } else {
+          _warmUpPageWords(p);
         }
       }
     }
   }
+
+  void _warmUpPageWords(int p) {
+    scheduleMicrotask(() {
+      final pageAyahs = _pageAyahsCache?[p];
+      if (pageAyahs != null) {
+        for (final ayahKey in pageAyahs) {
+          if (!_MushafPageState._verseWordsMemoryCache.containsKey(ayahKey)) {
+            final colon = ayahKey.indexOf(':');
+            if (colon > 0) {
+              final s = int.tryParse(ayahKey.substring(0, colon));
+              final a = int.tryParse(ayahKey.substring(colon + 1));
+              if (s != null && a != null) {
+                final v = widget.controller.repository.getVerse(s, a);
+                if (v != null) {
+                  _MushafPageState._verseWordsMemoryCache[ayahKey] = v.uthmaniWords;
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -731,7 +783,8 @@ class _MushafViewState extends State<MushafView> {
                 controller: _pageController,
                 itemCount: 604,
                 padEnds: false,
-                physics: const ClampingScrollPhysics(parent: PageScrollPhysics()),
+                allowImplicitScrolling: true,
+                physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
                 onPageChanged: (index) {
                   final newPage = index + 1;
                   if (_currentPage == newPage) return;
@@ -803,15 +856,13 @@ class _MushafPage extends StatefulWidget {
   State<_MushafPage> createState() => _MushafPageState();
 }
 
-class _MushafPageState extends State<_MushafPage>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
+class _MushafPageState extends State<_MushafPage> {
+  final List<GlobalKey> _lineKeys = List.generate(16, (_) => GlobalKey());
 
   bool _hadActiveReciter = false;
   bool _hadActiveAudio = false;
   bool _lastBlurMode = false;
-  DateTime _lastWordTapTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _pendingRebuild = false;
 
   static final RegExp _tashkeelRegex = RegExp(r'[\u064B-\u065F\u0670]');
   static final Map<int, String> _cleanSurahNamesCache = {};
@@ -846,7 +897,7 @@ class _MushafPageState extends State<_MushafPage>
 
   void _subscribe() {
     widget.controller.addListener(_onRelevantChange);
-    AppState.instance.addListener(_onRelevantChange);
+    AppState.instance.blurModeNotifier.addListener(_onBlurModeChanged);
     AppState.instance.activeAudioAyah.addListener(_onRelevantChange);
     AppState.instance.activeAudioSurah.addListener(_onRelevantChange);
     AppState.instance.activeAudioWordIndex.addListener(_onRelevantChange);
@@ -856,7 +907,7 @@ class _MushafPageState extends State<_MushafPage>
 
   void _unsubscribe(HighlightingController controller) {
     controller.removeListener(_onRelevantChange);
-    AppState.instance.removeListener(_onRelevantChange);
+    AppState.instance.blurModeNotifier.removeListener(_onBlurModeChanged);
     AppState.instance.activeAudioAyah.removeListener(_onRelevantChange);
     AppState.instance.activeAudioSurah.removeListener(_onRelevantChange);
     AppState.instance.activeAudioWordIndex.removeListener(_onRelevantChange);
@@ -937,15 +988,18 @@ class _MushafPageState extends State<_MushafPage>
     return hash;
   }
 
-  void _onRelevantChange() {
+  void _onBlurModeChanged() {
     if (!mounted) return;
     final bool currentBlur = AppState.instance.isBlurMode;
     if (_lastBlurMode != currentBlur) {
       _lastBlurMode = currentBlur;
       _lastFingerprint = -1;
       setState(() {});
-      return;
     }
+  }
+
+  void _onRelevantChange() {
+    if (!mounted) return;
 
     final int? activeAyah = widget.controller.activeAyah.value;
     final int targetSurah = widget.controller.targetSurah != 0
@@ -983,21 +1037,52 @@ class _MushafPageState extends State<_MushafPage>
       return;
     }
 
-    final fp = _computePageFingerprint();
-    if (fp != _lastFingerprint) {
-      _lastFingerprint = fp;
-      setState(() {});
-    }
+    // Coalesce multiple listener notifications within the same frame into a single rebuild.
+    // This prevents 6+ simultaneous ValueNotifier changes from scheduling 6+ redundant setState calls.
+    if (_pendingRebuild) return;
+    _pendingRebuild = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingRebuild = false;
+      if (!mounted) return;
+      final fp = _computePageFingerprint();
+      if (fp != _lastFingerprint) {
+        _lastFingerprint = fp;
+        setState(() {});
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final app = AppState.instance;
     final c = app.colors;
     final lines = _mushafPagesCache?[widget.pageNumber] ?? [];
 
     if (lines.isEmpty) return const SizedBox.shrink();
+
+    final ctrl = widget.controller;
+    final int? activeAyah = ctrl.activeAyah.value;
+    final int targetSurah =
+        ctrl.targetSurah != 0 ? ctrl.targetSurah : app.lastSurah;
+    final int? audioAyah = app.activeAudioAyah.value;
+    final int? audioSurah = app.activeAudioSurah.value;
+
+    final bool reciterOnThisPage = activeAyah != null &&
+        MushafView.isAyahOnPage(
+            pageNumber: widget.pageNumber,
+            surah: targetSurah,
+            ayah: activeAyah);
+    final bool audioOnThisPage = audioAyah != null &&
+        audioSurah != null &&
+        MushafView.isAyahOnPage(
+            pageNumber: widget.pageNumber,
+            surah: audioSurah,
+            ayah: audioAyah);
+
+    final bool isPageIdle = !reciterOnThisPage &&
+        !audioOnThisPage &&
+        !widget.isRecording &&
+        !app.isBlurMode;
 
     return RepaintBoundary(
       child: LayoutBuilder(
@@ -1118,6 +1203,7 @@ class _MushafPageState extends State<_MushafPage>
                                   fontSize: fontSize,
                                   c: c,
                                   app: app,
+                                  isPageIdle: isPageIdle,
                                 ),
                               );
                             }),
@@ -1214,6 +1300,7 @@ class _MushafPageState extends State<_MushafPage>
                                 fontSize: fontSize,
                                 c: c,
                                 app: app,
+                                isPageIdle: isPageIdle,
                               ),
                             );
                           }),
@@ -1248,6 +1335,7 @@ class _MushafPageState extends State<_MushafPage>
     required double fontSize,
     required ThemeColors c,
     required AppState app,
+    required bool isPageIdle,
   }) {
     final type = lineData['t'] as String?;
 
@@ -1300,9 +1388,6 @@ class _MushafPageState extends State<_MushafPage>
         height: lineHeight,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapDown: (_) {
-            _lastWordTapTime = DateTime.now();
-          },
           onTap: () {
             if (widget.isAutoScrolling) return;
             HapticFeedback.lightImpact();
@@ -1369,16 +1454,9 @@ class _MushafPageState extends State<_MushafPage>
     final bool isDark = app.isDarkMode;
     final wordWidgets = <Widget>[];
     final childAyahRefs = <({int surah, int ayah})>[];
+    final lineChildren = <_MushafLineChild>[];
     int? highlightStartIndex;
     int? highlightEndIndex;
-
-    List<String>? cachedWords;
-    bool cachedIsAyahActive = false;
-    bool cachedIsCompleted = false;
-    int cachedTargetIndex = -1;
-    int cachedSurah = -1;
-    int cachedAyah = -1;
-
     final EdgeInsets wordPadding = EdgeInsets.symmetric(
       horizontal: shouldJustify ? 1.0 : 3.5,
       vertical: 1.0,
@@ -1391,183 +1469,285 @@ class _MushafPageState extends State<_MushafPage>
       height: 1.25,
     );
 
-    for (int i = 0; i < parsedWords.length; i++) {
-      final ref = parsedWords[i];
-      final surah = ref.surah;
-      final ayah = ref.ayah;
-      final wordIndex1 = ref.wordIndex1;
-      final wordIndex0 = ref.wordIndex0;
+    if (isPageIdle) {
+      // ULTRA-FAST ZERO-ALLOCATION IDLE PATH:
+      // When page is idle (no recording, no audio on this page, no blur mode):
+      // - 0 phonetic dictionary checks
+      // - 0 active audio lookups
+      // - 0 Container allocations (uses lightweight Padding directly)
+      // - 0 highlight ribbon computations
+      int cachedSurah = -1;
+      int cachedAyah = -1;
+      List<String>? cachedWords;
 
-      if (surah != cachedSurah || ayah != cachedAyah) {
-        cachedSurah = surah;
-        cachedAyah = ayah;
-        final ayahKey = '$surah:$ayah';
-        var words = _verseWordsMemoryCache[ayahKey];
-        if (words == null) {
-          final v = widget.controller.repository.getVerse(surah, ayah);
-          if (v != null) {
-            words = v.uthmaniWords;
-            _verseWordsMemoryCache[ayahKey] = words;
+      for (int i = 0; i < parsedWords.length; i++) {
+        final ref = parsedWords[i];
+        final surah = ref.surah;
+        final ayah = ref.ayah;
+        final wordIndex1 = ref.wordIndex1;
+        final wordIndex0 = ref.wordIndex0;
+
+        if (surah != cachedSurah || ayah != cachedAyah) {
+          cachedSurah = surah;
+          cachedAyah = ayah;
+          final ayahKey = '$surah:$ayah';
+          var words = _verseWordsMemoryCache[ayahKey];
+          if (words == null) {
+            final v = widget.controller.repository.getVerse(surah, ayah);
+            if (v != null) {
+              words = v.uthmaniWords;
+              _verseWordsMemoryCache[ayahKey] = words;
+            }
           }
+          cachedWords = words;
         }
-        cachedWords = words;
 
-        final int effectiveTargetSurah = widget.controller.targetSurah != 0
-            ? widget.controller.targetSurah
-            : app.lastSurah;
-        final bool isSelected = !widget.isAutoScrolling &&
-            effectiveTargetSurah == surah &&
-            widget.controller.activeAyah.value == ayah;
-        final bool isRecitingActive = !widget.isAutoScrolling &&
-            widget.controller.currentMatchedVerse?.verse.surah == surah &&
-            widget.controller.currentMatchedVerse?.verse.ayah == ayah;
-        final bool isAudioActive = !widget.isAutoScrolling &&
-            VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
-        cachedIsAyahActive = isSelected || isRecitingActive || isAudioActive;
-        cachedTargetIndex = cachedIsAyahActive
-            ? VerseRow.getTargetWordIndex(
-                surah: surah,
-                ayah: ayah,
-                words: cachedWords ?? const [],
-                controller: widget.controller,
-                app: app,
-                isRecording: widget.isRecording,
-                isActive: true,
-              )
-            : -1;
-        cachedIsCompleted =
-            widget.controller.completedAyahsFor(surah).contains(ayah);
-      }
+        final words = cachedWords;
+        if (words == null || wordIndex0 >= words.length) continue;
 
-      final words = cachedWords;
-      if (words == null || wordIndex0 >= words.length) continue;
-
-      final wordText = words[wordIndex0];
-      final bool isAyahActive = cachedIsAyahActive;
-      final int targetIndex = cachedTargetIndex;
-      final bool isWordActive = (targetIndex == wordIndex0);
-
-      final Color textColor;
-      if (widget.isRecording || cachedIsAyahActive || app.isBlurMode || cachedIsCompleted) {
-        textColor = VerseSpanBuilder.resolveWordDisplayColor(
-          ayah: ayah,
-          wordIndex: wordIndex0,
-          controller: widget.controller,
-          app: app,
-          colors: c,
-          isAutoScrolling: widget.isAutoScrolling,
-          surah: surah,
-        );
-      } else {
-        textColor = c.text;
-      }
-
-      void handleWordTap() {
-        _lastWordTapTime = DateTime.now();
-        if (widget.isAutoScrolling) return;
-        VerseRow.handleWordTap(
-          context: context,
-          surah: surah,
-          ayah: ayah,
-          wordIndex: wordIndex0,
-          wordText: wordText,
-          controller: widget.controller,
-          isAutoScrolling: widget.isAutoScrolling,
-          onAyahTap: () {
-            if (mounted) setState(() {});
-          },
-        );
-      }
-
-      // Active word focus pill: tuned for optimal contrast against the Ayah ribbon without eye strain
-      final BoxDecoration? wordDecoration = isWordActive
-          ? BoxDecoration(
-              color: c.wordHighlight.withValues(
-                alpha: isDark ? 0.14 : 0.18,
-              ),
-              borderRadius: BorderRadius.circular(6),
-            )
-          : null;
-
-      final int wordWidgetIndex = wordWidgets.length;
-      if (isAyahActive) {
-        highlightStartIndex ??= wordWidgetIndex;
-        highlightEndIndex = wordWidgetIndex;
-      }
-
-      final wordTextWidget = Text(
-        wordText,
-        textDirection: TextDirection.rtl,
-        textScaler: TextScaler.noScaling,
-        style: textColor == c.text
-            ? defaultWordStyle
-            : defaultWordStyle.copyWith(color: textColor),
-      );
-
-      wordWidgets.add(
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (_) {
-            _lastWordTapTime = DateTime.now();
-          },
-          onTap: handleWordTap,
-          child: Container(
-            padding: wordPadding,
-            decoration: wordDecoration,
-            child: wordTextWidget,
-          ),
-        ),
-      );
-      childAyahRefs.add((surah: surah, ayah: ayah));
-
-      // Ayah number marker at the end of the Ayah
-      final bool isLastWordOfAyah = wordIndex1 == words.length ||
-          (i < parsedWords.length - 1 && parsedWords[i + 1].ayah != ayah);
-      if (isLastWordOfAyah) {
-        final int markerWidgetIndex = wordWidgets.length;
-        if (isAyahActive) {
-          highlightStartIndex ??= markerWidgetIndex;
-          highlightEndIndex = markerWidgetIndex;
-        }
+        final wordText = words[wordIndex0];
         wordWidgets.add(
-          _buildAyahMarker(
-            surah: surah,
-            ayah: ayah,
-            fontSize: fontSize,
-            isAyahActive: isAyahActive,
-            c: c,
-            app: app,
+          Padding(
+            padding: wordPadding,
+            child: Text(
+              wordText,
+              textDirection: TextDirection.rtl,
+              textScaler: TextScaler.noScaling,
+              style: defaultWordStyle,
+            ),
           ),
         );
         childAyahRefs.add((surah: surah, ayah: ayah));
+        lineChildren.add(
+          _MushafLineChild.word(
+            surah: surah,
+            ayah: ayah,
+            wordIndex0: wordIndex0,
+            wordText: wordText,
+          ),
+        );
+
+        final bool isLastWordOfAyah = wordIndex1 == words.length ||
+            (i < parsedWords.length - 1 && parsedWords[i + 1].ayah != ayah);
+        if (isLastWordOfAyah) {
+          wordWidgets.add(
+            _buildAyahMarker(
+              surah: surah,
+              ayah: ayah,
+              fontSize: fontSize,
+              isAyahActive: false,
+              c: c,
+              app: app,
+            ),
+          );
+          childAyahRefs.add((surah: surah, ayah: ayah));
+          lineChildren.add(
+            _MushafLineChild.marker(
+              surah: surah,
+              ayah: ayah,
+            ),
+          );
+        }
+      }
+    } else {
+      List<String>? cachedWords;
+      bool cachedIsAyahActive = false;
+      bool cachedIsCompleted = false;
+      int cachedTargetIndex = -1;
+      int cachedSurah = -1;
+      int cachedAyah = -1;
+
+      for (int i = 0; i < parsedWords.length; i++) {
+        final ref = parsedWords[i];
+        final surah = ref.surah;
+        final ayah = ref.ayah;
+        final wordIndex1 = ref.wordIndex1;
+        final wordIndex0 = ref.wordIndex0;
+
+        if (surah != cachedSurah || ayah != cachedAyah) {
+          cachedSurah = surah;
+          cachedAyah = ayah;
+          final ayahKey = '$surah:$ayah';
+          var words = _verseWordsMemoryCache[ayahKey];
+          if (words == null) {
+            final v = widget.controller.repository.getVerse(surah, ayah);
+            if (v != null) {
+              words = v.uthmaniWords;
+              _verseWordsMemoryCache[ayahKey] = words;
+            }
+          }
+          cachedWords = words;
+
+          final int effectiveTargetSurah = widget.controller.targetSurah != 0
+              ? widget.controller.targetSurah
+              : app.lastSurah;
+          final bool isSelected = !widget.isAutoScrolling &&
+              effectiveTargetSurah == surah &&
+              widget.controller.activeAyah.value == ayah;
+          final bool isRecitingActive = !widget.isAutoScrolling &&
+              widget.controller.currentMatchedVerse?.verse.surah == surah &&
+              widget.controller.currentMatchedVerse?.verse.ayah == ayah;
+          final bool isAudioActive = !widget.isAutoScrolling &&
+              VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
+          cachedIsAyahActive = isSelected || isRecitingActive || isAudioActive;
+          cachedTargetIndex = cachedIsAyahActive
+              ? VerseRow.getTargetWordIndex(
+                  surah: surah,
+                  ayah: ayah,
+                  words: cachedWords ?? const [],
+                  controller: widget.controller,
+                  app: app,
+                  isRecording: widget.isRecording,
+                  isActive: true,
+                )
+              : -1;
+          cachedIsCompleted =
+              widget.controller.completedAyahsFor(surah).contains(ayah);
+        }
+
+        final words = cachedWords;
+        if (words == null || wordIndex0 >= words.length) continue;
+
+        final wordText = words[wordIndex0];
+        final bool isAyahActive = cachedIsAyahActive;
+        final int targetIndex = cachedTargetIndex;
+        final bool isWordActive = (targetIndex == wordIndex0);
+
+        final Color textColor;
+        if (widget.isRecording || cachedIsAyahActive || app.isBlurMode || cachedIsCompleted) {
+          textColor = VerseSpanBuilder.resolveWordDisplayColor(
+            ayah: ayah,
+            wordIndex: wordIndex0,
+            controller: widget.controller,
+            app: app,
+            colors: c,
+            isAutoScrolling: widget.isAutoScrolling,
+            surah: surah,
+          );
+        } else {
+          textColor = c.text;
+        }
+
+        // Active word focus pill: tuned for optimal contrast against the Ayah ribbon without eye strain
+        final BoxDecoration? wordDecoration = isWordActive
+            ? BoxDecoration(
+                color: c.wordHighlight.withValues(
+                  alpha: isDark ? 0.14 : 0.18,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              )
+            : null;
+
+        final int wordWidgetIndex = wordWidgets.length;
+        if (isAyahActive) {
+          highlightStartIndex ??= wordWidgetIndex;
+          highlightEndIndex = wordWidgetIndex;
+        }
+
+        final wordTextWidget = Text(
+          wordText,
+          textDirection: TextDirection.rtl,
+          textScaler: TextScaler.noScaling,
+          style: textColor == c.text
+              ? defaultWordStyle
+              : defaultWordStyle.copyWith(color: textColor),
+        );
+
+        wordWidgets.add(
+          wordDecoration == null
+              ? Padding(padding: wordPadding, child: wordTextWidget)
+              : Container(
+                  padding: wordPadding,
+                  decoration: wordDecoration,
+                  child: wordTextWidget,
+                ),
+        );
+        childAyahRefs.add((surah: surah, ayah: ayah));
+        lineChildren.add(
+          _MushafLineChild.word(
+            surah: surah,
+            ayah: ayah,
+            wordIndex0: wordIndex0,
+            wordText: wordText,
+          ),
+        );
+
+        // Ayah number marker at the end of the Ayah
+        final bool isLastWordOfAyah = wordIndex1 == words.length ||
+            (i < parsedWords.length - 1 && parsedWords[i + 1].ayah != ayah);
+        if (isLastWordOfAyah) {
+          final int markerWidgetIndex = wordWidgets.length;
+          if (isAyahActive) {
+            highlightStartIndex ??= markerWidgetIndex;
+            highlightEndIndex = markerWidgetIndex;
+          }
+          wordWidgets.add(
+            _buildAyahMarker(
+              surah: surah,
+              ayah: ayah,
+              fontSize: fontSize,
+              isAyahActive: isAyahActive,
+              c: c,
+              app: app,
+            ),
+          );
+          childAyahRefs.add((surah: surah, ayah: ayah));
+          lineChildren.add(
+            _MushafLineChild.marker(
+              surah: surah,
+              ayah: ayah,
+            ),
+          );
+        }
       }
     }
 
+    final rowKey = _lineKeys[lineIndex < _lineKeys.length ? lineIndex : 0];
+
     void handleLineTap(Offset localPosition) {
       if (widget.isAutoScrolling) return;
-      if (DateTime.now().difference(_lastWordTapTime).inMilliseconds < 350) {
-        return;
+      if (lineChildren.isEmpty) return;
+
+      final renderFlex =
+          rowKey.currentContext?.findRenderObject() as _RenderMushafHighlightFlex?;
+      final int targetIndex;
+      if (renderFlex != null && renderFlex.hasSize) {
+        targetIndex = renderFlex.findClosestChildIndex(localPosition.dx);
+      } else {
+        final double ratio =
+            (1.0 - (localPosition.dx / lineWidth)).clamp(0.0, 1.0);
+        targetIndex = (ratio * lineChildren.length)
+            .floor()
+            .clamp(0, lineChildren.length - 1);
       }
-      if (childAyahRefs.isEmpty) return;
 
-      final double ratio =
-          (1.0 - (localPosition.dx / lineWidth)).clamp(0.0, 1.0);
-      final int targetIndex = (ratio * childAyahRefs.length)
-          .floor()
-          .clamp(0, childAyahRefs.length - 1);
-
-      if (targetIndex >= 0 && targetIndex < childAyahRefs.length) {
-        final target = childAyahRefs[targetIndex];
-        HapticFeedback.lightImpact();
-        VerseRow.selectAyah(
-          surah: target.surah,
-          ayah: target.ayah,
-          controller: widget.controller,
-          onTap: () {
-            if (mounted) setState(() {});
-          },
-        );
-        if (mounted) setState(() {});
+      if (targetIndex >= 0 && targetIndex < lineChildren.length) {
+        final child = lineChildren[targetIndex];
+        if (child.isMarker) {
+          app.markMushafAudioAyahClicked();
+          VerseRow.toggleAyahAudio(
+            surah: child.surah,
+            ayah: child.ayah,
+            controller: widget.controller,
+            isRecording: widget.isRecording,
+            onTap: () {
+              if (mounted) setState(() {});
+            },
+          );
+        } else {
+          VerseRow.handleWordTap(
+            context: context,
+            surah: child.surah,
+            ayah: child.ayah,
+            wordIndex: child.wordIndex0,
+            wordText: child.wordText,
+            controller: widget.controller,
+            isAutoScrolling: widget.isAutoScrolling,
+            onAyahTap: () {
+              if (mounted) setState(() {});
+            },
+          );
+        }
       }
     }
 
@@ -1586,6 +1766,7 @@ class _MushafPageState extends State<_MushafPage>
             behavior: HitTestBehavior.opaque,
             onTapUp: (details) => handleLineTap(details.localPosition),
             child: _MushafHighlightRow(
+              key: rowKey,
               mainAxisSize: MainAxisSize.min,
               textDirection: TextDirection.rtl,
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -1610,6 +1791,7 @@ class _MushafPageState extends State<_MushafPage>
         ),
       ),
     );
+
   }
 
   /// Modern Flat Surah Header Banner (من غير زخرفة):
@@ -1644,9 +1826,6 @@ class _MushafPageState extends State<_MushafPage>
       height: lineHeight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: (_) {
-          _lastWordTapTime = DateTime.now();
-        },
         onTap: () {
           HapticFeedback.lightImpact();
           VerseRow.selectAyah(
@@ -1721,8 +1900,10 @@ class _MushafPageState extends State<_MushafPage>
     required AppState app,
   }) {
     final bool isDark = app.isDarkMode;
-    final bool isPlaying = VerseRow.isAyahAudioPlaying(surah, ayah);
-    final bool isBuffering = VerseRow.isAyahAudioBuffering(surah, ayah);
+    final bool isPlaying =
+        isAyahActive && VerseRow.isAyahAudioPlaying(surah, ayah);
+    final bool isBuffering =
+        isAyahActive && VerseRow.isAyahAudioBuffering(surah, ayah);
 
     // Standard uniform 1:1 box size across all ayahs on the page (matches line height proportions)
     final double maxBox = math.max(14.0, fontSize * 1.02);
@@ -1789,16 +1970,68 @@ class _MushafPageState extends State<_MushafPage>
     final bool isHafs = markerFont.toLowerCase().contains('hafs');
     final double verticalOffset = isHafs ? -2.0 : -0.4;
 
+    final boxDecoration = widget.showAyahMarkerCircle
+        ? BoxDecoration(
+            color: (isPlaying || isBuffering)
+                ? boxBgColor
+                : (widget.ayahMarkerBorderColor != null ? null : boxBgColor),
+            borderRadius: BorderRadius.circular(
+                boxSize * 0.28), // Sleek flat squircle
+            border: Border.all(
+              color: effectiveBorder,
+              width: widget.ayahMarkerBorderWidth > 0
+                  ? widget.ayahMarkerBorderWidth
+                  : 1.0,
+            ),
+          )
+        : null;
+
+    final staticContent = Transform.translate(
+      key: ValueKey('ayah_$ayah'),
+      offset: Offset(0, verticalOffset),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Text(
+          VerseRow.toArabicDigits(ayah),
+          textDirection: TextDirection.rtl,
+          textScaler: TextScaler.noScaling,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: markerFont,
+            fontSize: numFontSize,
+            letterSpacing: letterSpacing,
+            color: effectiveText,
+            fontWeight: FontWeight.w700,
+            height: 1.0,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+      ),
+    );
+
+    // Fast static path for idle markers (avoids allocating animation controllers/tickers)
+    if (!isPlaying && !isBuffering) {
+      return Semantics(
+        button: true,
+        label: 'تشغيل التلاوة',
+        child: Container(
+          width: widget.showAyahMarkerCircle ? boxSize : null,
+          height: widget.showAyahMarkerCircle ? boxSize : null,
+          margin: const EdgeInsets.symmetric(horizontal: 2.0),
+          alignment: Alignment.center,
+          decoration: boxDecoration,
+          child: staticContent,
+        ),
+      );
+    }
+
     return Semantics(
       button: true,
       label: isPlaying ? 'إيقاف مؤقت' : 'تشغيل التلاوة',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: (_) {
-          _lastWordTapTime = DateTime.now();
-        },
         onTap: () {
-          _lastWordTapTime = DateTime.now();
           if (widget.isAutoScrolling) return;
           app.markMushafAudioAyahClicked();
           VerseRow.toggleAyahAudio(
@@ -1818,21 +2051,7 @@ class _MushafPageState extends State<_MushafPage>
           height: widget.showAyahMarkerCircle ? boxSize : null,
           margin: const EdgeInsets.symmetric(horizontal: 2.0),
           alignment: Alignment.center,
-          decoration: widget.showAyahMarkerCircle
-              ? BoxDecoration(
-                  color: (isPlaying || isBuffering)
-                      ? boxBgColor
-                      : (widget.ayahMarkerBorderColor != null ? null : boxBgColor),
-                  borderRadius: BorderRadius.circular(
-                      boxSize * 0.28), // Sleek flat squircle
-                  border: Border.all(
-                    color: effectiveBorder,
-                    width: widget.ayahMarkerBorderWidth > 0
-                        ? widget.ayahMarkerBorderWidth
-                        : 1.0,
-                  ),
-                )
-              : null,
+          decoration: boxDecoration,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 150),
             transitionBuilder: (child, anim) => FadeTransition(
@@ -1856,33 +2075,12 @@ class _MushafPageState extends State<_MushafPage>
                         size: (boxSize * 0.54).clamp(11.0, 14.5),
                         color: c.primary,
                       )
-                    : Transform.translate(
-                        key: ValueKey('ayah_$ayah'),
-                        offset: Offset(0, verticalOffset),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.center,
-                          child: Text(
-                            VerseRow.toArabicDigits(ayah),
-                            textDirection: TextDirection.rtl,
-                            textScaler: TextScaler.noScaling,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: markerFont,
-                              fontSize: numFontSize,
-                              letterSpacing: letterSpacing,
-                              color: effectiveText,
-                              fontWeight: FontWeight.w700,
-                              height: 1.0,
-                              leadingDistribution: TextLeadingDistribution.even,
-                            ),
-                          ),
-                        ),
-                      ),
+                    : staticContent,
           ),
         ),
       ),
     );
+
   }
 
   Widget _buildBottomPageNumber(int pageNumber, ThemeColors c, AppState app) {
@@ -1911,6 +2109,7 @@ class _MushafHighlightRow extends Flex {
   final Color? highlightBorderColor;
 
   const _MushafHighlightRow({
+    super.key,
     required super.children,
     super.mainAxisAlignment = MainAxisAlignment.spaceBetween,
     super.crossAxisAlignment = CrossAxisAlignment.center,

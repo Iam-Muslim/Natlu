@@ -27,8 +27,12 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "isPlayStoreInstalled") {
-                val isInstalled = isPackageInstalled("com.android.vending")
-                result.success(isInstalled)
+                Thread {
+                    val isInstalled = isPackageInstalled("com.android.vending")
+                    runOnUiThread {
+                        result.success(isInstalled)
+                    }
+                }.start()
             } else {
                 result.notImplemented()
             }

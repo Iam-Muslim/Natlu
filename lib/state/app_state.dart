@@ -125,8 +125,12 @@ class AppState extends ChangeNotifier {
 
   bool isBlurMode = false;
 
+  /// Dedicated notifier for blur mode changes (allows scoped listening without global ChangeNotifier).
+  final ValueNotifier<bool> blurModeNotifier = ValueNotifier<bool>(false);
+
   void toggleBlurMode() async {
     isBlurMode = !isBlurMode;
+    blurModeNotifier.value = isBlurMode;
     notifyListeners();
     final prefs = await _getPrefs();
     await prefs.setBool('blurMode', isBlurMode);
@@ -623,6 +627,7 @@ class AppState extends ChangeNotifier {
         _theme = brightness == Brightness.dark ? AppTheme.black : AppTheme.white;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
+      blurModeNotifier.value = isBlurMode;
       isMushafMode = prefs.getBool('mushafMode') ?? false;
 
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;

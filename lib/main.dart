@@ -263,7 +263,7 @@ class _OrchestratorState extends State<_Orchestrator> with WidgetsBindingObserve
     // Defer update check by 5s so Play Core native code doesn't compete
     // with XNNPACK/ONNX initialization for memory and IPC resources
     // during the critical startup window.
-    Future.delayed(const Duration(seconds: 5), _checkForUpdates);
+    Future.delayed(const Duration(seconds: 15), _checkForUpdates);
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
