@@ -118,6 +118,9 @@ class Page {
                 text: puaText,
                 isAyahEnd: isAyahEnd,
                 ayahMarkerGlyph: ayahMarkerGlyph,
+                surah: s,
+                ayah: a,
+                wordIndex0: (w1 - 1).clamp(0, 999),
               );
               words.add(parsedWord);
               lastWordFound = parsedWord;

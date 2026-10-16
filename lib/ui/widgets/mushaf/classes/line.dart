@@ -24,12 +24,18 @@ class TextLine extends Line {
   final List<Word> words;
   final String text;
   final String verseRange;
+  final String joinedText;
+  final int markerCount;
 
-  const TextLine({
+  TextLine({
     required this.words,
     this.text = '',
     this.verseRange = '',
-  }) : super('text');
+    String? joinedText,
+    int? markerCount,
+  })  : joinedText = joinedText ?? (words.map((w) => w.text).join(' ')),
+        markerCount = markerCount ?? words.where((w) => w.isAyahEnd).length,
+        super('text');
 }
 
 /// Represents a Basmala line centered between surahs.

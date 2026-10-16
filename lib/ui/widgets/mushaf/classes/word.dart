@@ -6,6 +6,9 @@ class Word {
   final String text;     // Unicode PUA glyph text from aya_ui for HafsSmart font
   final bool isAyahEnd;  // True if this word is the final word of an Ayah
   final String? ayahMarkerGlyph; // Authentic HafsSmart PUA glyph with ayah number inside
+  final int surah;
+  final int ayah;
+  final int wordIndex0;
 
   const Word({
     required this.location,
@@ -13,33 +16,19 @@ class Word {
     required this.text,
     this.isAyahEnd = false,
     this.ayahMarkerGlyph,
+    this.surah = 1,
+    this.ayah = 1,
+    this.wordIndex0 = 0,
   });
 
-  /// Extracts the Surah number from location (e.g. "2:255:1" -> 2)
-  int? getSurahNumber() {
-    final colon = location.indexOf(':');
-    if (colon <= 0) return null;
-    return int.tryParse(location.substring(0, colon));
-  }
+  /// Extracts the Surah number from pre-parsed integer (O(1))
+  int? getSurahNumber() => surah;
 
-  /// Extracts the Verse (Ayah) number from location (e.g. "2:255:1" -> 255)
-  int? getVerseNumber() {
-    final colon1 = location.indexOf(':');
-    if (colon1 <= 0) return null;
-    final colon2 = location.indexOf(':', colon1 + 1);
-    if (colon2 <= colon1) return null;
-    return int.tryParse(location.substring(colon1 + 1, colon2));
-  }
+  /// Extracts the Verse (Ayah) number from pre-parsed integer (O(1))
+  int? getVerseNumber() => ayah;
 
-  /// Extracts the 0-indexed word index for audio/speech tracking (e.g. "2:255:1" -> 0)
-  int getWordIndex0() {
-    final colon1 = location.indexOf(':');
-    if (colon1 <= 0) return 0;
-    final colon2 = location.indexOf(':', colon1 + 1);
-    if (colon2 <= colon1) return 0;
-    final w1 = int.tryParse(location.substring(colon2 + 1)) ?? 1;
-    return (w1 - 1).clamp(0, 999);
-  }
+  /// Extracts the 0-indexed word index from pre-parsed integer (O(1))
+  int getWordIndex0() => wordIndex0;
 }
 
 /// Typed word reference within a Mushaf page for tracking and playback

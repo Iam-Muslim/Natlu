@@ -81,11 +81,7 @@ class PageWidget extends StatefulWidget {
   State<PageWidget> createState() => _PageWidgetState();
 }
 
-class _PageWidgetState extends State<PageWidget>
-    with AutomaticKeepAliveClientMixin<PageWidget> {
-  @override
-  bool get wantKeepAlive => true;
-
+class _PageWidgetState extends State<PageWidget> {
   bool _wasAudioOnThisPage = false;
   bool _wasControllerOnThisPage = false;
 
@@ -216,8 +212,6 @@ class _PageWidgetState extends State<PageWidget>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-
     final provider = MushafProvider.instance;
     final page = provider.getPage(widget.pageNumber);
     final app = AppState.instance;

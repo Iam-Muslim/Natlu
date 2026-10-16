@@ -518,9 +518,7 @@ class _MushafViewState extends State<MushafView> {
                   onPageChanged: (index) {
                     final newPage = index + 1;
                     if (_currentPage == newPage) return;
-                    setState(() {
-                      _currentPage = newPage;
-                    });
+                    _currentPage = newPage;
                     AppState.instance.currentMushafPage.value = newPage;
                     _syncPageSelection(newPage);
                   },

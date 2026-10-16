@@ -9,6 +9,7 @@ import '../classes/line.dart';
 import '../classes/word.dart';
 import 'ayah_marker.dart';
 import 'highlight_row.dart';
+import 'tap_listener.dart';
 
 /// ============================================================================
 /// CRITICAL LAYOUT COMPONENT: [LineWidget]
@@ -142,7 +143,7 @@ class LineWidget extends StatelessWidget {
       width: lineWidth ?? double.infinity,
       height: (lineHeight != null ? (lineHeight! * 0.88) : null),
       child: Center(
-        child: GestureDetector(
+        child: MushafTapListener(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             HapticFeedback.lightImpact();
@@ -277,14 +278,26 @@ class LineWidget extends StatelessWidget {
     // We pass this exact lineScaleFactor to MushafAyahMarker so it can apply:
     // Transform.scale(scale: 1 / lineScaleFactor), locking the marker at 17.0px!
     // --------------------------------------------------------------------------
-    final int markerCount = words.where((w) => w.isAyahEnd).length;
-    final double textNaturalWidth = measureLineTextWidth(words, effectiveFontSize, wordFontFamily);
-    final double markerNaturalWidth = markerCount * 21.0;
-    final double totalNaturalWidth = textNaturalWidth + markerNaturalWidth;
     final double effectiveLineWidth = lineWidth ?? 360.0;
-    final double lineScaleFactor = (totalNaturalWidth > effectiveLineWidth)
-        ? (effectiveLineWidth / totalNaturalWidth).clamp(0.5, 1.0)
-        : 1.0;
+    final int markerCount = textLine.markerCount;
+    final double lineScaleFactor;
+    if (markerCount == 0) {
+      lineScaleFactor = 1.0;
+    } else {
+      final double textNaturalWidth = measureLineTextWidth(
+        words,
+        effectiveFontSize,
+        wordFontFamily,
+        pageNumber: pageNumber,
+        lineIndex: lineIndex,
+        textLine: textLine,
+      );
+      final double markerNaturalWidth = markerCount * 21.0;
+      final double totalNaturalWidth = textNaturalWidth + markerNaturalWidth;
+      lineScaleFactor = (totalNaturalWidth > effectiveLineWidth)
+          ? (effectiveLineWidth / totalNaturalWidth).clamp(0.5, 1.0)
+          : 1.0;
+    }
 
     final bool isDark = app.isDarkMode;
     final List<Widget> wordWidgets = [];
@@ -299,18 +312,22 @@ class LineWidget extends StatelessWidget {
     int cachedTargetIndex = -1;
     bool cachedIsCompleted = false;
 
+    final TextStyle baseWordStyle = TextStyle(
+      fontFamily: wordFontFamily,
+      fontSize: effectiveFontSize,
+      color: colors.text,
+      height: 1.25,
+    );
+
     for (int i = 0; i < words.length; i++) {
       final word = words[i];
-      final int surah = word.getSurahNumber() ?? 1;
-      final int ayah = word.getVerseNumber() ?? 1;
-      final int wordIndex0 = word.getWordIndex0();
+      final int surah = word.surah;
+      final int ayah = word.ayah;
+      final int wordIndex0 = word.wordIndex0;
 
       if (surah != lastCachedSurah || ayah != lastCachedAyah) {
         lastCachedSurah = surah;
         lastCachedAyah = ayah;
-
-        final v = controller.repository.getVerse(surah, ayah);
-        cachedWords = v?.uthmaniWords;
 
         final int effectiveTargetSurah = controller.targetSurah != 0
             ? controller.targetSurah
@@ -325,18 +342,26 @@ class LineWidget extends StatelessWidget {
             VerseRow.isAyahAudioActive(surah: surah, ayah: ayah, app: app);
         cachedIsAyahActive = isSelected || isRecitingActive || isAudioActive;
 
-        cachedTargetIndex = cachedIsAyahActive && cachedWords != null
-            ? VerseRow.getTargetWordIndex(
-                surah: surah,
-                ayah: ayah,
-                words: cachedWords,
-                controller: controller,
-                app: app,
-                isRecording: isRecording,
-                isActive: true,
-              )
-            : -1;
-        cachedIsCompleted = controller.completedAyahsFor(surah).contains(ayah);
+        if (cachedIsAyahActive) {
+          final v = controller.repository.getVerse(surah, ayah);
+          cachedWords = v?.uthmaniWords;
+          cachedTargetIndex = cachedWords != null
+              ? VerseRow.getTargetWordIndex(
+                  surah: surah,
+                  ayah: ayah,
+                  words: cachedWords,
+                  controller: controller,
+                  app: app,
+                  isRecording: isRecording,
+                  isActive: true,
+                )
+              : -1;
+        } else {
+          cachedWords = null;
+          cachedTargetIndex = -1;
+        }
+        cachedIsCompleted = isRecording &&
+            controller.completedAyahsFor(surah).contains(ayah);
       }
 
       final bool isWordActive = (cachedTargetIndex == wordIndex0);
@@ -377,40 +402,48 @@ class LineWidget extends StatelessWidget {
             )
           : null;
 
-      final Widget wordTextWidget = GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (isAutoScrolling) return;
-          VerseRow.handleWordTap(
-            context: context,
-            surah: surah,
-            ayah: ayah,
-            wordIndex: wordIndex0,
-            wordText: word.word,
-            controller: controller,
-            isAutoScrolling: isAutoScrolling,
-            onAyahTap: onAyahSelected,
-            playWordDirectly: true,
-          );
-        },
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: marginHorizontal, vertical: 1.0),
-          decoration: wordDecoration,
-          child: Text(
-            word.text,
-            textDirection: TextDirection.rtl,
-            textScaler: TextScaler.noScaling,
-            style: TextStyle(
-              fontFamily: wordFontFamily,
-              fontSize: effectiveFontSize,
-              color: wordColor,
-              height: 1.25,
-            ),
-          ),
-        ),
+      final TextStyle wordStyle = identical(wordColor, colors.text)
+          ? baseWordStyle
+          : baseWordStyle.copyWith(color: wordColor);
+
+      final Widget textWidget = Text(
+        word.text,
+        textDirection: TextDirection.rtl,
+        textScaler: TextScaler.noScaling,
+        style: wordStyle,
       );
 
-      wordWidgets.add(wordTextWidget);
+      final Widget wordContent = (marginHorizontal > 0 || wordDecoration != null)
+          ? Container(
+              padding: EdgeInsets.symmetric(horizontal: marginHorizontal, vertical: 1.0),
+              decoration: wordDecoration,
+              child: textWidget,
+            )
+          : textWidget;
+
+      // Only attach interactive tap listener if this ayah is already active/selected
+      final Widget wordWidget = cachedIsAyahActive
+          ? MushafTapListener(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (isAutoScrolling) return;
+                VerseRow.handleWordTap(
+                  context: context,
+                  surah: surah,
+                  ayah: ayah,
+                  wordIndex: wordIndex0,
+                  wordText: word.word,
+                  controller: controller,
+                  isAutoScrolling: isAutoScrolling,
+                  onAyahTap: onAyahSelected,
+                  playWordDirectly: true,
+                );
+              },
+              child: wordContent,
+            )
+          : wordContent;
+
+      wordWidgets.add(wordWidget);
 
       // Append interactive squircle Ayah Marker if this word is the end of an Ayah
       if (word.isAyahEnd) {
@@ -486,12 +519,14 @@ class LineWidget extends StatelessWidget {
         children: [
           // Background hit area for empty spaces between words and between lines
           Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) {
+            child: MushafTapListener(
+              behavior: HitTestBehavior.translucent,
+              checkRecentlyTapped: true,
+              onTapUp: (localPos) {
                 if (isAutoScrolling) return;
-                _handleLineTap(details.localPosition.dx, effectiveLineWidth, words);
+                _handleLineTap(localPos.dx, effectiveLineWidth, words);
               },
+              child: const SizedBox.expand(),
             ),
           ),
           // Foreground text and markers
@@ -521,12 +556,11 @@ class LineWidget extends StatelessWidget {
   ) {
     if (words.isEmpty) return;
 
-    final firstSurah = words.first.getSurahNumber() ?? 1;
-    final firstAyah = words.first.getVerseNumber() ?? 1;
+    final firstSurah = words.first.surah;
+    final firstAyah = words.first.ayah;
     bool allSameAyah = true;
     for (int i = 1; i < words.length; i++) {
-      if (words[i].getSurahNumber() != firstSurah ||
-          words[i].getVerseNumber() != firstAyah) {
+      if (words[i].surah != firstSurah || words[i].ayah != firstAyah) {
         allSameAyah = false;
         break;
       }
@@ -541,11 +575,13 @@ class LineWidget extends StatelessWidget {
     } else {
       // In RTL layout: tapX == totalWidth is right (words[0]), tapX == 0 is left (words.last)
       final double clampedWidth = totalWidth > 0 ? totalWidth : 360.0;
-      final double ratioFromRight = ((clampedWidth - tapX) / clampedWidth).clamp(0.0, 1.0);
-      final int wordIndex = (ratioFromRight * words.length).floor().clamp(0, words.length - 1);
+      final double ratioFromRight =
+          ((clampedWidth - tapX) / clampedWidth).clamp(0.0, 1.0);
+      final int wordIndex =
+          (ratioFromRight * words.length).floor().clamp(0, words.length - 1);
       final selectedWord = words[wordIndex];
-      targetSurah = selectedWord.getSurahNumber() ?? firstSurah;
-      targetAyah = selectedWord.getVerseNumber() ?? firstAyah;
+      targetSurah = selectedWord.surah;
+      targetAyah = selectedWord.ayah;
     }
 
     HapticFeedback.lightImpact();
@@ -570,28 +606,30 @@ class LineWidget extends StatelessWidget {
   static double measureLineTextWidth(
     List<Word> words,
     double fontSize,
-    String fontFamily,
-  ) {
+    String fontFamily, {
+    int? pageNumber,
+    int? lineIndex,
+    TextLine? textLine,
+  }) {
     if (words.isEmpty) return 0.0;
 
-    final int cacheKey = Object.hash(
-      words.length,
-      words.first.text,
-      words.last.text,
-      (fontSize * 10).round(),
-      fontFamily,
-    );
+    final int cacheKey = (pageNumber != null && lineIndex != null)
+        ? ((pageNumber * 100 + lineIndex) * 1000 + (fontSize * 10).round())
+        : Object.hash(
+            words.length,
+            words.first.text,
+            words.last.text,
+            (fontSize * 10).round(),
+            fontFamily,
+          );
     final cached = _lineWidthCache[cacheKey];
     if (cached != null) return cached;
 
-    final StringBuffer sb = StringBuffer();
-    for (int i = 0; i < words.length; i++) {
-      if (i > 0) sb.write(' ');
-      sb.write(words[i].text);
-    }
+    final String textToMeasure =
+        textLine?.joinedText ?? words.map((w) => w.text).join(' ');
     final TextPainter tp = TextPainter(
       text: TextSpan(
-        text: sb.toString(),
+        text: textToMeasure,
         style: TextStyle(
           fontFamily: fontFamily,
           fontSize: fontSize,

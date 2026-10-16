@@ -3,6 +3,7 @@ import 'package:recite_quran/recite_quran.dart';
 
 import '../../../../state/app_state.dart';
 import '../../verse_row.dart';
+import 'tap_listener.dart';
 
 /// ============================================================================
 /// CRITICAL LAYOUT COMPONENT: [MushafAyahMarker]
@@ -188,7 +189,7 @@ class MushafAyahMarker extends StatelessWidget {
       mainWidget = Semantics(
         button: true,
         label: 'تشغيل التلاوة',
-        child: GestureDetector(
+        child: MushafTapListener(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             if (isAutoScrolling) return;
@@ -215,7 +216,7 @@ class MushafAyahMarker extends StatelessWidget {
       mainWidget = Semantics(
         button: true,
         label: isPlaying ? 'إيقاف مؤقت' : 'تشغيل التلاوة',
-        child: GestureDetector(
+        child: MushafTapListener(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             if (isAutoScrolling) return;
