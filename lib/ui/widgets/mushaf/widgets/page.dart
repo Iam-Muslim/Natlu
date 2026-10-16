@@ -9,37 +9,53 @@ import 'line.dart';
 /// ============================================================================
 /// CRITICAL LAYOUT ENGINE: [PageWidget]
 /// ============================================================================
-/// ARCHITECTURAL RULES & INVARIANTS — DO NOT ALTER WITHOUT READING:
+/// ARCHITECTURAL RULES & PERMANENT INVARIANTS — DO NOT ALTER UNDER ANY CIRCUMSTANCES:
 ///
-/// 1. UNIFIED 15-SLOT MEDINA GRID & SURAH BANNER ALIGNMENT (PAGES 3..604):
-///    - Standard Medina Mushaf pages strictly follow a 15-line grid.
-///    - Container height is unified to `linesContainerHeight = lineSlotHeight * 15`.
-///    - In pages where BasmalaLine is embedded into the Surah header banner (14 visible lines),
-///      the banner and text lines occupy Slots 0..13, and a trailing Spacer(flex: 1) absorbs
-///      the bottom slot.
-///    - This guarantees that Slot 0 (the Surah banner) starts at the EXACT same horizontal baseline
-///      as Slot 0 (first Ayah) of adjacent pages, and stretches up in complete lockstep!
+/// 1. UNIFIED 15-SLOT MEDINA GRID & ZERO DRIFT (PAGES 3..604):
+///    - Standard King Fahd Medina Mushaf pages are mathematically fixed to a 15-line grid.
+///    - Container height is strictly: `linesContainerHeight = lineSlotHeight * 15`.
+///    - `lineSlotHeight = (maxHeight / 15).clamp(30.0, 40.0)`.
+///    - DO NOT calculate container height using `visibleCount * 40.0`! In pages with a
+///      Surah banner (where BasmalaLine is embedded into the banner), visibleCount is 14.
+///      Calculating 14 * 40.0 = 560px causes that page's container to be 40px shorter than
+///      adjacent 15-line pages (600px). The vertical Center widget then pushes the banner page
+///      down by 20px, destroying horizontal alignment across pages and lagging during stretching!
+///    - With `lineSlotHeight * 15`, every page has the EXACT same container height and
+///      stretches up and down in complete horizontal lockstep.
 ///
-/// 2. BISMILLAH EMBEDDED IN SURAH HEADER (NO STANDALONE BASMALA LINE):
+/// 2. NO TRAILING SPACES ON REGULAR PAGES (NO PREMATURE PAGE ENDING):
+///    - For regular pages (3..603), children expand down 100% across `linesContainerHeight`.
+///    - DO NOT add `Spacer(flex: 15 - flexCount)` on pages 3..603! Adding a trailing spacer
+///      forces text to stop at line 14, creating an empty void at line 15 ("page ends early").
+///    - Expanding the 14 lines across `linesContainerHeight` ensures Slot 0 starts at Y = 0
+///      (same as adjacent pages) and the last line touches Y = linesContainerHeight (same as adjacent pages).
+///
+/// 3. DISPLAY CLEARANCE & ANDROID BEZEL SAFETY (`maxWidth - 36.0`):
+///    - `lineWidth` is strictly `(maxWidth - 36.0).clamp(240.0, maxWidth)`.
+///    - Provides an exact 18.0px margin on each side (right and left).
+///    - Prevents Quranic words, letters, and ayah markers from colliding with curved glass edges,
+///      rounded display cutouts, or black AMOLED bezels on Android devices.
+///
+/// 4. REAL-TIME RECITATION WORD HIGHLIGHTING & COLORING:
+///    - [_onControllerUpdate] listens to `widget.controller` during recording.
+///    - Uses `_pageContainsAyah` to ensure ONLY the currently recited page rebuilds (0 CPU cost
+///      for the other 603 pages).
+///    - Updates word colors (green/yellow) and moves the active focus box word-by-word with the voice
+///      in real time (NEVER waits for ayah completion or recording stop).
+///
+/// 5. BISMILLAH EMBEDDED IN SURAH HEADER (NO STANDALONE BASMALA LINE):
 ///    - [BasmalaLine] is deliberately SKIPPED in `flexChildren` (`if (line is BasmalaLine) continue;`).
-///    - Bismillah is embedded directly inside the Surah banner on the left (RTL end).
-///    - DO NOT render a standalone BasmalaLine or allocate a flex slot for it, as this
-///      would duplicate Bismillah and steal vertical height from text lines.
+///    - Bismillah is embedded directly inside the Surah banner on the left (RTL end) in HafsSmart font.
+///    - DO NOT render a standalone BasmalaLine or allocate a flex slot for it.
 ///
-/// 3. DISPLAY CLEARANCE & BEZEL SAFETY (`maxWidth - 36.0`):
-///    - `lineWidth` is set to `(maxWidth - 36.0)` providing 18.0px horizontal clearance on each side.
-///    - Prevents text and Ayah markers from colliding with curved glass edges, black bezels,
-///      or screen margins on Android displays.
+/// 6. BOTTOM-LEFT PAGE NUMBER SEPARATION:
+///    - The page number label is rendered by the outer [MushafView] Stack outside PageWidget.
+///    - DO NOT embed the page number inside [PageWidget]'s column so it never steals line height.
 ///
-/// 4. BOTTOM-LEFT PAGE NUMBER SEPARATION:
-///    - The bottom page number label is rendered by the outer [MushafView] Stack
-///      outside the page's layout constraints.
-///    - DO NOT embed the page number inside [PageWidget]'s column, as that would steal
-///      vertical height from the 15 Quranic lines.
-///
-/// 5. SPECIAL CENTERING FOR PAGES 1 & 2:
+/// 7. SPECIAL CENTERING FOR PAGES 1, 2, AND 604:
 ///    - Pages 1 (Al-Fatiha) and 2 (Al-Baqarah 1-5) have fewer lines and use symmetric
 ///      top & bottom Spacers for Quranic decorative centering.
+///    - Page 604 (Surah Al-Ikhlas, Al-Falaq, An-Nas) uses a trailing Spacer if flexCount < 15.
 /// ============================================================================
 class PageWidget extends StatefulWidget {
   final int pageNumber;
@@ -219,7 +235,7 @@ class _PageWidgetState extends State<PageWidget>
         final allLines = page.lines;
 
         // ======================================================================
-        // ARCHITECTURAL INVARIANT: UNIFIED 15-SLOT MEDINA GRID & VERTICAL ALIGNMENT
+        // ARCHITECTURAL INVARIANT: UNIFIED 15-SLOT MEDINA GRID & ZERO DRIFT
         // ======================================================================
         // In the Medina Mushaf, the page layout is strictly a 15-line grid.
         // To guarantee that the top line (whether a Surah banner or first Ayah)
@@ -231,12 +247,10 @@ class _PageWidgetState extends State<PageWidget>
         //    lineSlotHeight = (maxHeight / 15).clamp(30.0, 40.0)
         //    linesContainerHeight = lineSlotHeight * 15
         //
-        // 2. In pages where BasmalaLine is embedded into the Surah header banner
-        //    (resulting in 14 flexChildren), children occupy Slots 0..13, and a
-        //    trailing Spacer(flex: 15 - flexCount) absorbs the bottom slot.
-        //    This locks Slot 0, Slot 1, ... to identical vertical coordinates across
-        //    all pages, so the Surah banner is at the EXACT same horizontal level
-        //    as the first ayah of the next page!
+        // 2. Both 15-line pages and 14-line pages (with embedded Basmala) have
+        //    the IDENTICAL container height (linesContainerHeight).
+        //    Therefore, Center() centers both pages with the exact same vertical offset,
+        //    locking Slot 0 on ALL pages to the exact same Y coordinate.
         // ======================================================================
         const double maxComfortableSlotHeight = 40.0;
         final double lineSlotHeight =
