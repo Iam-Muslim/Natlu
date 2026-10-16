@@ -99,6 +99,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.addListener(_onControllerUpdate);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     AppState.instance.activeAudioAyah.addListener(_onActiveAudioAyahChanged);
+    AppState.instance.activeAudioSurah.addListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.addListener(_onActiveAudioAyahChanged);
 
     // Warm up Surah timings and Ayah 1 audio in memory/disk in the background for zero-latency instant play
@@ -141,6 +142,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     _syncScreenWakeLock();
     final isPlaying = AppState.instance.isAudioPlaying.value;
     final ayah = AppState.instance.activeAudioAyah.value;
+    final int? audioSurah = AppState.instance.activeAudioSurah.value;
 
     // Never auto-scroll when a single word is tapped by the user
     if (QuranAudioService.instance.isSingleWordMode) {
@@ -150,10 +152,18 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     if (isPlaying && ayah != null && !_isAutoScrolling) {
       _wasAudioPlaying = true;
-      AppState.instance.saveLastPosition(widget.controller.targetSurah, ayah);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      final int targetSurah = audioSurah ?? widget.controller.targetSurah;
+      AppState.instance.saveLastPosition(targetSurah, ayah);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
-          widget.controller.setManualAyah(widget.controller.targetSurah, ayah);
+          if (widget.controller.targetSurah != targetSurah) {
+            await widget.controller.setTargetSurah(
+              targetSurah,
+              preserveOtherSurahStates: true,
+              clearTargetSurah: false,
+            );
+          }
+          widget.controller.setManualAyah(targetSurah, ayah);
           _lastAyah = ayah;
           _ensureAyahVisibleSmart(ayah);
         }
@@ -202,6 +212,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     widget.controller.removeListener(_onControllerUpdate);
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
     AppState.instance.activeAudioAyah.removeListener(_onActiveAudioAyahChanged);
+    AppState.instance.activeAudioSurah.removeListener(_onActiveAudioAyahChanged);
     AppState.instance.isAudioPlaying.removeListener(_onActiveAudioAyahChanged);
     _autoScrollTicker?.dispose();
     _autoScrollTicker = null;
@@ -770,11 +781,17 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isLoadingEngine: widget.isLoadingEngine,
                       isAutoScrolling: _isAutoScrolling,
                       c: c,
-                      onMic: () {
+                      onMic: () async {
                         app.dismissBanner();
                         if (widget.isVoiceSearching) {
                           widget.onVoiceSearchToggle();
                         } else {
+                          if (app.isMushafMode && !widget.isRecording) {
+                            await MushafView.ensureActiveAyahOnCurrentPage(
+                              controller: widget.controller,
+                              pageNumber: app.currentMushafPage.value,
+                            );
+                          }
                           widget.onToggleRecord();
                         }
                       },

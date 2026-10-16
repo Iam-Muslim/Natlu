@@ -190,7 +190,9 @@ class MushafProvider {
     }
     final page = pageNumber ?? AppState.instance.currentMushafPage.value;
     final int? activeAyah = controller.activeAyah.value;
-    final int targetSurah = controller.targetSurah;
+    final int targetSurah = controller.targetSurah != 0
+        ? controller.targetSurah
+        : AppState.instance.lastSurah;
 
     final bool isOnCurrentPage = activeAyah != null &&
         isAyahOnPage(pageNumber: page, surah: targetSurah, ayah: activeAyah);
@@ -207,7 +209,14 @@ class MushafProvider {
               clearTargetSurah: false,
             );
           }
+          // If activeAyah.value is already equal to first.$2 (e.g. 1 == 1),
+          // ValueNotifier setter will not notify listeners because oldValue == newValue.
+          // Setting it to null first guarantees all listeners are notified of the new page's first ayah!
+          if (controller.activeAyah.value == first.$2) {
+            controller.activeAyah.value = null;
+          }
           controller.setManualAyah(first.$1, first.$2);
+          controller.globalRevision.value++;
           AppState.instance.saveLastPosition(first.$1, first.$2);
         } finally {
           isSyncingSurah = false;

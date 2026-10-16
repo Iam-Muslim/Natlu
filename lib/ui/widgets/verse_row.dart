@@ -199,14 +199,14 @@ class VerseRow extends StatefulWidget {
   }
 
   /// Toggles Ayah audio playback with buffering debounce and haptic feedback.
-  static void toggleAyahAudio({
+  static Future<void> toggleAyahAudio({
     required int surah,
     required int ayah,
     required HighlightingController controller,
     required bool isRecording,
     VoidCallback? onTap,
     VoidCallback? onExplicitToggle,
-  }) {
+  }) async {
     if (AppState.instance.isAudioBuffering.value &&
         AppState.instance.activeAudioSurah.value == surah &&
         AppState.instance.activeAudioAyah.value == ayah) {
@@ -214,7 +214,11 @@ class VerseRow extends StatefulWidget {
     }
     HapticFeedback.selectionClick();
     if (controller.targetSurah != surah) {
-      controller.setTargetSurah(surah, preserveOtherSurahStates: true);
+      await controller.setTargetSurah(
+        surah,
+        preserveOtherSurahStates: true,
+        clearTargetSurah: false,
+      );
     }
     controller.setManualAyah(surah, ayah);
     AppState.instance.saveLastPosition(surah, ayah);

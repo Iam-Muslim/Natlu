@@ -11,13 +11,14 @@ import 'line.dart';
 /// ============================================================================
 /// ARCHITECTURAL RULES & INVARIANTS — DO NOT ALTER WITHOUT READING:
 ///
-/// 1. 100% CONTAINER HEIGHT & NO TRAILING VOID (PAGES 3..603):
-///    - Regular Quran pages MUST stretch down 100% across the container height.
-///    - DO NOT add `Spacer()` or empty bottom padding to pages 3..603!
-///    - In earlier versions, reserving space or adding trailing Spacers forced the 15 lines
-///      to compress vertically, which drastically shranked dense lines.
-///    - Using `Expanded` for each visible line across `linesContainerHeight = maxHeight`
-///      gives each line maximum vertical height, so smaller lines dynamically become larger.
+/// 1. UNIFIED 15-SLOT MEDINA GRID & SURAH BANNER ALIGNMENT (PAGES 3..604):
+///    - Standard Medina Mushaf pages strictly follow a 15-line grid.
+///    - Container height is unified to `linesContainerHeight = lineSlotHeight * 15`.
+///    - In pages where BasmalaLine is embedded into the Surah header banner (14 visible lines),
+///      the banner and text lines occupy Slots 0..13, and a trailing Spacer(flex: 1) absorbs
+///      the bottom slot.
+///    - This guarantees that Slot 0 (the Surah banner) starts at the EXACT same horizontal baseline
+///      as Slot 0 (first Ayah) of adjacent pages, and stretches up in complete lockstep!
 ///
 /// 2. BISMILLAH EMBEDDED IN SURAH HEADER (NO STANDALONE BASMALA LINE):
 ///    - [BasmalaLine] is deliberately SKIPPED in `flexChildren` (`if (line is BasmalaLine) continue;`).
@@ -25,10 +26,10 @@ import 'line.dart';
 ///    - DO NOT render a standalone BasmalaLine or allocate a flex slot for it, as this
 ///      would duplicate Bismillah and steal vertical height from text lines.
 ///
-/// 3. EDGE-TO-EDGE HORIZONTAL WIDTH (`maxWidth - 6.0`):
-///    - `lineWidth` is set to `maxWidth - 6.0` to stretch edge-to-edge from right to left.
-///    - DO NOT shrink `lineWidth` (e.g. subtracting 20px or 32px), as this causes `FittedBox`
-///      in [LineWidget] to unnecessarily scale down lines.
+/// 3. DISPLAY CLEARANCE & BEZEL SAFETY (`maxWidth - 36.0`):
+///    - `lineWidth` is set to `(maxWidth - 36.0)` providing 18.0px horizontal clearance on each side.
+///    - Prevents text and Ayah markers from colliding with curved glass edges, black bezels,
+///      or screen margins on Android displays.
 ///
 /// 4. BOTTOM-LEFT PAGE NUMBER SEPARATION:
 ///    - The bottom page number label is rendered by the outer [MushafView] Stack
@@ -36,10 +37,9 @@ import 'line.dart';
 ///    - DO NOT embed the page number inside [PageWidget]'s column, as that would steal
 ///      vertical height from the 15 Quranic lines.
 ///
-/// 5. SPECIAL CENTERING FOR PAGES 1, 2, AND 604:
+/// 5. SPECIAL CENTERING FOR PAGES 1 & 2:
 ///    - Pages 1 (Al-Fatiha) and 2 (Al-Baqarah 1-5) have fewer lines and use symmetric
 ///      top & bottom Spacers for Quranic decorative centering.
-///    - Page 604 (Surah Al-Ikhlas, Al-Falaq, An-Nas) uses a trailing Spacer if flexCount < 15.
 /// ============================================================================
 class PageWidget extends StatefulWidget {
   final int pageNumber;
@@ -85,8 +85,14 @@ class _PageWidgetState extends State<PageWidget>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.activeAyah.removeListener(_onControllerAyahChanged);
       oldWidget.controller.globalRevision.removeListener(_onVisualStateChanged);
+      oldWidget.controller.removeListener(_onControllerUpdate);
       widget.controller.activeAyah.addListener(_onControllerAyahChanged);
       widget.controller.globalRevision.addListener(_onVisualStateChanged);
+      widget.controller.addListener(_onControllerUpdate);
+    }
+    if (oldWidget.isRecording != widget.isRecording ||
+        oldWidget.isAutoScrolling != widget.isAutoScrolling) {
+      setState(() {});
     }
   }
 
@@ -106,6 +112,7 @@ class _PageWidgetState extends State<PageWidget>
     app.blurModeNotifier.addListener(_onVisualStateChanged);
     widget.controller.activeAyah.addListener(_onControllerAyahChanged);
     widget.controller.globalRevision.addListener(_onVisualStateChanged);
+    widget.controller.addListener(_onControllerUpdate);
   }
 
   void _detachListeners() {
@@ -118,6 +125,7 @@ class _PageWidgetState extends State<PageWidget>
     app.blurModeNotifier.removeListener(_onVisualStateChanged);
     widget.controller.activeAyah.removeListener(_onControllerAyahChanged);
     widget.controller.globalRevision.removeListener(_onVisualStateChanged);
+    widget.controller.removeListener(_onControllerUpdate);
   }
 
   bool _pageContainsAyah(int? surah, int? ayah) {
@@ -125,6 +133,22 @@ class _PageWidgetState extends State<PageWidget>
     final provider = MushafProvider.instance;
     final page = provider.getPage(widget.pageNumber);
     return page?.ayahKeys.contains('$surah:$ayah') ?? false;
+  }
+
+  void _onControllerUpdate() {
+    if (!mounted) return;
+    if (!widget.isRecording) return;
+    final currentMatched = widget.controller.currentMatchedVerse?.verse;
+    final int surah = currentMatched?.surah ??
+        (widget.controller.targetSurah != 0
+            ? widget.controller.targetSurah
+            : AppState.instance.lastSurah);
+    final int? ayah = currentMatched?.ayah ?? widget.controller.activeAyah.value;
+    final bool isNowOnThisPage = _pageContainsAyah(surah, ayah);
+    if (isNowOnThisPage || _wasControllerOnThisPage) {
+      _wasControllerOnThisPage = isNowOnThisPage;
+      setState(() {});
+    }
   }
 
   void _onAudioWordChanged() {
@@ -192,29 +216,44 @@ class _PageWidgetState extends State<PageWidget>
         final double maxWidth = constraints.maxWidth;
         final double maxHeight = constraints.maxHeight;
 
-        // CRITICAL INVARIANT: 100% of maxHeight is allocated to lines.
-        // Zero reserved bottom space: 15 lines use 100% of maxHeight touching the bottom boundary.
-        // DO NOT subtract bottom dock height here; clearance is already handled in MushafView.
-        final double linesContainerHeight = maxHeight;
-
-        // CRITICAL INVARIANT: Edge-to-edge line width from right to left (maxWidth - 6.0).
-        // DO NOT add large horizontal padding here; text needs full width to avoid FittedBox down-scaling.
-        final double lineWidth = maxWidth - 6.0;
-
         final allLines = page.lines;
 
-        // Count visible lines (excluding skipped BasmalaLine)
-        int visibleCount = 0;
-        for (final l in allLines) {
-          if (l is! BasmalaLine) visibleCount++;
-        }
-        if (visibleCount == 0) visibleCount = 15;
+        // ======================================================================
+        // ARCHITECTURAL INVARIANT: UNIFIED 15-SLOT MEDINA GRID & VERTICAL ALIGNMENT
+        // ======================================================================
+        // In the Medina Mushaf, the page layout is strictly a 15-line grid.
+        // To guarantee that the top line (whether a Surah banner or first Ayah)
+        // is at the EXACT same horizontal baseline across adjacent pages, and to
+        // ensure that when stretching during recording the banner moves UP in lockstep
+        // with pages having no banner (never lagging or positioned down):
+        //
+        // 1. All regular pages (3..604) use a unified 15-slot grid height:
+        //    lineSlotHeight = (maxHeight / 15).clamp(30.0, 40.0)
+        //    linesContainerHeight = lineSlotHeight * 15
+        //
+        // 2. In pages where BasmalaLine is embedded into the Surah header banner
+        //    (resulting in 14 flexChildren), children occupy Slots 0..13, and a
+        //    trailing Spacer(flex: 15 - flexCount) absorbs the bottom slot.
+        //    This locks Slot 0, Slot 1, ... to identical vertical coordinates across
+        //    all pages, so the Surah banner is at the EXACT same horizontal level
+        //    as the first ayah of the next page!
+        // ======================================================================
+        const double maxComfortableSlotHeight = 40.0;
+        final double lineSlotHeight =
+            (maxHeight / 15).clamp(30.0, maxComfortableSlotHeight);
+        final double linesContainerHeight = lineSlotHeight * 15;
 
-        // Dynamic slot height based on visible lines stretched across full container height
-        final double lineSlotHeight = linesContainerHeight / visibleCount;
+        // ======================================================================
+        // ARCHITECTURAL INVARIANT: ANDROID BEZEL & DISPLAY LINE CLEARANCE
+        // ======================================================================
+        // Mobile screens (especially Android AMOLED displays) have thin black
+        // bezel borders and curved edge lines. We provide 18.0px margin on each
+        // side (maxWidth - 36.0) so Quranic text never touches or clips the edge!
+        // ======================================================================
+        final double lineWidth = (maxWidth - 36.0).clamp(240.0, maxWidth);
 
-        // Calibrated base font size: 17.5 to 19.0 based on screen width
-        final double baseFontSize = ((lineWidth - 10.0) / 18.5).clamp(17.5, 19.0);
+        // Calibrated base font size: 17.2 to 18.8 based on screen width
+        final double baseFontSize = ((lineWidth - 10.0) / 18.5).clamp(17.2, 18.8);
 
         final List<Widget> flexChildren = [];
         int flexCount = 0;
@@ -274,7 +313,8 @@ class _PageWidgetState extends State<PageWidget>
         } else {
           // CRITICAL INVARIANT: All regular pages (3..603):
           // Lines stretch down 100% touching the bottom boundary with NO trailing Spacer!
-          // NEVER add a Spacer or empty void here!
+          // Every page starts at the exact same top horizontal line (Y=0) and reaches the
+          // exact same bottom horizontal line (Y=linesContainerHeight) with no page ending early!
           columnChildren.addAll(flexChildren);
         }
 

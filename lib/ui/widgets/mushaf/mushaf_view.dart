@@ -163,16 +163,21 @@ class _MushafViewState extends State<MushafView> {
     }
     if (!oldWidget.isRecording && widget.isRecording) {
       final active = widget.controller.activeAyah.value;
+      final int targetSurah = widget.controller.targetSurah != 0
+          ? widget.controller.targetSurah
+          : AppState.instance.lastSurah;
       if (active == null ||
           !MushafView.isAyahOnPage(
             pageNumber: _currentPage,
-            surah: widget.controller.targetSurah,
+            surah: targetSurah,
             ayah: active,
           )) {
         MushafView.ensureActiveAyahOnCurrentPage(
           controller: widget.controller,
           pageNumber: _currentPage,
-        );
+        ).then((_) {
+          if (mounted) setState(() {});
+        });
       }
     } else if (oldWidget.isRecording && !widget.isRecording) {
       _lastAutoAdvancedFromPage = null;
@@ -458,12 +463,13 @@ class _MushafViewState extends State<MushafView> {
     //    - Prevents the 15th line from colliding or overlapping with the dock on any device!
     //
     // 2. Top Bar Clearance:
-    //    `topPadding` clears the top app bar in normal mode (72.0 + safeTop) and
-    //    maximizes screen space in fullscreen recording mode (6.0 + safeTop).
+    //    Normal mode: clears top bar (safeTop + 72.0).
+    //    Fullscreen / recording mode: maintains a calm 24.0px breathing space below
+    //    the notch/camera cutout so the page never slams against the top of the phone!
     // ==========================================================================
-    final double bottomPadding = safeBottom + (isFullscreenMode ? 76.0 : 92.0);
+    final double bottomPadding = safeBottom + (isFullscreenMode ? 78.0 : 92.0);
     final double topPadding = isFullscreenMode
-        ? (safeTop > 0 ? (safeTop + 4.0) : 6.0)
+        ? (safeTop + 24.0)
         : (safeTop + 72.0);
 
     final ScrollPhysics physics = Theme.of(context).platform == TargetPlatform.iOS
@@ -496,7 +502,9 @@ class _MushafViewState extends State<MushafView> {
         },
         child: Stack(
           children: [
-            Padding(
+            AnimatedPadding(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
               padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
               child: ScrollConfiguration(
                 behavior: const MushafScrollBehavior(),
@@ -518,17 +526,20 @@ class _MushafViewState extends State<MushafView> {
                   },
                   itemBuilder: (context, index) {
                     final pageNumber = index + 1;
-                    return PageWidget(
-                      key: ValueKey('mushaf_page_$pageNumber'),
-                      pageNumber: pageNumber,
-                      controller: widget.controller,
-                      isRecording: widget.isRecording,
-                      isAutoScrolling: widget.isAutoScrolling,
-                      wordFontFamily: widget.wordFontFamily,
-                      showBottomPageNumber: widget.showBottomPageNumber,
-                      onStateChangeRequested: () {
-                        if (mounted) setState(() {});
-                      },
+                    return RepaintBoundary(
+                      key: ValueKey('mushaf_page_rep_boundary_$pageNumber'),
+                      child: PageWidget(
+                        key: ValueKey('mushaf_page_$pageNumber'),
+                        pageNumber: pageNumber,
+                        controller: widget.controller,
+                        isRecording: widget.isRecording,
+                        isAutoScrolling: widget.isAutoScrolling,
+                        wordFontFamily: widget.wordFontFamily,
+                        showBottomPageNumber: widget.showBottomPageNumber,
+                        onStateChangeRequested: () {
+                          if (mounted) setState(() {});
+                        },
+                      ),
                     );
                   },
                 ),
