@@ -534,9 +534,7 @@ class _MushafViewState extends State<MushafView> {
                         isAutoScrolling: widget.isAutoScrolling,
                         wordFontFamily: widget.wordFontFamily,
                         showBottomPageNumber: widget.showBottomPageNumber,
-                        onStateChangeRequested: () {
-                          if (mounted) setState(() {});
-                        },
+                        onStateChangeRequested: () {},
                       ),
                     );
                   },

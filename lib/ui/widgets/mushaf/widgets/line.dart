@@ -602,6 +602,8 @@ class LineWidget extends StatelessWidget {
   /// computed exactly once per line, delivering blazing-fast 120 FPS performance!
   /// ============================================================================
   static final Map<int, double> _lineWidthCache = {};
+  static final TextPainter _sharedTextPainter =
+      TextPainter(textDirection: TextDirection.rtl);
 
   static double measureLineTextWidth(
     List<Word> words,
@@ -627,19 +629,16 @@ class LineWidget extends StatelessWidget {
 
     final String textToMeasure =
         textLine?.joinedText ?? words.map((w) => w.text).join(' ');
-    final TextPainter tp = TextPainter(
-      text: TextSpan(
-        text: textToMeasure,
-        style: TextStyle(
-          fontFamily: fontFamily,
-          fontSize: fontSize,
-          height: 1.25,
-        ),
+    _sharedTextPainter.text = TextSpan(
+      text: textToMeasure,
+      style: TextStyle(
+        fontFamily: fontFamily,
+        fontSize: fontSize,
+        height: 1.25,
       ),
-      textDirection: TextDirection.rtl,
-    )..layout();
-    final double width = tp.width;
-    tp.dispose();
+    );
+    _sharedTextPainter.layout();
+    final double width = _sharedTextPainter.width;
     _lineWidthCache[cacheKey] = width;
     return width;
   }

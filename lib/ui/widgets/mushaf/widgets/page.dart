@@ -278,23 +278,21 @@ class _PageWidgetState extends State<PageWidget> {
 
           flexChildren.add(
             Expanded(
-              child: Center(
-                child: LineWidget(
-                  line: line,
-                  nextLine: nextLine,
-                  pageNumber: widget.pageNumber,
-                  lineIndex: index,
-                  lineWidth: lineWidth,
-                  lineHeight: lineSlotHeight,
-                  fontSize: baseFontSize,
-                  wordFontFamily: widget.wordFontFamily,
-                  colors: colors,
-                  app: app,
-                  controller: widget.controller,
-                  isRecording: widget.isRecording,
-                  isAutoScrolling: widget.isAutoScrolling,
-                  onAyahSelected: widget.onStateChangeRequested,
-                ),
+              child: LineWidget(
+                line: line,
+                nextLine: nextLine,
+                pageNumber: widget.pageNumber,
+                lineIndex: index,
+                lineWidth: lineWidth,
+                lineHeight: lineSlotHeight,
+                fontSize: baseFontSize,
+                wordFontFamily: widget.wordFontFamily,
+                colors: colors,
+                app: app,
+                controller: widget.controller,
+                isRecording: widget.isRecording,
+                isAutoScrolling: widget.isAutoScrolling,
+                onAyahSelected: widget.onStateChangeRequested,
               ),
             ),
           );
