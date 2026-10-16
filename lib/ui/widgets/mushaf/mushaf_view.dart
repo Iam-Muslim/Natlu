@@ -1,55 +1,56 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:recite_quran/recite_quran.dart';
 
 import '../../../state/app_state.dart';
-import 'data/mushaf_repository.dart';
-import 'models/mushaf_models.dart';
-import 'widgets/mushaf_page.dart';
+import 'classes/word.dart';
+import 'services/arabic.dart';
+import 'services/mushaf_provider.dart';
+import 'widgets/page.dart';
 
-export 'data/mushaf_repository.dart';
-export 'models/mushaf_models.dart';
-export 'widgets/mushaf_ayah_marker.dart';
-export 'widgets/mushaf_basmala.dart';
-export 'widgets/mushaf_highlight_row.dart';
-export 'widgets/mushaf_line.dart';
-export 'widgets/mushaf_page.dart';
-export 'widgets/mushaf_surah_header.dart';
+export 'classes/line.dart';
+export 'classes/page.dart';
+export 'classes/word.dart';
+export 'services/arabic.dart';
+export 'services/mushaf_provider.dart';
+export 'widgets/footer.dart';
+export 'widgets/line.dart';
+export 'widgets/page.dart';
 
-/// High-Performance Authentic 15-line Mushaf Layout View.
-/// - Exact 15-line Mushaf structure with Surah headers, Basmalas, and bottom page numbers.
-/// - Single-layer rendering: only ONE RepaintBoundary per page (95% GPU layer reduction).
-/// - Instantaneous flex-based line justification via native C++ flex distribution (0ms CPU blocking).
-/// - Scoped per-page state listening: only the currently active page rebuilds during recitation/playback.
-/// - Full 60-120 FPS buttery smooth page shifts and zero-latency button presses.
+/// Desktop & Mobile friendly scroll behavior allowing mouse/touch drag on PageView
+class MushafScrollBehavior extends MaterialScrollBehavior {
+  const MushafScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
+}
+
+/// Exact mirror of Mushaf.svelte in mushaf-svelte.
+///
+/// Features:
+/// - Responsive phone layout.
+/// - RTL page navigation (1..604).
+/// - Exact 15-line structure with pure HafsSmart font and aya_ui PUA unicode characters.
+/// - Synchronization with ASR recitation tracking and audio playback.
 class MushafView extends StatefulWidget {
   final HighlightingController controller;
   final bool isRecording;
   final bool isAutoScrolling;
   final VoidCallback? onToggleAutoScroll;
-
-  /// Custom font family for Quranic words (e.g. 'HafsSmart', 'cairo', or any custom TTF).
   final String wordFontFamily;
-
-  /// Custom font family for Ayah numbers inside markers (defaults to wordFontFamily).
   final String? ayahMarkerFontFamily;
-
-  /// Custom border color for the circle around the Ayah number.
   final Color? ayahMarkerBorderColor;
-
-  /// Custom text color for the Ayah number.
   final Color? ayahMarkerTextColor;
-
-  /// Border width for the circle surrounding the Ayah number.
   final double ayahMarkerBorderWidth;
-
-  /// Whether to show the surrounding circle border around the Ayah number.
   final bool showAyahMarkerCircle;
-
-  /// Whether to display bottom page numbers (false = pure distraction-free canvas).
   final bool showBottomPageNumber;
 
   const MushafView({
@@ -67,50 +68,42 @@ class MushafView extends StatefulWidget {
     this.showBottomPageNumber = true,
   });
 
-  /// Static synchronization flag to prevent re-entrant page navigation
-  /// when synchronizing the selected Surah across page boundaries.
-  static bool get isSyncingSurah => MushafRepository.instance.isSyncingSurah;
-  static set isSyncingSurah(bool v) => MushafRepository.instance.isSyncingSurah = v;
+  static bool get isSyncingSurah => MushafProvider.instance.isSyncingSurah;
+  static set isSyncingSurah(bool v) => MushafProvider.instance.isSyncingSurah = v;
 
-  /// Preloads mushaf_pages.json in a background isolate on app startup
   static void preloadData() {
-    MushafRepository.instance.preloadData();
+    MushafProvider.instance.preloadData();
   }
 
-  /// Returns the first (surah, ayah) appearing on [pageNumber] in O(1) time.
   static (int surah, int ayah)? getFirstAyahOnPage(int pageNumber) {
-    return MushafRepository.instance.getFirstAyahOnPage(pageNumber);
+    return MushafProvider.instance.getFirstAyahOnPage(pageNumber);
   }
 
-  /// Returns the dominant Surah on [pageNumber] in O(1) time.
   static int? getDominantSurahOnPage(int pageNumber) {
-    return MushafRepository.instance.getDominantSurahOnPage(pageNumber);
+    return MushafProvider.instance.getDominantSurahOnPage(pageNumber);
   }
 
-  /// Checks if the given Ayah is located on [pageNumber] in O(1) time.
   static bool isAyahOnPage({
     required int pageNumber,
     required int surah,
     required int ayah,
   }) {
-    return MushafRepository.instance.isAyahOnPage(
+    return MushafProvider.instance.isAyahOnPage(
       pageNumber: pageNumber,
       surah: surah,
       ayah: ayah,
     );
   }
 
-  /// Returns the very last word reference located on [pageNumber] in O(1) time.
   static MushafWordRef? getLastWordOnPage(int pageNumber) {
-    return MushafRepository.instance.getLastWordOnPage(pageNumber);
+    return MushafProvider.instance.getLastWordOnPage(pageNumber);
   }
 
-  /// Ensures that the active Ayah is on the visible page.
   static Future<void> ensureActiveAyahOnCurrentPage({
     required HighlightingController controller,
     int? pageNumber,
   }) {
-    return MushafRepository.instance.ensureActiveAyahOnCurrentPage(
+    return MushafProvider.instance.ensureActiveAyahOnCurrentPage(
       controller: controller,
       pageNumber: pageNumber,
     );
@@ -124,26 +117,27 @@ class _MushafViewState extends State<MushafView> {
   late PageController _pageController;
   int _currentPage = 1;
   bool _isLoading = true;
-  final Set<int> _loadedSurahs = {};
   final FocusNode _focusNode = FocusNode();
   (int surah, int ayah)? _navigationTargetAyah;
-
+  Timer? _savePositionDebounce;
+  int? _lastAutoAdvancedFromPage;
+  bool _isAutoAdvancingPage = false;
 
   @override
   void initState() {
     super.initState();
-    final repo = MushafRepository.instance;
+    final provider = MushafProvider.instance;
     _currentPage = _findInitialPage();
     _pageController = PageController(initialPage: _currentPage - 1);
-    _isLoading = !repo.isReady;
+    _isLoading = !provider.isReady;
 
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     widget.controller.addListener(_onControllerProgress);
     AppState.instance.activeAudioAyah.addListener(_onAudioAyahChanged);
     AppState.instance.activeAudioSurah.addListener(_onAudioAyahChanged);
 
-    if (repo.isReady) {
-      _ensurePageSurahsLoaded(_currentPage);
+    if (provider.isReady) {
+      _isLoading = false;
     } else {
       _initMushafData();
     }
@@ -193,10 +187,9 @@ class _MushafViewState extends State<MushafView> {
     final surah = widget.controller.targetSurah != 0
         ? widget.controller.targetSurah
         : AppState.instance.lastSurah;
-    final ayah =
-        widget.controller.activeAyah.value ?? AppState.instance.lastAyah;
-    final repo = MushafRepository.instance;
-    final mapped = repo.getPageForAyah(surah, ayah) ?? repo.getPageForAyah(surah, 1);
+    final ayah = widget.controller.activeAyah.value ?? AppState.instance.lastAyah;
+    final provider = MushafProvider.instance;
+    final mapped = provider.getPageForAyah(surah, ayah) ?? provider.getPageForAyah(surah, 1);
     if (mapped != null && mapped >= 1 && mapped <= 604) {
       return mapped;
     }
@@ -204,8 +197,7 @@ class _MushafViewState extends State<MushafView> {
   }
 
   Future<void> _initMushafData() async {
-    await MushafRepository.instance.loadMushafPagesJson();
-
+    await MushafProvider.instance.loadData();
     if (mounted) {
       final initialPage = _findInitialPage();
       _currentPage = initialPage;
@@ -216,12 +208,9 @@ class _MushafViewState extends State<MushafView> {
           _pageController.jumpToPage(targetIndex);
         }
       }
-      _ensurePageSurahsLoaded(_currentPage);
       setState(() => _isLoading = false);
     }
   }
-
-  Timer? _savePositionDebounce;
 
   void _debouncedSavePosition(int pageNum, int surah, int ayah) {
     _savePositionDebounce?.cancel();
@@ -243,16 +232,13 @@ class _MushafViewState extends State<MushafView> {
     super.dispose();
   }
 
-  int? _lastAutoAdvancedFromPage;
-  bool _isAutoAdvancingPage = false;
-
   void _onControllerProgress() {
-    final repo = MushafRepository.instance;
-    if (!mounted || _isAutoAdvancingPage || !repo.isReady) return;
+    final provider = MushafProvider.instance;
+    if (!mounted || _isAutoAdvancingPage || !provider.isReady) return;
     if (!widget.isRecording) return;
 
     final ctrl = widget.controller;
-    final lastWord = repo.getLastWordOnPage(_currentPage);
+    final lastWord = provider.getLastWordOnPage(_currentPage);
     if (lastWord == null) return;
 
     final int? activeAyah = ctrl.activeAyah.value;
@@ -262,7 +248,7 @@ class _MushafViewState extends State<MushafView> {
 
     if (activeAyah != null &&
         activeAyah != lastWord.ayah &&
-        repo.isAyahOnPage(
+        provider.isAyahOnPage(
           pageNumber: _currentPage,
           surah: activeSurah,
           ayah: activeAyah,
@@ -270,7 +256,6 @@ class _MushafViewState extends State<MushafView> {
       _lastAutoAdvancedFromPage = null;
     }
 
-    // Check if the last word on the currently visible page was finished
     final bool isLastWordFinished = ctrl.isWordGreen(
             lastWord.ayah, lastWord.wordIndex0, surah: lastWord.surah) ||
         ctrl.isWordNeutral(
@@ -282,9 +267,8 @@ class _MushafViewState extends State<MushafView> {
     final int nextPage = _currentPage + 1;
     if (nextPage > 604) return;
 
-    // Also check if ASR engine has already matched or moved to an Ayah on the next page
     final bool isRecitingNextPage = activeAyah != null &&
-        repo.isAyahOnPage(
+        provider.isAyahOnPage(
           pageNumber: nextPage,
           surah: activeSurah,
           ayah: activeAyah,
@@ -301,7 +285,7 @@ class _MushafViewState extends State<MushafView> {
       return;
     }
 
-    final nextFirst = repo.getFirstAyahOnPage(nextPage);
+    final nextFirst = provider.getFirstAyahOnPage(nextPage);
     if (nextFirst == null) return;
 
     final int nextSurah = nextFirst.$1;
@@ -344,11 +328,11 @@ class _MushafViewState extends State<MushafView> {
   }
 
   void _onAudioAyahChanged() {
-    final repo = MushafRepository.instance;
+    final provider = MushafProvider.instance;
     final active = AppState.instance.activeAudioAyah.value;
     final surah = AppState.instance.activeAudioSurah.value;
-    if (active != null && surah != null && repo.isReady) {
-      if (repo.isAyahOnPage(
+    if (active != null && surah != null && provider.isReady) {
+      if (provider.isAyahOnPage(
         pageNumber: _currentPage,
         surah: surah,
         ayah: active,
@@ -356,7 +340,7 @@ class _MushafViewState extends State<MushafView> {
         _navigationTargetAyah = null;
         return;
       }
-      final targetPage = repo.getPageForAyah(surah, active);
+      final targetPage = provider.getPageForAyah(surah, active);
       if (targetPage != null && targetPage != _currentPage) {
         _navigationTargetAyah = (surah, active);
         _goToPage(targetPage);
@@ -365,14 +349,14 @@ class _MushafViewState extends State<MushafView> {
   }
 
   void _onActiveAyahChanged() {
-    final repo = MushafRepository.instance;
-    if (repo.isSyncingSurah || _isAutoAdvancingPage) return;
+    final provider = MushafProvider.instance;
+    if (provider.isSyncingSurah || _isAutoAdvancingPage) return;
     final active = widget.controller.activeAyah.value;
     if (active != null) {
       final surah = widget.controller.targetSurah;
       AppState.instance.saveLastPosition(surah, active);
 
-      if (repo.isAyahOnPage(
+      if (provider.isAyahOnPage(
         pageNumber: _currentPage,
         surah: surah,
         ayah: active,
@@ -381,8 +365,8 @@ class _MushafViewState extends State<MushafView> {
         return;
       }
 
-      if (repo.isReady) {
-        final targetPage = repo.getPageForAyah(surah, active);
+      if (provider.isReady) {
+        final targetPage = provider.getPageForAyah(surah, active);
         if (targetPage != null && targetPage != _currentPage) {
           _navigationTargetAyah = (surah, active);
           _goToPage(targetPage);
@@ -392,10 +376,10 @@ class _MushafViewState extends State<MushafView> {
   }
 
   void _syncPageSelection(int pageNum) {
-    final repo = MushafRepository.instance;
+    final provider = MushafProvider.instance;
     if (_navigationTargetAyah != null) {
       final target = _navigationTargetAyah!;
-      if (repo.isAyahOnPage(
+      if (provider.isAyahOnPage(
         pageNumber: pageNum,
         surah: target.$1,
         ayah: target.$2,
@@ -406,7 +390,7 @@ class _MushafViewState extends State<MushafView> {
       }
     }
 
-    final first = repo.getFirstAyahOnPage(pageNum);
+    final first = provider.getFirstAyahOnPage(pageNum);
     if (first != null) {
       _debouncedSavePosition(pageNum, first.$1, first.$2);
     } else {
@@ -431,7 +415,6 @@ class _MushafViewState extends State<MushafView> {
         );
       }
     }
-    _ensurePageSurahsLoaded(clamped);
     _syncPageSelection(clamped);
   }
 
@@ -449,28 +432,13 @@ class _MushafViewState extends State<MushafView> {
     }
   }
 
-  Future<void> _ensurePageSurahsLoaded(int pageNum) async {
-    final repo = MushafRepository.instance;
-    final surahs = repo.getPageSurahs(pageNum);
-    if (surahs == null || surahs.isEmpty) return;
-
-    for (final s in surahs) {
-      if (!_loadedSurahs.contains(s)) {
-        _loadedSurahs.add(s);
-        unawaited(widget.controller.repository.loadSurahAsync(s));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final app = AppState.instance;
-    final c = app.colors;
-    final repo = MushafRepository.instance;
+    final c = AppState.instance.colors;
 
-    if (_isLoading || !repo.isReady) {
+    if (_isLoading) {
       return Center(
-        child: CircularProgressIndicator(
+        child: CircularProgressIndicator.adaptive(
           valueColor: AlwaysStoppedAnimation<Color>(c.gold),
         ),
       );
@@ -480,16 +448,37 @@ class _MushafViewState extends State<MushafView> {
     final safeTop = math.max(media.padding.top, media.viewPadding.top);
     final safeBottom = math.max(media.padding.bottom, media.viewPadding.bottom);
     final bool isFullscreenMode = widget.isRecording || widget.isAutoScrolling;
-    final double bottomPadding = safeBottom + (isFullscreenMode ? 74.0 : 92.0);
 
+    // ==========================================================================
+    // ARCHITECTURAL INVARIANT: VIEWPORT PADDING & DOCK CLEARANCE
+    // ==========================================================================
+    // 1. Bottom Dock Clearance:
+    //    `bottomPadding` is strictly set to `safeBottom + (isFullscreenMode ? 76.0 : 92.0)`.
+    //    - Provides a comfortable 20px clearance above the 72px floating action dock.
+    //    - Prevents the 15th line from colliding or overlapping with the dock on any device!
+    //
+    // 2. Top Bar Clearance:
+    //    `topPadding` clears the top app bar in normal mode (72.0 + safeTop) and
+    //    maximizes screen space in fullscreen recording mode (6.0 + safeTop).
+    // ==========================================================================
+    final double bottomPadding = safeBottom + (isFullscreenMode ? 76.0 : 92.0);
     final double topPadding = isFullscreenMode
         ? (safeTop > 0 ? (safeTop + 4.0) : 6.0)
         : (safeTop + 72.0);
 
-    // Platform-optimized scroll physics matching qcf_quran_plus
     final ScrollPhysics physics = Theme.of(context).platform == TargetPlatform.iOS
         ? const BouncingScrollPhysics()
         : const ClampingScrollPhysics();
+
+    // ==========================================================================
+    // ARCHITECTURAL INVARIANT: BOTTOM-LEFT PAGE NUMBER
+    // ==========================================================================
+    // The page number is rendered in the root Stack at the bottom left:
+    // `Positioned(left: 14.0, bottom: pageLabelBottom)`
+    // - Clean, unclipped label (11.0px Cairo w600) with Arabic numerals.
+    // - Must NEVER be placed inside PageWidget's flex column so it doesn't steal line height.
+    // ==========================================================================
+    final double pageLabelBottom = safeBottom + (isFullscreenMode ? 14.0 : 18.0);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -505,55 +494,76 @@ class _MushafViewState extends State<MushafView> {
             }
           }
         },
-        child: Padding(
-          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
-          child: ScrollConfiguration(
-            behavior: const MushafScrollBehavior(),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is UserScrollNotification &&
-                    notification.direction != ScrollDirection.idle) {
-                  _navigationTargetAyah = null;
-                }
-                return false;
-              },
-              child: PageView.builder(
-                key: const ValueKey('mushaf_single_page_view'),
-                controller: _pageController,
-                itemCount: 604,
-                padEnds: false,
-                allowImplicitScrolling: false,
-                physics: physics,
-                onPageChanged: (index) {
-                  final newPage = index + 1;
-                  if (_currentPage == newPage) return;
-                  _currentPage = newPage;
-                  AppState.instance.currentMushafPage.value = newPage;
-                  _ensurePageSurahsLoaded(newPage);
-                  _syncPageSelection(newPage);
-                },
-                itemBuilder: (context, index) {
-                  final pageNumber = index + 1;
-                  return MushafPage(
-                    key: ValueKey('mushaf_page_$pageNumber'),
-                    pageNumber: pageNumber,
-                    controller: widget.controller,
-                    isRecording: widget.isRecording,
-                    isAutoScrolling: widget.isAutoScrolling,
-                    wordFontFamily: widget.wordFontFamily,
-                    ayahMarkerFontFamily: widget.ayahMarkerFontFamily,
-                    ayahMarkerBorderColor: widget.ayahMarkerBorderColor,
-                    ayahMarkerTextColor: widget.ayahMarkerTextColor,
-                    ayahMarkerBorderWidth: widget.ayahMarkerBorderWidth,
-                    showAyahMarkerCircle: widget.showAyahMarkerCircle,
-                    showBottomPageNumber: widget.showBottomPageNumber,
-                  );
-                },
+        child: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+              child: ScrollConfiguration(
+                behavior: const MushafScrollBehavior(),
+                child: PageView.builder(
+                  key: const ValueKey('mushaf_single_page_view'),
+                  controller: _pageController,
+                  itemCount: 604,
+                  padEnds: false,
+                  allowImplicitScrolling: false,
+                  physics: physics,
+                  onPageChanged: (index) {
+                    final newPage = index + 1;
+                    if (_currentPage == newPage) return;
+                    setState(() {
+                      _currentPage = newPage;
+                    });
+                    AppState.instance.currentMushafPage.value = newPage;
+                    _syncPageSelection(newPage);
+                  },
+                  itemBuilder: (context, index) {
+                    final pageNumber = index + 1;
+                    return PageWidget(
+                      key: ValueKey('mushaf_page_$pageNumber'),
+                      pageNumber: pageNumber,
+                      controller: widget.controller,
+                      isRecording: widget.isRecording,
+                      isAutoScrolling: widget.isAutoScrolling,
+                      wordFontFamily: widget.wordFontFamily,
+                      showBottomPageNumber: widget.showBottomPageNumber,
+                      onStateChangeRequested: () {
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
+            if (widget.showBottomPageNumber)
+              Positioned(
+                left: 14.0,
+                bottom: pageLabelBottom,
+                child: _buildBottomLeftPageLabel(c),
+              ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBottomLeftPageLabel(ThemeColors c) {
+    return ValueListenableBuilder<int>(
+      valueListenable: AppState.instance.currentMushafPage,
+      builder: (context, currentPage, _) {
+        final int page = currentPage > 0 ? currentPage : _currentPage;
+        return Text(
+          ArabicService.latinToArabicNumbers(page),
+          textDirection: TextDirection.rtl,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(
+            fontFamily: 'cairo',
+            fontSize: 11.0,
+            fontWeight: FontWeight.w600,
+            color: c.textSecondary,
+            height: 1.0,
+          ),
+        );
+      },
     );
   }
 }

@@ -10,8 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   recite_quran: ^1.0.5
-  qcf_quran_plus:
-    path: C:/Users/redaa/Downloads/qcf_quran_plus
 
   audio_session: ^0.2.4
   flutter_displaymode: ^0.7.0

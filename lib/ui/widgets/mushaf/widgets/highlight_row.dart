@@ -85,39 +85,6 @@ class RenderMushafHighlightFlex extends RenderFlex {
         _highlightColor = highlightColor,
         _highlightBorderColor = highlightBorderColor;
 
-  /// Fast horizontal hit calculation to find the closest child word or marker
-  /// to a tap coordinate in O(N) where N <= 15 with zero allocations.
-  int findClosestChildIndex(double x) {
-    RenderBox? child = firstChild;
-    int index = 0;
-    int bestIndex = 0;
-    double minDistance = double.infinity;
-
-    while (child != null) {
-      final parentData = child.parentData as FlexParentData;
-      final childLeft = parentData.offset.dx;
-      final childRight = childLeft + child.size.width;
-
-      final double distance;
-      if (x >= childLeft && x <= childRight) {
-        return index;
-      } else if (x < childLeft) {
-        distance = childLeft - x;
-      } else {
-        distance = x - childRight;
-      }
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        bestIndex = index;
-      }
-
-      child = childAfter(child);
-      index++;
-    }
-    return bestIndex;
-  }
-
   int? get highlightStartIndex => _highlightStartIndex;
   set highlightStartIndex(int? value) {
     if (_highlightStartIndex != value) {
@@ -184,7 +151,6 @@ class RenderMushafHighlightFlex extends RenderFlex {
       }
 
       if (minX != null && maxX != null && minY != null && maxY != null) {
-        // Expand horizontally and vertically slightly for a comfortable breathing room
         final clampLeft =
             (minX - 3.0).clamp(offset.dx, offset.dx + size.width);
         final clampRight =

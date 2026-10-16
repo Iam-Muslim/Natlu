@@ -148,10 +148,9 @@ class VerseRow extends StatefulWidget {
   }
 
   /// Handles tapping a Quranic word:
-  /// - If the Ayah is not selected yet -> selects the Ayah first.
-  /// - If already selected:
-  ///     - Yellow word -> opens Tajweed error dialog
-  ///     - Non-yellow word -> plays word audio
+  /// - Selects the Ayah.
+  /// - If yellow word -> opens Tajweed error dialog.
+  /// - If non-yellow word and (already selected or [playWordDirectly]) -> plays word audio.
   static void handleWordTap({
     required BuildContext context,
     required int surah,
@@ -162,6 +161,7 @@ class VerseRow extends StatefulWidget {
     required bool isAutoScrolling,
     VoidCallback? onWordErrorTap,
     VoidCallback? onAyahTap,
+    bool playWordDirectly = false,
   }) {
     if (isAutoScrolling) return;
 
@@ -189,7 +189,7 @@ class VerseRow extends StatefulWidget {
         );
         onWordErrorTap?.call();
       }
-    } else if (isAlreadySelected) {
+    } else if (isAlreadySelected || playWordDirectly) {
       QuranAudioService.instance.playWord(
         surah: surah,
         ayah: ayah,
